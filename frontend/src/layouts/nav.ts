@@ -41,6 +41,7 @@ export const NAV: NavGroup[] = [
   {
     group: 'Overview', icon: 'grid', items: [
       { label: 'Dashboard', icon: 'home', to: '/command-center', dynamicHome: true },
+      { label: 'Owner Overview', icon: 'shield', to: '/overview', perm: ['audit.read'], roles: ['super_admin', 'school_admin'] },
       { label: 'Command Center', icon: 'pulse', to: '/command-center', perm: ['dashboard.group'] },
       { label: 'Teacher Dashboard', icon: 'bookOpen', to: '/teacher', perm: ['attendance.mark'], hideRoles: NOT_FOR_ADMINS },
       { label: 'Parent 360', icon: 'heart', to: '/parent-360', perm: ['parent_portal.use'], hideRoles: NOT_FOR_ADMINS },
