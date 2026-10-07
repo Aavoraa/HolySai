@@ -1,10 +1,10 @@
-import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  AlertItem, Badge, Button, Card, Empty, ErrorState, Grid, Icon, Kpi, Meter, Page, PageSkeleton, Person,
+  AlertItem, Badge, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter, Page, PageSkeleton,
+  Person, StudentLink,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 
@@ -27,14 +27,26 @@ interface Overview {
     out: { expenses: number; payroll: number; payrollMonths: number; total: number };
     net: number;
     pending: { expenses: { count: number; amount: number }; concessions: { count: number; amount: number } };
+    trend: { month: string; label: string; collected: number; payroll: number; expenses: number }[];
+    topOwing: { studentId: string; name: string; admissionNo: string; className: string | null; campus: string;
+                overdue: number; charges: number; oldestDue: string; daysOverdue: number }[];
+    byClass: { grade: string; students: number; outstanding: number; overdue: number }[];
+    byHead: { head: string; billed: number; collected: number; concessions: number; outstanding: number }[];
+    byCampus: { campus: string; billed: number; collected: number; outstanding: number; spent: number }[];
   };
   activity: null | {
-    byModule: { module: string; count: number }[];
-    byPerson: { name: string; role: string; count: number }[];
-    important: { id: string; at: string; userName: string; role: string; action: string; module: string; description: string }[];
-    approvals: { label: string; count: number; to: string; icon: string }[];
+    byModule: { module: string; count: number; actions: { action: string; count: number }[]; topPerson: string | null; topCount: number }[];
+    byPerson: { name: string; role: string; count: number; lastAt: string; modules: { module: string; count: number }[] }[];
+    important: {
+      id: string; at: string; userName: string; role: string; action: string; module: string; description: string;
+      entityType: string | null; entityId: string | null; device: string | null; ip: string | null;
+      metadata: Record<string, unknown> | null;
+    }[];
+    approvals: { label: string; count: number; to: string; icon: string; unit: 'money' | 'days'; total: number; oldest: string | null }[];
   };
 }
+
+type Revenue = NonNullable<Overview['revenue']>;
 
 /** Modules read better in the owner's language than in the API's. */
 const MODULE_LABEL: Record<string, string> = {
@@ -62,11 +74,48 @@ const ICON_FOR: Record<string, string> = {
   create: 'plus', update: 'edit',
 };
 
+/** Where a changed record lives, so a change opens the record rather than the raw trail. */
+const ENTITY_ROUTE: Record<string, (id: string) => string> = {
+  student: (id) => `/student-360/${id}`,
+  innovation_project: (id) => `/projects/${id}`,
+  expense: () => '/expenses',
+  concession: () => '/concessions',
+  reimbursement: () => '/reimbursements',
+  payroll_run: () => '/payroll',
+  leave_request: () => '/leave',
+  fee_payment: () => '/payments',
+  student_fee: () => '/student-accounts',
+  fee_structure: () => '/fee-structures',
+  budget: () => '/budgets',
+  user: () => '/admin/users',
+  role: () => '/admin/users',
+  employee: () => '/workforce',
+  circular: () => '/circulars',
+  enquiry: () => '/enquiries',
+  admission: () => '/applications',
+  campus: () => '/campuses',
+};
+const entityLink = (type: string | null, id: string | null) =>
+  type && ENTITY_ROUTE[type] ? ENTITY_ROUTE[type](id ?? '') : '/audit';
+
+/** A short, readable line from an audit entry's metadata: "from → to", else up to three key: value pairs. */
+function metaSummary(meta: Record<string, unknown> | null) {
+  if (!meta) return null;
+  const plain = (v: unknown) => (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean');
+  if (plain(meta.from) && plain(meta.to)) return `${meta.from} → ${meta.to}`;
+  const words = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').toLowerCase();
+  const parts = Object.entries(meta).filter(([, v]) => plain(v) && String(v).length <= 40).slice(0, 3)
+    .map(([k, v]) => `${words(k)}: ${v}`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+const daysSince = (at: string | null) => (at ? Math.max(0, Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000)) : 0);
+const ageTone = (days: number) => (days > 60 ? 'critical' : days > 30 ? 'warning' : 'caution');
+
 export default function OwnerOverviewPage() {
   const { user } = useAuth();
   const { t } = useI18n();
   const school = useSchool();
-  const navigate = useNavigate();
   const q = useApiQuery<Overview>('/dashboard/overview', { scope: school.scope, campusId: school.campusId },
     { refetchInterval: 300_000 });
 
@@ -132,6 +181,7 @@ export default function OwnerOverviewPage() {
               label="Fees collected" value={fmt.money(revenue.collected, { compact: true })}
               tone="teal" to="/payments"
               foot={revenue.collectedPct != null ? `${revenue.collectedPct}% of ${fmt.money(revenue.billed, { compact: true })} billed` : 'No fees billed yet'}
+              spark={revenue.trend.map((m) => m.collected)} sparkColor="var(--teal)"
             />
             <Kpi
               label="Still outstanding" value={fmt.money(revenue.outstanding, { compact: true })}
@@ -151,18 +201,7 @@ export default function OwnerOverviewPage() {
           </Grid>
 
           <Grid cols="g-main" className="mt-5">
-            <Card title="What families still owe" sub="Unpaid balances by how long they have been due">
-              <AgedBar aged={revenue.aged} outstanding={revenue.outstanding} />
-              <div className="divider" />
-              <div className="row g-5 wrap">
-                <Figure label="Collected this month" value={fmt.money(revenue.collection.thisMonth, { compact: true })}
-                  delta={revenue.collection.changePct} deltaLabel="vs last month" />
-                <Figure label="Last 30 days" value={fmt.money(revenue.collection.last30, { compact: true })}
-                  sub={`${revenue.collection.receipts30} receipts`} />
-                <Figure label="Concessions given" value={fmt.money(revenue.concessions, { compact: true })}
-                  sub="this academic year" />
-              </div>
-            </Card>
+            <MoneyTrend trend={revenue.trend} />
 
             <Card title="Money out" sub={`This academic year${revenue.out.payrollMonths ? ` · ${revenue.out.payrollMonths} payroll months` : ''}`}>
               <div className="col g-4">
@@ -191,6 +230,70 @@ export default function OwnerOverviewPage() {
               )}
             </Card>
           </Grid>
+
+          <Grid cols="g-main" className="mt-5">
+            <Card title="What families still owe" sub="Unpaid balances by how long they have been due">
+              <AgedBar aged={revenue.aged} outstanding={revenue.outstanding} />
+              <div className="divider" />
+              <div className="row g-5 wrap">
+                <Figure label="Collected this month" value={fmt.money(revenue.collection.thisMonth, { compact: true })}
+                  delta={revenue.collection.changePct} deltaLabel="vs last month" />
+                <Figure label="Last 30 days" value={fmt.money(revenue.collection.last30, { compact: true })}
+                  sub={`${revenue.collection.receipts30} receipts`} />
+                <Figure label="Concessions given" value={fmt.money(revenue.concessions, { compact: true })}
+                  sub="this academic year" />
+              </div>
+              {revenue.byClass.length > 0 && (
+                <>
+                  <div className="divider" />
+                  <div className="t-xs t-muted mb-3">By class · bar shows the share of the class balance already overdue</div>
+                  <div className="col g-3">
+                    {revenue.byClass.map((g) => (
+                      <Meter key={g.grade} label={g.grade} value={pctOf(g.overdue, g.outstanding)}
+                        tone={g.overdue > 0 ? 'critical' : 'teal'}
+                        right={fmt.money(g.outstanding, { compact: true })}
+                        hint={`${g.students} student${g.students === 1 ? '' : 's'} · ${fmt.money(g.overdue, { compact: true })} overdue`} />
+                    ))}
+                  </div>
+                </>
+              )}
+            </Card>
+
+            <Card title="Families furthest behind" sub="Largest overdue balances this academic year" flush
+              actions={<Button size="sm" variant="ghost" icon="arrowRight" to="/student-accounts">All accounts</Button>}>
+              {revenue.topOwing.length ? revenue.topOwing.map((s) => (
+                <div key={s.studentId} className="row between g-3 hoverable" style={{ padding: '10px var(--s-5)', borderBottom: '1px solid var(--border-soft)' }}>
+                  <StudentLink id={s.studentId} name={s.name}
+                    meta={[s.className, s.campus, s.admissionNo].filter(Boolean).join(' · ')} />
+                  <div className="col none" style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <strong className="t-sm t-num">{fmt.money(s.overdue)}</strong>
+                    <Badge tone={ageTone(s.daysOverdue)} title={`Oldest unpaid charge due ${fmt.date(s.oldestDue)}`}>
+                      {s.daysOverdue} days · {s.charges} charge{s.charges === 1 ? '' : 's'}
+                    </Badge>
+                  </div>
+                </div>
+              )) : (
+                <div className="card__body"><div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />No family is past due.</div></div>
+              )}
+            </Card>
+          </Grid>
+
+          <Grid cols={revenue.byCampus.length ? 'g-2col' : ''} className="mt-5">
+            <Card title="By fee head" sub="Billed after concessions, and how much of it has come in" flush>
+              <BreakdownTable
+                rows={revenue.byHead.map((h) => ({ key: h.head, label: h.head, billed: h.billed, collected: h.collected,
+                  outstanding: h.outstanding, extra: h.concessions }))}
+                extraLabel="Concessions" />
+            </Card>
+            {revenue.byCampus.length > 0 && (
+              <Card title="By campus" sub="Fees against salaries and expenses, this academic year" flush>
+                <BreakdownTable
+                  rows={revenue.byCampus.map((c) => ({ key: c.campus, label: c.campus, billed: c.billed, collected: c.collected,
+                    outstanding: c.outstanding, extra: c.collected - c.spent }))}
+                  extraLabel="Net" signedExtra />
+              </Card>
+            )}
+          </Grid>
         </>
       ) : (
         <div className="banner banner--neutral mt-5">
@@ -204,11 +307,16 @@ export default function OwnerOverviewPage() {
         <Grid cols="g-side" className="mt-5">
           <div className="col g-4">
             <Card title="Waiting for a decision" flush>
-              {activity.approvals.length ? activity.approvals.map((a) => (
-                <AlertItem key={a.label} tone="warning" icon={a.icon} title={a.label}
-                  meta={`${a.count} item${a.count === 1 ? '' : 's'} pending`} to={a.to}
-                  right={<Badge tone="warning">{a.count}</Badge>} />
-              )) : (
+              {activity.approvals.length ? activity.approvals.map((a) => {
+                const waited = daysSince(a.oldest);
+                const total = a.unit === 'days' ? `${fmt.n(a.total)} day${a.total === 1 ? '' : 's'}` : fmt.money(a.total, { compact: true });
+                return (
+                  <AlertItem key={a.label} tone={waited > 7 ? 'critical' : 'warning'} icon={a.icon} title={a.label}
+                    meta={`${a.count} pending · ${total} · oldest waiting ${waited === 0 ? 'since today' : `${waited} day${waited === 1 ? '' : 's'}`}`}
+                    to={a.to}
+                    right={<Badge tone={waited > 7 ? 'critical' : 'warning'}>{a.count}</Badge>} />
+                );
+              }) : (
                 <div className="card__body"><div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />Nothing is waiting on an approval.</div></div>
               )}
             </Card>
@@ -218,7 +326,11 @@ export default function OwnerOverviewPage() {
                 <div className="col g-3">
                   {activity.byModule.map((m) => (
                     <Meter key={m.module} label={moduleLabel(m.module)} right={String(m.count)}
-                      value={pctOf(m.count, activity.byModule[0].count)} />
+                      value={pctOf(m.count, activity.byModule[0].count)}
+                      hint={[
+                        m.actions.map((x) => `${x.count} ${x.action.replace(/_/g, ' ')}`).join(', '),
+                        m.topPerson ? `mostly ${m.topPerson} (${m.topCount})` : null,
+                      ].filter(Boolean).join(' · ')} />
                   ))}
                 </div>
               ) : <div className="t-sm t-muted">No changes recorded in this period.</div>}
@@ -228,9 +340,16 @@ export default function OwnerOverviewPage() {
               {activity.byPerson.length ? (
                 <div className="col g-1">
                   {activity.byPerson.map((p) => (
-                    <div className="row between g-3 hoverable" key={p.name + p.role} style={{ padding: '6px 0' }}>
-                      <Person name={p.name} meta={p.role.replace(/_/g, ' ')} />
-                      <span className="t-sm t-bold t-num none">{p.count}</span>
+                    <div className="col hoverable" key={p.name + p.role} style={{ padding: '6px 0' }}>
+                      <div className="row between g-3">
+                        <Person name={p.name} meta={`${p.role.replace(/_/g, ' ')} · last active ${fmt.relative(p.lastAt)}`} />
+                        <span className="t-sm t-bold t-num none" title="Changes made">{p.count}</span>
+                      </div>
+                      {p.modules.length > 0 && (
+                        <div className="row g-1 wrap mt-1" style={{ paddingLeft: 40 }}>
+                          {p.modules.map((m) => <Badge key={m.module}>{moduleLabel(m.module)} {m.count}</Badge>)}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -242,16 +361,25 @@ export default function OwnerOverviewPage() {
             sub={visit.firstVisit ? 'Deletions, approvals, account and settings changes — last seven days' : 'Deletions, approvals, account and settings changes since your last sign-in'}
             flush
             actions={<Button size="sm" variant="ghost" icon="arrowRight" to="/audit">Open audit trail</Button>}>
-            {activity.important.length ? activity.important.map((e) => (
-              <AlertItem
-                key={e.id}
-                tone={toneFor(e.action, e.module)}
-                icon={ICON_FOR[e.action] ?? 'alertCircle'}
-                title={e.description}
-                meta={`${e.userName} · ${moduleLabel(e.module)} · ${fmt.dateTime(e.at)}`}
-                onClick={() => navigate('/audit')}
-              />
-            )) : (
+            {activity.important.length ? activity.important.map((e) => {
+              const detail = metaSummary(e.metadata);
+              return (
+                <AlertItem
+                  key={e.id}
+                  tone={toneFor(e.action, e.module)}
+                  icon={ICON_FOR[e.action] ?? 'alertCircle'}
+                  title={e.description}
+                  meta={
+                    <>
+                      {e.userName} ({e.role.replace(/_/g, ' ')}) · {moduleLabel(e.module)} · {fmt.dateTime(e.at)}
+                      {e.device ? ` · ${e.device}` : ''}{e.ip ? ` (${e.ip})` : ''}
+                      {detail && <span className="t-micro t-muted" style={{ display: 'block', marginTop: 2 }}>{detail}</span>}
+                    </>
+                  }
+                  to={entityLink(e.entityType, e.entityId)}
+                />
+              );
+            }) : (
               <div className="card__body">
                 <Empty icon="check" title="Nothing needs a second look"
                   sub={visit.firstVisit
@@ -287,8 +415,83 @@ function Figure({ label, value, sub, delta, deltaLabel }: {
   );
 }
 
+/** Fees in against salaries + expenses out, month by month across the academic year. */
+function MoneyTrend({ trend }: { trend: Revenue['trend'] }) {
+  const out = trend.map((m) => m.payroll + m.expenses);
+  const months = trend.filter((m) => m.collected > 0);
+  const best = months.reduce<Revenue['trend'][number] | null>((b, m) => (!b || m.collected > b.collected ? m : b), null);
+  const avg = months.length ? months.reduce((s, m) => s + m.collected, 0) / months.length : 0;
+  const shortfall = trend.filter((m, i) => out[i] > m.collected && out[i] > 0).map((m) => m.label);
+
+  return (
+    <Card title="Money in and out by month" sub="Fees collected against salaries and expenses, this academic year"
+      actions={<Legend items={[{ label: 'Fees collected', color: 'var(--teal)' }, { label: 'Money out', color: 'var(--brand)' }]} />}>
+      {trend.some((m, i) => m.collected > 0 || out[i] > 0) ? (
+        <>
+          <Chart svg={charts.bar({
+            labels: trend.map((m) => m.label),
+            series: [
+              { name: 'Fees collected', values: trend.map((m) => m.collected), color: 'var(--teal)' },
+              { name: 'Money out', values: out, color: 'var(--brand)' },
+            ],
+            height: 220, label: 'Fees collected and money out by month',
+          })} />
+          <div className="row g-5 wrap mt-3 t-xs">
+            {best && <span><span className="t-muted">Best month </span><strong>{best.label} · {fmt.money(best.collected, { compact: true })}</strong></span>}
+            <span><span className="t-muted">Average collected </span><strong>{fmt.money(avg, { compact: true })} a month</strong></span>
+            <span>
+              <span className="t-muted">Spent more than collected </span>
+              <strong style={{ color: shortfall.length ? 'var(--critical)' : undefined }}>
+                {shortfall.length ? shortfall.join(', ') : 'no month'}
+              </strong>
+            </span>
+          </div>
+        </>
+      ) : <div className="t-sm t-muted">No money has moved yet this academic year.</div>}
+    </Card>
+  );
+}
+
+/** Billed / collected / owed per row, with a collection meter and one extra money column. */
+function BreakdownTable({ rows, extraLabel, signedExtra }: {
+  rows: { key: string; label: string; billed: number; collected: number; outstanding: number; extra: number }[];
+  extraLabel: string; signedExtra?: boolean;
+}) {
+  if (!rows.length) return <div className="card__body t-sm t-muted">No fees billed yet.</div>;
+  return (
+    <div className="table-wrap">
+      <table className="table table--compact">
+        <thead>
+          <tr>
+            <th />
+            <th className="t-right">Billed</th>
+            <th style={{ width: '26%' }}>Collected</th>
+            <th className="t-right">Outstanding</th>
+            <th className="t-right">{extraLabel}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td className="t-bold">{r.label}</td>
+              <td className="t-right t-num">{fmt.money(r.billed, { compact: true })}</td>
+              <td><Meter label={fmt.money(r.collected, { compact: true })} value={pctOf(r.collected, r.billed)} tone="teal" /></td>
+              <td className="t-right t-num" style={{ color: r.outstanding > 0 ? 'var(--critical-text)' : undefined }}>
+                {fmt.money(r.outstanding, { compact: true })}
+              </td>
+              <td className="t-right t-num" style={{ color: signedExtra && r.extra < 0 ? 'var(--critical-text)' : undefined }}>
+                {fmt.money(r.extra, { compact: true })}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /** Outstanding balances split by age. Widths are shares of the total owed. */
-function AgedBar({ aged, outstanding }: { aged: NonNullable<Overview['revenue']>['aged']; outstanding: number }) {
+function AgedBar({ aged, outstanding }: { aged: Revenue['aged']; outstanding: number }) {
   const bands = [
     { label: 'Not yet due', value: aged.notYetDue, cls: 'var(--neutral)' },
     { label: 'Up to 30 days', value: aged.due0to30, cls: 'var(--caution)' },
