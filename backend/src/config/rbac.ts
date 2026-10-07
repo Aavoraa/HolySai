@@ -126,7 +126,7 @@ const MANAGEMENT_READ: Permission[] = [
 
 export const ROLES: RoleDef[] = [
   {
-    key: 'super_admin', name: 'Super Admin', scope: 'school', homeRoute: '/overview',
+    key: 'super_admin', name: 'Super Admin', scope: 'school', homeRoute: '/command-center',
     description: 'Unrestricted platform administration across every campus', permissions: '*',
   },
   {

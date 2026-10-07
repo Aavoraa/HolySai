@@ -65,12 +65,6 @@ constraint violations map to 400/409; internals are never leaked in production.
   builders (`HS.ui.*`) were re-implemented as React components with identical markup and
   class names (`src/components/ui`). Icons, charts and the i18n dictionaries are the
   wireframe's own code, ported as ES modules (`src/lib/legacy-*.ts`).
-- **Owner Overview (`/overview`):** the Super Admin's home route. Reads the
-  owner's own previous sign-in from the audit trail (the `login` row at
-  `OFFSET 1`, since `users.last_login_at` has already been overwritten by the
-  current session), then reports money in/out and the management changes made
-  since. `services/owner-overview.service.ts` returns the revenue and activity
-  blocks only when the caller holds `finance.read` / `audit.read`.
 - **Shell:** `layouts/AppShell.tsx` reproduces the sidebar (collapsible groups, page finder,
   rail mode, drawer on tablets), top bar (campus & year selectors, global search, language,
   profile menu) and the mobile bottom navigation. `layouts/nav.ts` is the navigation model;

@@ -133,14 +133,7 @@ unlock it at Administration -> Users & Roles, or just wait.
 Light / dark theme: the sun/moon button in the top bar. The choice is
 remembered in this browser; on a first visit the device setting is used.
 
-Owner Overview (Super Admin): the sign-in landing page. Shows the previous
-sign-in, the money (collected, outstanding by age, money out, net), and what
-the management team changed since you were last here.
-
 Things to try:
-  Owner Overview     Super Admin -> Dashboard
-                     (sign in twice, with a change in between, to see the
-                      "since your last sign-in" list fill up)
   Tracking (staff)   Principal -> sidebar "Student Tracking"
                      (map of all students, filters, list, history)
   Student 360        Principal -> Students -> Aditya Kumar
