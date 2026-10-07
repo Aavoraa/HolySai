@@ -2,6 +2,7 @@ import { lazy } from 'react';
 import type { AppRoute } from '../registry';
 
 const CommandCenterPage = lazy(() => import('./CommandCenterPage'));
+const OwnerOverviewPage = lazy(() => import('./OwnerOverviewPage'));
 const NotificationsPage = lazy(() => import('./NotificationsPage'));
 const MyTasksPage = lazy(() => import('./MyTasksPage'));
 const AccountPage = lazy(() => import('./AccountPage'));
@@ -11,6 +12,7 @@ const AdminSettingsPage = lazy(() => import('./AdminSettingsPage'));
 
 export const routes: AppRoute[] = [
   { path: '/command-center', perm: ['students.read'], element: <CommandCenterPage /> },
+  { path: '/overview', perm: ['finance.read', 'audit.read'], element: <OwnerOverviewPage /> },
   { path: '/notifications', element: <NotificationsPage /> },
   { path: '/my-tasks', element: <MyTasksPage /> },
   { path: '/account', element: <AccountPage /> },

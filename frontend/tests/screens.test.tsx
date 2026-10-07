@@ -28,6 +28,7 @@ const { APP_ROUTES } = await import('@/pages/registry');
 const { default: App } = await import('@/App');
 
 const ACCOUNTS: Record<string, string> = {
+  super_admin: 'admin.demo@holysai.edu',
   principal: 'meera.krishnan.demo@holysai.edu',
   teacher: 'priya.raghavan.demo@holysai.edu',
   parent: 'ranjith.kumar.demo@parents.holysai.edu',
@@ -122,6 +123,7 @@ const EXPECT: Record<string, RegExp[]> = {
   '/student-tracking/:id': [/Aditya Kumar/, /Latitude/],
   '/command-center': [/Total Students/, /Attendance analytics/],
   '/students': [/Aditya Kumar|Students/],
+  '/overview': [/signed in|first recorded sign-in/, /Fees collected/, /Still outstanding/, /Money out/, /Net position/, /What families still owe/],
 };
 
 const onlyRoles = process.env.ROLES?.split(',');
@@ -166,7 +168,16 @@ describe.each(Object.keys(ACCOUNTS).filter((r) => !onlyRoles || onlyRoles.includ
       const shown = ERROR_TEXT.filter((re) => re.test(titles)).map(String);
       const trackingTarget = /tab=tracking|tab=track|student-tracking/.test(target);
       const canTrack = ['tracking.read_all', 'tracking.read_assigned', 'tracking.read_own_children'].some((p) => perms.has(p));
-      const missing = (trackingTarget && !canTrack ? [] : EXPECT[target] ?? []).filter((re) => !re.test(text)).map(String);
+      // Personal workspaces (Parent 360, My Profile, Staff Self-Service) show one
+      // person's own records. Administrators hold the permission but have no
+      // parent, student or employee record behind it, so the page correctly
+      // reports that nothing is linked — assert content only for a role that
+      // owns such a record. The menu hides these from administrators for the
+      // same reason (NOT_FOR_ADMINS in layouts/nav.ts).
+      const personalTarget = /^\/(parent-360|my-profile|staff-self)/.test(target);
+      const ownsRecord = !!(user.parentId ?? user.studentId ?? user.employeeId);
+      const skipContent = (trackingTarget && !canTrack) || (personalTarget && !ownsRecord);
+      const missing = (skipContent ? [] : EXPECT[target] ?? []).filter((re) => !re.test(text)).map(String);
       if (missing.length) failures.push(`${path}: missing ${missing.join(', ')}`);
       const heading = container.querySelector('h1')?.textContent?.trim() ?? '(no h1)';
       if (!settled) failures.push(`${path}: still loading after 12 s`);
