@@ -1,6 +1,9 @@
+import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
+import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
   AlertItem, Badge, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter, Page, PageSkeleton,
@@ -11,10 +14,12 @@ import { fmt } from '@/lib/format';
 /**
  * Owner Overview — the Super Admin's landing page.
  *
- * Three blocks, in the order an owner reads them: when they were last here and
- * what has changed, the money, and what the management team has been doing.
- * Revenue and activity arrive as null when the signed-in role lacks
- * finance.read / audit.read, so each block renders only when permitted.
+ * A welcome strip (last sign-in, what has changed), then one panel for the
+ * campus picked in its dropdown (or all campuses), in five numbered sections:
+ * school overview, strategic goals, final approvals, critical exceptions, and
+ * configuration & governance. Revenue, activity and school arrive as null when
+ * the signed-in role lacks finance.read / audit.read, so each part renders only
+ * when permitted. Day-to-day running stays on the Command Center.
  */
 
 interface Overview {
@@ -44,9 +49,39 @@ interface Overview {
     }[];
     approvals: { label: string; count: number; to: string; icon: string; unit: 'money' | 'days'; total: number; oldest: string | null }[];
   };
+  school: null | {
+    standards: { avgScore: number | null; assessments: number; belowPass: number; assessed: number;
+                 syllabus: number | null; mastery: number | null; attendance: number | null };
+    discipline: { openIncidents: number; critical: number; escalated: number; incidents30: number; concerns30: number; positive30: number };
+    goals: {
+      overall: number | null;
+      targets: { label: string; pct: number | null; to: string }[];
+      departments: { module: string; total: number; done: number; overdue: number }[];
+      staff: { name: string; role: string; open: number; overdue: number; oldestDue: string | null }[];
+      blockers: { kind: string; title: string; meta: string; daysLate: number; to: string }[];
+    };
+    approvals: {
+      total: number; overdue: number; amount: number;
+      items: { id: string; kind: string; title: string; requestor: string | null; amount: number | null; days: number | null;
+               raisedAt: string; deadline: string; to: string; priority: 'High' | 'Medium' | 'Low' }[];
+    };
+    exceptions: { marksLate: number; plansWaiting: number; safetyOpen: number; tasksOverdue: number; tasksHigh: number;
+                  fees60: number; families60: number; overBudget: number };
+    governance: {
+      setup: { pct: number; checks: { label: string; ok: boolean }[] };
+      access: { active: number; suspended: number; invited: number; locked: number; dormant: number; roles: number; failed7: number };
+      policies: { active: number; review: number; draft: number; lastChange: string | null };
+      trail: { day: number; week: number; sensitive: number };
+      hierarchy: { role: string; users: number }[];
+    };
+  };
 }
 
 type Revenue = NonNullable<Overview['revenue']>;
+type Activity = NonNullable<Overview['activity']>;
+
+/** Dropdown value for the consolidated group view. */
+const GROUP = '__group__';
 
 /** Modules read better in the owner's language than in the API's. */
 const MODULE_LABEL: Record<string, string> = {
@@ -113,9 +148,13 @@ const daysSince = (at: string | null) => (at ? Math.max(0, Math.floor((Date.now(
 const ageTone = (days: number) => (days > 60 ? 'critical' : days > 30 ? 'warning' : 'caution');
 
 export default function OwnerOverviewPage() {
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const { t } = useI18n();
   const school = useSchool();
+  const { lookups } = useLookups();
+  const campusOptions = lookups?.campuses ?? [];
+  const canGroup = can('dashboard.group');
+  const campusValue = school.scope === 'group' ? GROUP : school.campusId ?? '';
   const q = useApiQuery<Overview>('/dashboard/overview', { scope: school.scope, campusId: school.campusId },
     { refetchInterval: 300_000 });
 
@@ -140,13 +179,31 @@ export default function OwnerOverviewPage() {
   if (q.error || !q.data) return <Page>{head}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
 
   const d = q.data;
-  const { previousVisit: visit, welcome, revenue, activity } = d;
+  const { previousVisit: visit, welcome, revenue, activity, school: sc } = d;
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const ex = sc?.exceptions;
+  const exceptions = ex ? [
+    { label: 'Academic delays', icon: 'book', tone: 'warning', to: '/assessments', count: ex.marksLate + ex.plansWaiting,
+      badge: String(ex.marksLate + ex.plansWaiting),
+      detail: `${ex.marksLate} assessment${ex.marksLate === 1 ? '' : 's'} not finalised a week after the exam · ${ex.plansWaiting} lesson plan${ex.plansWaiting === 1 ? '' : 's'} waiting over a week` },
+    { label: 'Safety issues', icon: 'shield', tone: 'critical', to: '/safeguarding', count: ex.safetyOpen, badge: String(ex.safetyOpen),
+      detail: `${ex.safetyOpen} critical or escalated incident${ex.safetyOpen === 1 ? '' : 's'} still open` },
+    { label: 'Overdue tasks', icon: 'clock', tone: ex.tasksHigh > 0 ? 'critical' : 'warning', to: '/my-tasks', count: ex.tasksOverdue,
+      badge: String(ex.tasksOverdue), detail: `${ex.tasksOverdue} past their due date · ${ex.tasksHigh} high priority` },
+    { label: 'Financial risks', icon: 'wallet', tone: 'critical', to: '/student-accounts', count: (ex.fees60 > 0 ? 1 : 0) + ex.overBudget,
+      badge: ex.fees60 > 0 ? fmt.money(ex.fees60, { compact: true }) : String(ex.overBudget),
+      detail: `${fmt.money(ex.fees60, { compact: true })} unpaid over 60 days by ${ex.families60} famil${ex.families60 === 1 ? 'y' : 'ies'} · ${ex.overBudget} budget line${ex.overBudget === 1 ? '' : 's'} overspent` },
+  ] : [];
+  const exceptionCount = exceptions.reduce((s, x) => s + x.count, 0);
+
+  const today = new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' }).format(new Date());
 
   return (
     <Page>
       {head}
 
-      {/* ---- 1. Welcome strip ------------------------------------------- */}
+      {/* ---- Welcome strip ---------------------------------------------- */}
       <section className="card card--navy" style={{ padding: 'var(--s-5) var(--s-6)' }}>
         <div className="row g-4 wrap between">
           <div className="row g-3 grow" style={{ minWidth: 0 }}>
@@ -173,9 +230,264 @@ export default function OwnerOverviewPage() {
         </div>
       </section>
 
-      {/* ---- 2. Revenue -------------------------------------------------- */}
-      {revenue ? (
-        <>
+      {/* ---- The campus panel: five numbered sections -------------------- */}
+      <section className="card ov-panel mt-5">
+        {/* 1. School overview */}
+        <div className="ov-head">
+          <h2 className="ov-head__title grow"><Icon name="grid" size={20} />1. School overview</h2>
+          <div className="row g-3 wrap t-sm t-muted">
+            {campusOptions.length > 0 ? (
+              <select className="select ov-campus" aria-label="Campus" value={campusValue}
+                onChange={(e) => (e.target.value === GROUP ? school.setGroup() : school.setCampus(e.target.value))}>
+                {canGroup && <option value={GROUP}>All campuses</option>}
+                {campusOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : <span className="t-bold">{scopeLabel}</span>}
+            <span>{school.yearLabel}</span>
+            <span>·</span>
+            <span>{today}</span>
+          </div>
+        </div>
+
+        <Grid cols="g-3col">
+          <OverviewTile eyebrow="Finance" title="Revenue" sub="Collection & expenditure" to={revenue ? '/financial-reports' : undefined}
+            figs={revenue ? [
+              ['Collected', fmt.money(revenue.collected, { compact: true })],
+              ['Spent', fmt.money(revenue.out.total, { compact: true })],
+              ['Outstanding', fmt.money(revenue.outstanding, { compact: true }), revenue.aged.due60plus > 0 ? 'critical' : undefined],
+              ['Net', fmt.money(revenue.net, { compact: true }), revenue.net < 0 ? 'critical' : undefined],
+            ] : [['Access', 'Not in your role']]} />
+          <OverviewTile eyebrow="Academics" title="Standards" sub="Results & syllabus" to="/academic-performance"
+            figs={sc ? [
+              ['Average score', sc.standards.avgScore != null ? `${sc.standards.avgScore}%` : '—'],
+              ['Syllabus covered', sc.standards.syllabus != null ? `${sc.standards.syllabus}%` : '—'],
+              ['Attendance (30 days)', sc.standards.attendance != null ? `${sc.standards.attendance}%` : '—',
+                sc.standards.attendance != null && sc.standards.attendance < 85 ? 'critical' : undefined],
+              ['Below pass mark', `${fmt.n(sc.standards.belowPass)} student${sc.standards.belowPass === 1 ? '' : 's'}`,
+                sc.standards.belowPass > 0 ? 'critical' : undefined],
+            ] : []} />
+          <OverviewTile eyebrow="Operations" title="Discipline" sub="Safety & incidents" to="/safeguarding"
+            figs={sc ? [
+              ['Open incidents', fmt.n(sc.discipline.openIncidents)],
+              ['Critical', fmt.n(sc.discipline.critical), sc.discipline.critical > 0 ? 'critical' : undefined],
+              ['Behaviour concerns', `${fmt.n(sc.discipline.concerns30)} in 30 days`],
+              ['Positive notes', `${fmt.n(sc.discipline.positive30)} in 30 days`],
+            ] : []} />
+        </Grid>
+
+        {revenue && (
+          <details className="ov-details">
+            <summary>Finance detail<Icon name="chevronDown" size={14} className="ov-chev" /></summary>
+            <FinanceDetail revenue={revenue} />
+          </details>
+        )}
+
+        {/* 2. Strategic goals and management performance */}
+        {sc && (
+          <div className="ov-box">
+            <h3 className="ov-head__title"><Icon name="target" size={19} />2. Strategic goals and management performance</h3>
+            <div className="ov-head__sub">Institutional targets · Department progress · Staff accountability · Project blockers</div>
+            <div className="row g-3 mt-3">
+              <div className="ov-progress grow" role="progressbar" aria-valuenow={sc.goals.overall ?? 0} aria-valuemin={0} aria-valuemax={100}
+                aria-label="Overall progress against targets">
+                <span style={{ width: `${sc.goals.overall ?? 0}%` }} />
+              </div>
+              <strong className="t-sm t-num none">{sc.goals.overall != null ? `${sc.goals.overall}% overall` : 'No targets yet'}</strong>
+            </div>
+
+            <Grid cols="g-4col" className="mt-5">
+              <div className="col g-3">
+                <div className="ov-label">Institutional targets</div>
+                {sc.goals.targets.map((t) => (
+                  <Meter key={t.label} label={t.label} value={t.pct ?? 0} right={t.pct != null ? `${t.pct}%` : '—'}
+                    tone={t.pct != null && t.pct < 60 ? 'critical' : 'teal'} />
+                ))}
+              </div>
+              <div className="col g-3">
+                <div className="ov-label">Department progress</div>
+                {sc.goals.departments.length ? sc.goals.departments.map((d) => (
+                  <Meter key={d.module} label={moduleLabel(d.module)} value={pctOf(d.done, d.total)} right={`${d.done}/${d.total}`}
+                    tone={d.overdue > 0 ? 'critical' : 'teal'} hint={d.overdue > 0 ? `${d.overdue} overdue` : 'On track'} />
+                )) : <div className="t-sm t-muted">No tasks assigned yet.</div>}
+              </div>
+              <div className="col g-2">
+                <div className="ov-label">Staff accountability</div>
+                {sc.goals.staff.length ? sc.goals.staff.map((p) => (
+                  <div key={p.name} className="row between g-3">
+                    <Person name={p.name} meta={`${p.role} · ${p.open} open`} />
+                    <Badge tone={p.overdue > 3 ? 'critical' : 'warning'} title={p.oldestDue ? `Oldest due ${fmt.date(p.oldestDue)}` : undefined}>
+                      {p.overdue} overdue
+                    </Badge>
+                  </div>
+                )) : <div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />Nobody is behind on their tasks.</div>}
+              </div>
+              <div className="col g-2">
+                <div className="ov-label">Project blockers</div>
+                {sc.goals.blockers.length ? sc.goals.blockers.map((b, i) => (
+                  <AlertItem key={i} tone={b.daysLate > 30 ? 'critical' : 'warning'} icon={b.kind === 'Project' ? 'rocket' : 'clipboard'}
+                    title={b.title} meta={`${b.meta} · ${b.daysLate} day${b.daysLate === 1 ? '' : 's'} late`} to={b.to} />
+                )) : <div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />No project is past a deadline.</div>}
+              </div>
+            </Grid>
+
+            {activity && (
+              <details className="ov-details mt-5">
+                <summary>Management activity {visit.firstVisit ? 'in the last seven days' : 'since your last sign-in'}<Icon name="chevronDown" size={14} className="ov-chev" /></summary>
+                <ActivityDetail activity={activity} firstVisit={visit.firstVisit} />
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* 3. Final approvals · 4. Critical exceptions */}
+        {sc && (
+          <Grid cols="g-2col">
+            <div className="ov-box">
+              <h3 className="ov-head__title"><Icon name="checkSquare" size={19} />3. Final approvals</h3>
+              <div className="ov-head__sub">Priority, amount, requestor, age and decision deadline.</div>
+              <div className="row g-2 wrap mt-3">
+                {sc.approvals.total > 0
+                  ? <Badge tone="warning">Action required</Badge>
+                  : <Badge tone="success">All clear</Badge>}
+                {sc.approvals.total > 0 && (
+                  <span className="t-xs t-muted">
+                    {sc.approvals.total} waiting · {fmt.money(sc.approvals.amount, { compact: true })} at stake
+                    {sc.approvals.overdue > 0 && <> · <strong style={{ color: 'var(--critical-text)' }}>{sc.approvals.overdue} past deadline</strong></>}
+                  </span>
+                )}
+              </div>
+              {sc.approvals.items.length > 0 && (
+                <div className="table-wrap mt-3">
+                  <table className="table table--compact">
+                    <thead>
+                      <tr><th>Priority</th><th>Request</th><th className="t-right">Amount</th><th>Age</th><th>Decide by</th></tr>
+                    </thead>
+                    <tbody>
+                      {sc.approvals.items.map((a) => {
+                        const late = a.deadline < todayIso;
+                        return (
+                          <tr key={a.kind + a.id}>
+                            <td><Badge tone={a.priority === 'High' ? 'critical' : a.priority === 'Medium' ? 'warning' : 'neutral'}>{a.priority}</Badge></td>
+                            <td>
+                              <Link to={a.to} className="t-bold t-sm">{a.title}</Link>
+                              <div className="t-micro t-muted">{a.kind}{a.requestor ? ` · ${a.requestor}` : ''}</div>
+                            </td>
+                            <td className="t-right t-num">{a.amount != null ? fmt.money(a.amount, { compact: true }) : `${a.days} day${a.days === 1 ? '' : 's'}`}</td>
+                            <td className="t-num">{daysSince(a.raisedAt)}d</td>
+                            <td className="t-num" style={{ color: late ? 'var(--critical-text)' : undefined }}>{fmt.date(a.deadline)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div className="ov-box">
+              <h3 className="ov-head__title"><Icon name="alert" size={19} />4. Critical exceptions</h3>
+              <div className="ov-head__sub">Academic delays, safety issues, overdue tasks and financial risks.</div>
+              <div className="row g-2 wrap mt-3">
+                {exceptionCount > 0 ? <Badge tone="critical">Review required</Badge> : <Badge tone="success">Nothing critical</Badge>}
+              </div>
+              <div className="mt-3">
+                {exceptions.map((x) => (
+                  <AlertItem key={x.label} tone={x.count > 0 ? x.tone : 'success'} icon={x.count > 0 ? x.icon : 'check'} title={x.label}
+                    meta={x.detail} to={x.to} right={<Badge tone={x.count > 0 ? x.tone : 'success'}>{x.badge}</Badge>} />
+                ))}
+              </div>
+            </div>
+          </Grid>
+        )}
+
+        {/* 5. School configuration & governance */}
+        {sc && (
+          <div style={{ padding: 'var(--s-2) var(--s-1) 0' }}>
+            <h3 className="ov-head__title"><Icon name="settings" size={19} />5. School configuration &amp; governance</h3>
+            <div className="ov-head__sub">Setup status · Access controls · Policies · Audit trail · Reporting hierarchy</div>
+            <Grid cols="g-auto" className="mt-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+              <div className="ov-tile">
+                <div className="ov-label">Setup status</div>
+                <Meter label={`${sc.governance.setup.checks.filter((x) => x.ok).length} of ${sc.governance.setup.checks.length} configured`}
+                  value={sc.governance.setup.pct} right={`${sc.governance.setup.pct}%`} tone={sc.governance.setup.pct < 100 ? 'critical' : 'teal'} />
+                <div className="col g-1 mt-3">
+                  {sc.governance.setup.checks.map((x) => (
+                    <span key={x.label} className="row g-2 t-xs" style={{ color: x.ok ? undefined : 'var(--critical-text)' }}>
+                      <Icon name={x.ok ? 'check' : 'x'} size={13} />{x.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Link className="ov-tile" to="/admin/users">
+                <div className="ov-label">Access controls</div>
+                <GovLine label="Active users" value={fmt.n(sc.governance.access.active)} />
+                <GovLine label="Roles in use" value={fmt.n(sc.governance.access.roles)} />
+                <GovLine label="Suspended · invited" value={`${sc.governance.access.suspended} · ${sc.governance.access.invited}`} />
+                <GovLine label="Locked accounts" value={fmt.n(sc.governance.access.locked)} warn={sc.governance.access.locked > 0} />
+                <GovLine label="Dormant 30+ days" value={fmt.n(sc.governance.access.dormant)} warn={sc.governance.access.dormant > 0} />
+                <GovLine label="Failed sign-ins (7 days)" value={fmt.n(sc.governance.access.failed7)} warn={sc.governance.access.failed7 > 0} />
+              </Link>
+              <Link className="ov-tile" to="/group-policies">
+                <div className="ov-label">Policies</div>
+                <GovLine label="Active" value={fmt.n(sc.governance.policies.active)} />
+                <GovLine label="Under review" value={fmt.n(sc.governance.policies.review)} warn={sc.governance.policies.review > 0} />
+                <GovLine label="Drafts" value={fmt.n(sc.governance.policies.draft)} />
+                <GovLine label="Last changed" value={sc.governance.policies.lastChange ? fmt.relative(sc.governance.policies.lastChange) : '—'} />
+              </Link>
+              <Link className="ov-tile" to="/audit">
+                <div className="ov-label">Audit trail</div>
+                <GovLine label="Changes (24 hours)" value={fmt.n(sc.governance.trail.day)} />
+                <GovLine label="Changes (7 days)" value={fmt.n(sc.governance.trail.week)} />
+                <GovLine label="Sensitive (7 days)" value={fmt.n(sc.governance.trail.sensitive)} warn={sc.governance.trail.sensitive > 0} />
+                <GovLine label="Since your last visit" value={fmt.n(welcome.changes)} />
+              </Link>
+              <div className="ov-tile">
+                <div className="ov-label">Reporting hierarchy</div>
+                {sc.governance.hierarchy.length ? sc.governance.hierarchy.map((h, i) => (
+                  <GovLine key={h.role} label={<span style={{ paddingLeft: Math.min(i, 3) * 8 }}>{i > 0 ? '└ ' : ''}{h.role}</span>} value={fmt.n(h.users)} />
+                )) : <div className="t-sm t-muted">No active staff accounts.</div>}
+              </div>
+            </Grid>
+
+            {activity && activity.important.length > 0 && (
+              <details className="ov-details mt-4">
+                <summary>Changes worth your attention ({activity.important.length})<Icon name="chevronDown" size={14} className="ov-chev" /></summary>
+                <div className="card" style={{ overflow: 'hidden' }}>
+                  {activity.important.map((e) => {
+                    const detail = metaSummary(e.metadata);
+                    return (
+                      <AlertItem key={e.id} tone={toneFor(e.action, e.module)} icon={ICON_FOR[e.action] ?? 'alertCircle'} title={e.description}
+                        meta={
+                          <>
+                            {e.userName} ({e.role.replace(/_/g, ' ')}) · {moduleLabel(e.module)} · {fmt.dateTime(e.at)}
+                            {e.device ? ` · ${e.device}` : ''}{e.ip ? ` (${e.ip})` : ''}
+                            {detail && <span className="t-micro t-muted" style={{ display: 'block', marginTop: 2 }}>{detail}</span>}
+                          </>
+                        }
+                        to={entityLink(e.entityType, e.entityId)} />
+                    );
+                  })}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {!sc && (
+          <div className="banner banner--neutral">
+            <Icon name="lock" size={17} />
+            <div className="grow">Goals, approvals, exceptions and governance need audit access.</div>
+          </div>
+        )}
+      </section>
+    </Page>
+  );
+}
+
+/** The full money picture behind the Revenue tile: trend, spend, what is owed and where. */
+function FinanceDetail({ revenue }: { revenue: Revenue }) {
+  return (
+    <>
           <Grid cols="g-4col" className="mt-5">
             <Kpi
               label="Fees collected" value={fmt.money(revenue.collected, { compact: true })}
@@ -294,103 +606,65 @@ export default function OwnerOverviewPage() {
               </Card>
             )}
           </Grid>
-        </>
-      ) : (
-        <div className="banner banner--neutral mt-5">
-          <Icon name="lock" size={17} />
-          <div className="grow">Financial figures are not part of your role's access.</div>
-        </div>
-      )}
+    </>
+  );
+}
 
-      {/* ---- 3. Management activity -------------------------------------- */}
-      {activity && (
-        <Grid cols="g-side" className="mt-5">
-          <div className="col g-4">
-            <Card title="Waiting for a decision" flush>
-              {activity.approvals.length ? activity.approvals.map((a) => {
-                const waited = daysSince(a.oldest);
-                const total = a.unit === 'days' ? `${fmt.n(a.total)} day${a.total === 1 ? '' : 's'}` : fmt.money(a.total, { compact: true });
-                return (
-                  <AlertItem key={a.label} tone={waited > 7 ? 'critical' : 'warning'} icon={a.icon} title={a.label}
-                    meta={`${a.count} pending · ${total} · oldest waiting ${waited === 0 ? 'since today' : `${waited} day${waited === 1 ? '' : 's'}`}`}
-                    to={a.to}
-                    right={<Badge tone={waited > 7 ? 'critical' : 'warning'}>{a.count}</Badge>} />
-                );
-              }) : (
-                <div className="card__body"><div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />Nothing is waiting on an approval.</div></div>
-              )}
-            </Card>
-
-            <Card title="Busiest areas" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
-              {activity.byModule.length ? (
-                <div className="col g-3">
-                  {activity.byModule.map((m) => (
-                    <Meter key={m.module} label={moduleLabel(m.module)} right={String(m.count)}
-                      value={pctOf(m.count, activity.byModule[0].count)}
-                      hint={[
-                        m.actions.map((x) => `${x.count} ${x.action.replace(/_/g, ' ')}`).join(', '),
-                        m.topPerson ? `mostly ${m.topPerson} (${m.topCount})` : null,
-                      ].filter(Boolean).join(' · ')} />
-                  ))}
-                </div>
-              ) : <div className="t-sm t-muted">No changes recorded in this period.</div>}
-            </Card>
-
-            <Card title="Who has been working" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
-              {activity.byPerson.length ? (
-                <div className="col g-1">
-                  {activity.byPerson.map((p) => (
-                    <div className="col hoverable" key={p.name + p.role} style={{ padding: '6px 0' }}>
-                      <div className="row between g-3">
-                        <Person name={p.name} meta={`${p.role.replace(/_/g, ' ')} · last active ${fmt.relative(p.lastAt)}`} />
-                        <span className="t-sm t-bold t-num none" title="Changes made">{p.count}</span>
-                      </div>
-                      {p.modules.length > 0 && (
-                        <div className="row g-1 wrap mt-1" style={{ paddingLeft: 40 }}>
-                          {p.modules.map((m) => <Badge key={m.module}>{moduleLabel(m.module)} {m.count}</Badge>)}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : <div className="t-sm t-muted">No staff changes recorded in this period.</div>}
-            </Card>
-          </div>
-
-          <Card title="Changes worth your attention"
-            sub={visit.firstVisit ? 'Deletions, approvals, account and settings changes — last seven days' : 'Deletions, approvals, account and settings changes since your last sign-in'}
-            flush
-            actions={<Button size="sm" variant="ghost" icon="arrowRight" to="/audit">Open audit trail</Button>}>
-            {activity.important.length ? activity.important.map((e) => {
-              const detail = metaSummary(e.metadata);
+/** Approvals in aggregate, the busiest areas and who has been working. */
+function ActivityDetail({ activity, firstVisit }: { activity: Activity; firstVisit: boolean }) {
+  const visit = { firstVisit };
+  return (
+        <div className="col g-4">
+          <Card title="Waiting for a decision" flush>
+            {activity.approvals.length ? activity.approvals.map((a) => {
+              const waited = daysSince(a.oldest);
+              const total = a.unit === 'days' ? `${fmt.n(a.total)} day${a.total === 1 ? '' : 's'}` : fmt.money(a.total, { compact: true });
               return (
-                <AlertItem
-                  key={e.id}
-                  tone={toneFor(e.action, e.module)}
-                  icon={ICON_FOR[e.action] ?? 'alertCircle'}
-                  title={e.description}
-                  meta={
-                    <>
-                      {e.userName} ({e.role.replace(/_/g, ' ')}) · {moduleLabel(e.module)} · {fmt.dateTime(e.at)}
-                      {e.device ? ` · ${e.device}` : ''}{e.ip ? ` (${e.ip})` : ''}
-                      {detail && <span className="t-micro t-muted" style={{ display: 'block', marginTop: 2 }}>{detail}</span>}
-                    </>
-                  }
-                  to={entityLink(e.entityType, e.entityId)}
-                />
+                <AlertItem key={a.label} tone={waited > 7 ? 'critical' : 'warning'} icon={a.icon} title={a.label}
+                  meta={`${a.count} pending · ${total} · oldest waiting ${waited === 0 ? 'since today' : `${waited} day${waited === 1 ? '' : 's'}`}`}
+                  to={a.to}
+                  right={<Badge tone={waited > 7 ? 'critical' : 'warning'}>{a.count}</Badge>} />
               );
             }) : (
-              <div className="card__body">
-                <Empty icon="check" title="Nothing needs a second look"
-                  sub={visit.firstVisit
-                    ? 'No deletions, approvals or account changes in the last seven days.'
-                    : 'No deletions, approvals or account changes since you were last here.'} />
-              </div>
+              <div className="card__body"><div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />Nothing is waiting on an approval.</div></div>
             )}
           </Card>
-        </Grid>
-      )}
-    </Page>
+
+          <Card title="Busiest areas" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
+            {activity.byModule.length ? (
+              <div className="col g-3">
+                {activity.byModule.map((m) => (
+                  <Meter key={m.module} label={moduleLabel(m.module)} right={String(m.count)}
+                    value={pctOf(m.count, activity.byModule[0].count)}
+                    hint={[
+                      m.actions.map((x) => `${x.count} ${x.action.replace(/_/g, ' ')}`).join(', '),
+                      m.topPerson ? `mostly ${m.topPerson} (${m.topCount})` : null,
+                    ].filter(Boolean).join(' · ')} />
+                ))}
+              </div>
+            ) : <div className="t-sm t-muted">No changes recorded in this period.</div>}
+          </Card>
+
+          <Card title="Who has been working" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
+            {activity.byPerson.length ? (
+              <div className="col g-1">
+                {activity.byPerson.map((p) => (
+                  <div className="col hoverable" key={p.name + p.role} style={{ padding: '6px 0' }}>
+                    <div className="row between g-3">
+                      <Person name={p.name} meta={`${p.role.replace(/_/g, ' ')} · last active ${fmt.relative(p.lastAt)}`} />
+                      <span className="t-sm t-bold t-num none" title="Changes made">{p.count}</span>
+                    </div>
+                    {p.modules.length > 0 && (
+                      <div className="row g-1 wrap mt-1" style={{ paddingLeft: 40 }}>
+                        {p.modules.map((m) => <Badge key={m.module}>{moduleLabel(m.module)} {m.count}</Badge>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : <div className="t-sm t-muted">No staff changes recorded in this period.</div>}
+          </Card>
+        </div>
   );
 }
 
@@ -398,6 +672,40 @@ export default function OwnerOverviewPage() {
 // Pieces
 // ---------------------------------------------------------------------------
 const pctOf = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
+
+/** One of the three School overview tiles: area, headline, subject, then up to four figures. */
+function OverviewTile({ eyebrow, title, sub, to, figs }: {
+  eyebrow: string; title: string; sub: string; to?: string; figs: [string, string, ('critical' | undefined)?][];
+}) {
+  const content = (
+    <>
+      <div className="ov-tile__eyebrow">{eyebrow}</div>
+      <div className="ov-tile__title">{title}</div>
+      <div className="ov-tile__sub">{sub}</div>
+      {figs.length > 0 && (
+        <div className="ov-tile__figs">
+          {figs.map(([label, value, tone]) => (
+            <div key={label}>
+              <span className="ov-fig__label">{label}</span>
+              <span className="ov-fig__value" style={{ color: tone ? 'var(--critical-text)' : undefined }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+  return to ? <Link className="ov-tile" to={to}>{content}</Link> : <div className="ov-tile">{content}</div>;
+}
+
+/** A label / value line inside a governance tile. */
+function GovLine({ label, value, warn }: { label: ReactNode; value: ReactNode; warn?: boolean }) {
+  return (
+    <div className="row between g-3 t-sm" style={{ padding: '3px 0' }}>
+      <span className="t-muted">{label}</span>
+      <strong className="t-num" style={{ color: warn ? 'var(--critical-text)' : undefined }}>{value}</strong>
+    </div>
+  );
+}
 
 function Figure({ label, value, sub, delta, deltaLabel }: {
   label: string; value: string; sub?: string; delta?: number | null; deltaLabel?: string;

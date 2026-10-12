@@ -604,3 +604,26 @@ button.mcard:hover { border-color: var(--brand-line); box-shadow: var(--sh-2); }
   border-radius: var(--r-pill); padding: 4px 10px;
 }
 .swatch-tile { border-radius: var(--r-md); height: 68px; border: 1px solid var(--border); }
+
+/* ---- Owner overview: numbered sections inside one campus panel --------- */
+.ov-panel { padding: var(--s-5); display: flex; flex-direction: column; gap: var(--s-4); }
+.ov-head { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.ov-head__title { display: flex; align-items: center; gap: var(--s-2); font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 700; color: var(--text-strong); margin: 0; }
+.ov-head__sub { font-size: var(--fs-sm); color: var(--text-muted); margin-top: 4px; }
+.ov-box { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-4) var(--s-5); background: var(--surface); min-width: 0; }
+.ov-tile { border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-4); background: var(--surface); color: inherit; display: block; min-width: 0; transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+a.ov-tile:hover { border-color: var(--brand-line); box-shadow: var(--sh-2); }
+.ov-tile__eyebrow { font-size: var(--fs-xs); color: var(--text-muted); }
+.ov-tile__title { font-family: var(--font-display); font-size: var(--fs-h3, 16px); font-weight: 700; color: var(--text-strong); margin-top: 4px; }
+.ov-tile__sub { font-size: var(--fs-xs); color: var(--text); margin-top: 2px; }
+.ov-tile__figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px solid var(--border-soft); }
+.ov-fig__label { font-size: 11.5px; color: var(--text-muted); display: block; }
+.ov-fig__value { font-size: var(--fs-md, 15px); font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.ov-progress { height: 8px; border-radius: 99px; background: var(--bg-sunken); overflow: hidden; }
+.ov-progress > span { display: block; height: 100%; background: var(--teal); border-radius: inherit; }
+.ov-label { font-size: var(--fs-xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: var(--s-2); }
+.ov-details > summary { cursor: pointer; font-size: var(--fs-sm); font-weight: 600; color: var(--brand); list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.ov-details > summary::-webkit-details-marker { display: none; }
+.ov-details[open] > summary { margin-bottom: var(--s-4); }
+.ov-details[open] > summary .ov-chev { transform: rotate(180deg); }
+.ov-campus { width: auto; min-width: 190px; font-weight: 600; }

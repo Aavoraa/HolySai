@@ -11,6 +11,8 @@ import { BAL, NET } from './finance-fees.service.js';
  *   welcome   when the owner last signed in, and how much has changed since
  *   revenue   money in, money out and what is still owed, this academic year
  *   activity  who did what since the last visit, and what awaits approval
+ *   school    standards, discipline, strategic goals, final approvals,
+ *             critical exceptions and governance for the selected campus
  *
  * Every figure is computed live. The revenue and activity blocks are returned
  * only when the caller holds finance.read / audit.read, so the page degrades
@@ -60,13 +62,14 @@ export async function ownerOverview(user: AuthUser, campusId: string | null) {
   };
   const since = previous?.at ?? null;
 
-  const [welcome, revenue, activity] = await Promise.all([
+  const [welcome, revenue, activity, school] = await Promise.all([
     welcomeBlock(since),
     user.permissions.has('finance.read') ? revenueBlock(campusId) : Promise.resolve(null),
     user.permissions.has('audit.read') ? activityBlock(since, campusId) : Promise.resolve(null),
+    user.permissions.has('audit.read') ? schoolBlock(campusId) : Promise.resolve(null),
   ]);
 
-  return { previousVisit: visit, welcome, revenue, activity };
+  return { previousVisit: visit, welcome, revenue, activity, school };
 }
 
 // ---------------------------------------------------------------------------
@@ -424,4 +427,366 @@ async function approvalsWaiting(campusId: string | null) {
     row('Payroll runs', payroll, '/payroll', 'briefcase', 'money'),
     row('Leave requests', leave, '/leave', 'calendar', 'days'),
   ].filter((x) => x.count > 0);
+}
+
+// ---------------------------------------------------------------------------
+// School — the per-campus owner view: standards, discipline, strategic goals,
+// final approvals, critical exceptions and governance
+// ---------------------------------------------------------------------------
+async function schoolBlock(campusId: string | null) {
+  const c = campusId;
+  const [standards, discipline, goals, approvals, exceptions, governance] = await Promise.all([
+    standardsBlock(c), disciplineBlock(c), goalsBlock(c), finalApprovals(c), criticalExceptions(c), governanceBlock(c),
+  ]);
+  return { standards, discipline, goals, approvals, exceptions, governance };
+}
+
+/** Results this year, syllabus coverage and attendance over the last 30 days. */
+async function standardsBlock(c: string | null) {
+  const [results, syllabus, attendance] = await Promise.all([
+    one<{ avgScore: number | null; assessments: number; belowPass: number; students: number }>(
+      `SELECT round(avg(m.marks / a.max_marks * 100)::numeric, 1)::float AS "avgScore",
+              count(DISTINCT a.id)::int AS assessments,
+              count(DISTINCT m.student_id) FILTER (WHERE m.marks / a.max_marks < 0.35)::int AS "belowPass",
+              count(DISTINCT m.student_id)::int AS students
+         FROM assessment_marks m
+         JOIN assessments a ON a.id = m.assessment_id
+         JOIN students s ON s.id = m.student_id
+        WHERE a.academic_year_id = ${YEAR_ID}
+          AND NOT m.is_absent AND m.marks IS NOT NULL
+          AND s.deleted_at IS NULL
+          AND ($1::uuid IS NULL OR s.campus_id = $1)`,
+      [c],
+    ),
+    // Learning objectives belong to the curriculum, not to a campus.
+    one<{ coverage: number | null; mastery: number | null }>(
+      `SELECT round(avg(coverage_pct))::int AS coverage, round(avg(mastery_pct))::int AS mastery
+         FROM learning_objectives`,
+      [],
+    ),
+    one<{ pct: number | null }>(
+      `SELECT round(100.0 * count(*) FILTER (WHERE r.status IN ('present', 'late')) / NULLIF(count(*), 0), 1)::float AS pct
+         FROM attendance_records r JOIN students s ON s.id = r.student_id
+        WHERE r.attendance_date >= current_date - 30
+          AND s.deleted_at IS NULL
+          AND ($1::uuid IS NULL OR s.campus_id = $1)`,
+      [c],
+    ),
+  ]);
+  return {
+    avgScore: results?.avgScore ?? null,
+    assessments: results?.assessments ?? 0,
+    belowPass: results?.belowPass ?? 0,
+    assessed: results?.students ?? 0,
+    syllabus: syllabus?.coverage ?? null,
+    mastery: syllabus?.mastery ?? null,
+    attendance: attendance?.pct ?? null,
+  };
+}
+
+/** Open safety incidents, and behaviour recorded over the last 30 days. */
+async function disciplineBlock(c: string | null) {
+  const [incidents, behaviour] = await Promise.all([
+    one<{ open: number; critical: number; escalated: number; month: number }>(
+      `SELECT count(*) FILTER (WHERE status <> 'Closed')::int AS open,
+              count(*) FILTER (WHERE status <> 'Closed' AND severity = 'Critical')::int AS critical,
+              count(*) FILTER (WHERE status = 'Escalated')::int AS escalated,
+              count(*) FILTER (WHERE occurred_on >= current_date - 30)::int AS month
+         FROM incidents
+        WHERE ($1::uuid IS NULL OR campus_id = $1)`,
+      [c],
+    ),
+    one<{ concerns: number; positive: number }>(
+      `SELECT count(*) FILTER (WHERE b.record_type IN ('Concern', 'Incident'))::int AS concerns,
+              count(*) FILTER (WHERE b.record_type = 'Positive')::int AS positive
+         FROM behaviour_records b JOIN students s ON s.id = b.student_id
+        WHERE b.recorded_on >= current_date - 30
+          AND s.deleted_at IS NULL
+          AND ($1::uuid IS NULL OR s.campus_id = $1)`,
+      [c],
+    ),
+  ]);
+  return {
+    openIncidents: incidents?.open ?? 0,
+    critical: incidents?.critical ?? 0,
+    escalated: incidents?.escalated ?? 0,
+    incidents30: incidents?.month ?? 0,
+    concerns30: behaviour?.concerns ?? 0,
+    positive30: behaviour?.positive ?? 0,
+  };
+}
+
+/**
+ * Strategic goals: institutional targets as percentages, task progress by
+ * department, who holds the overdue work, and the projects that are stuck.
+ * Tasks have no campus of their own; a campus view counts the tasks assigned
+ * to people of that campus.
+ */
+async function goalsBlock(c: string | null) {
+  const [targets, departments, staff, blockers] = await Promise.all([
+    one<{ fees: number | null; attendance: number | null; syllabus: number | null; compliance: number | null; tasks: number | null }>(
+      `SELECT
+         (SELECT round(100.0 * sum(f.amount_paid) / NULLIF(sum(${NET()}), 0))::int
+            FROM student_fees f JOIN students s ON s.id = f.student_id
+           WHERE f.academic_year_id = ${YEAR_ID} AND s.deleted_at IS NULL
+             AND ($1::uuid IS NULL OR s.campus_id = $1)) AS fees,
+         (SELECT round(100.0 * count(*) FILTER (WHERE r.status IN ('present', 'late')) / NULLIF(count(*), 0))::int
+            FROM attendance_records r JOIN students s ON s.id = r.student_id
+           WHERE r.attendance_date >= current_date - 30 AND s.deleted_at IS NULL
+             AND ($1::uuid IS NULL OR s.campus_id = $1)) AS attendance,
+         (SELECT round(avg(coverage_pct))::int FROM learning_objectives) AS syllabus,
+         (SELECT round(100.0 * count(*) FILTER (WHERE status = 'Completed') / NULLIF(count(*), 0))::int
+            FROM compliance_items WHERE ($1::uuid IS NULL OR campus_id = $1)) AS compliance,
+         (SELECT round(100.0 * count(*) FILTER (WHERE t.status = 'Completed') / NULLIF(count(*), 0))::int
+            FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id
+           WHERE t.status <> 'Cancelled' AND ($1::uuid IS NULL OR u.campus_id = $1)) AS tasks`,
+      [c],
+    ),
+    many<{ module: string; total: number; done: number; overdue: number }>(
+      `SELECT t.module, count(*)::int AS total,
+              count(*) FILTER (WHERE t.status = 'Completed')::int AS done,
+              count(*) FILTER (WHERE t.status IN ('Pending', 'Under Review') AND t.due_on < current_date)::int AS overdue
+         FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id
+        WHERE t.status <> 'Cancelled' AND ($1::uuid IS NULL OR u.campus_id = $1)
+        GROUP BY t.module
+        ORDER BY overdue DESC, total DESC
+        LIMIT 6`,
+      [c],
+    ),
+    many<{ name: string; role: string; open: number; overdue: number; oldestDue: string | null }>(
+      `SELECT u.full_name AS name, r.name AS role,
+              count(*)::int AS open,
+              count(*) FILTER (WHERE t.due_on < current_date)::int AS overdue,
+              (min(t.due_on) FILTER (WHERE t.due_on < current_date))::text AS "oldestDue"
+         FROM tasks t JOIN users u ON u.id = t.assignee_user_id JOIN roles r ON r.id = u.role_id
+        WHERE t.status IN ('Pending', 'Under Review') AND ($1::uuid IS NULL OR u.campus_id = $1)
+        GROUP BY u.id, u.full_name, r.name
+        HAVING count(*) FILTER (WHERE t.due_on < current_date) > 0
+        ORDER BY overdue DESC, open DESC
+        LIMIT 5`,
+      [c],
+    ),
+    many<{ kind: string; title: string; meta: string; daysLate: number; to: string }>(
+      `SELECT * FROM (
+         SELECT 'Project' AS kind, p.title || ' — ' || m.title AS title,
+                'Milestone due ' || to_char(m.due_on, 'DD Mon') AS meta,
+                (current_date - m.due_on)::int AS "daysLate", '/projects/' || p.id AS to
+           FROM innovation_milestones m
+           JOIN innovation_projects p ON p.id = m.project_id
+           JOIN students s ON s.id = p.lead_student_id
+          WHERE m.completed_on IS NULL AND m.due_on < current_date
+            AND ($1::uuid IS NULL OR s.campus_id = $1)
+         UNION ALL
+         SELECT 'Compliance', ci.item, ci.authority || ' · ' || ci.owner_name,
+                (current_date - ci.due_on)::int, '/compliance'
+           FROM compliance_items ci
+          WHERE ci.status <> 'Completed' AND ci.due_on < current_date
+            AND ($1::uuid IS NULL OR ci.campus_id = $1)
+       ) x
+       ORDER BY "daysLate" DESC
+       LIMIT 5`,
+      [c],
+    ),
+  ]);
+
+  const list = [
+    { label: 'Fee collection', pct: targets?.fees ?? null, to: '/student-accounts' },
+    { label: 'Attendance (30 days)', pct: targets?.attendance ?? null, to: '/attendance' },
+    { label: 'Syllabus coverage', pct: targets?.syllabus ?? null, to: '/curriculum' },
+    { label: 'Compliance completed', pct: targets?.compliance ?? null, to: '/compliance' },
+    { label: 'Tasks closed', pct: targets?.tasks ?? null, to: '/my-tasks' },
+  ];
+  const known = list.filter((t) => t.pct != null);
+  const overall = known.length ? Math.round(known.reduce((s, t) => s + (t.pct ?? 0), 0) / known.length) : null;
+  return { overall, targets: list, departments, staff, blockers };
+}
+
+/** Days allowed for a decision once an item is raised. Payroll and leave are tighter, below. */
+const DECISION_DAYS = 7;
+
+/**
+ * Individual items awaiting a final decision: who raised them, the sum at
+ * stake, how long they have waited and when a decision is due.
+ */
+async function finalApprovals(c: string | null) {
+  const rows = await many<{
+    id: string; kind: string; title: string; requestor: string | null; amount: number | null; days: number | null;
+    raisedAt: string; deadline: string; to: string;
+  }>(
+    `SELECT * FROM (
+       SELECT e.id::text AS id, 'Expense' AS kind, e.code || ' · ' || e.description AS title,
+              COALESCE(emp.full_name, cu.full_name) AS requestor, e.amount::float AS amount, NULL::float AS days,
+              e.created_at AS "raisedAt", (e.created_at::date + ${DECISION_DAYS})::text AS deadline, '/expenses' AS to
+         FROM expenses e
+         LEFT JOIN employees emp ON emp.id = e.submitted_by
+         LEFT JOIN users cu ON cu.id = e.created_by
+        WHERE e.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR e.campus_id = $1)
+       UNION ALL
+       SELECT co.id::text, 'Concession', co.concession_type || ' · ' || s.full_name,
+              cu.full_name, co.amount::float, NULL,
+              co.created_at, (co.created_at::date + ${DECISION_DAYS})::text, '/concessions'
+         FROM concessions co
+         JOIN students s ON s.id = co.student_id
+         LEFT JOIN users cu ON cu.id = co.created_by
+        WHERE co.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR s.campus_id = $1)
+       UNION ALL
+       SELECT rb.id::text, 'Reimbursement', rb.code || ' · ' || rb.claim_type,
+              emp.full_name, rb.amount::float, NULL,
+              rb.created_at, (rb.created_at::date + ${DECISION_DAYS})::text, '/reimbursements'
+         FROM reimbursements rb JOIN employees emp ON emp.id = rb.employee_id
+        WHERE rb.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR emp.campus_id = $1)
+       UNION ALL
+       -- Salaries must go out on time: three days to decide.
+       SELECT pr.id::text, 'Payroll', 'Payroll ' || to_char(pr.pay_month, 'Mon YYYY') || COALESCE(' · ' || ca.short_name, ''),
+              cu.full_name, pr.net_total::float, NULL,
+              pr.created_at, (pr.created_at::date + 3)::text, '/payroll'
+         FROM payroll_runs pr
+         LEFT JOIN campuses ca ON ca.id = pr.campus_id
+         LEFT JOIN users cu ON cu.id = pr.created_by
+        WHERE pr.status IN ('Calculated', 'Under Review') AND ($1::uuid IS NULL OR pr.campus_id = $1)
+       UNION ALL
+       -- Leave has to be decided before it starts.
+       SELECT lr.id::text, 'Leave', lt.name || ' · from ' || to_char(lr.from_date, 'DD Mon'),
+              emp.full_name, NULL, lr.days::float,
+              lr.created_at, LEAST(lr.from_date - 1, lr.created_at::date + ${DECISION_DAYS})::text, '/leave'
+         FROM leave_requests lr
+         JOIN employees emp ON emp.id = lr.employee_id
+         JOIN leave_types lt ON lt.id = lr.leave_type_id
+        WHERE lr.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR emp.campus_id = $1)
+     ) x
+     ORDER BY deadline, "raisedAt"`,
+    [c],
+  );
+
+  // Past its deadline, payroll, or a large sum is High; due within two days or a mid-sized sum is Medium.
+  const today = new Date().toISOString().slice(0, 10);
+  const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  const rank = { High: 0, Medium: 1, Low: 2 } as const;
+  const items = rows.map((r) => {
+    const priority: keyof typeof rank =
+      r.deadline < today || r.kind === 'Payroll' || (r.amount ?? 0) >= 100_000 ? 'High'
+        : r.deadline <= soon || (r.amount ?? 0) >= 25_000 ? 'Medium' : 'Low';
+    return { ...r, priority };
+  }).sort((a, b) => rank[a.priority] - rank[b.priority] || a.deadline.localeCompare(b.deadline));
+
+  return {
+    total: items.length,
+    overdue: items.filter((i) => i.deadline < today).length,
+    amount: items.reduce((s, i) => s + (i.amount ?? 0), 0),
+    items: items.slice(0, 8),
+  };
+}
+
+/** Exceptions an owner should know about: academic delays, safety, overdue work and money at risk. */
+async function criticalExceptions(c: string | null) {
+  const row = await one<{
+    marksLate: number; plansWaiting: number; safetyOpen: number; tasksOverdue: number; tasksHigh: number;
+    fees60: number; families60: number; overBudget: number;
+  }>(
+    `SELECT
+       (SELECT count(*) FROM assessments a JOIN classes cl ON cl.id = a.class_id
+         WHERE a.academic_year_id = ${YEAR_ID} AND a.status <> 'Completed' AND a.held_on < current_date - 7
+           AND ($1::uuid IS NULL OR cl.campus_id = $1))::int AS "marksLate",
+       (SELECT count(*) FROM lesson_plans lp JOIN employees emp ON emp.id = lp.author_id
+         WHERE lp.status IN ('Submitted', 'Under Review') AND lp.updated_at < now() - interval '7 days'
+           AND ($1::uuid IS NULL OR emp.campus_id = $1))::int AS "plansWaiting",
+       (SELECT count(*) FROM incidents
+         WHERE status <> 'Closed' AND (severity = 'Critical' OR status = 'Escalated')
+           AND ($1::uuid IS NULL OR campus_id = $1))::int AS "safetyOpen",
+       (SELECT count(*) FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id
+         WHERE t.status IN ('Pending', 'Under Review') AND t.due_on < current_date
+           AND ($1::uuid IS NULL OR u.campus_id = $1))::int AS "tasksOverdue",
+       (SELECT count(*) FROM tasks t LEFT JOIN users u ON u.id = t.assignee_user_id
+         WHERE t.status IN ('Pending', 'Under Review') AND t.due_on < current_date AND t.priority = 'High'
+           AND ($1::uuid IS NULL OR u.campus_id = $1))::int AS "tasksHigh",
+       (SELECT COALESCE(sum(${BAL()}), 0) FROM student_fees f JOIN students s ON s.id = f.student_id
+         WHERE f.academic_year_id = ${YEAR_ID} AND s.deleted_at IS NULL AND f.due_date < current_date - 60
+           AND ($1::uuid IS NULL OR s.campus_id = $1))::float AS "fees60",
+       (SELECT count(DISTINCT f.student_id) FROM student_fees f JOIN students s ON s.id = f.student_id
+         WHERE f.academic_year_id = ${YEAR_ID} AND s.deleted_at IS NULL AND f.due_date < current_date - 60
+           AND ${BAL()} > 0 AND ($1::uuid IS NULL OR s.campus_id = $1))::int AS "families60",
+       (SELECT count(*) FROM budgets b
+         WHERE b.academic_year_id = ${YEAR_ID} AND ($1::uuid IS NULL OR b.campus_id = $1)
+           AND b.allocated < (SELECT COALESCE(sum(e.amount), 0) FROM expenses e
+                               WHERE e.campus_id = b.campus_id AND e.category = b.category
+                                 AND e.status IN ('Approved', 'Paid') AND e.expense_date >= ${YEAR_START}))::int AS "overBudget"`,
+    [c],
+  );
+  return row ?? { marksLate: 0, plansWaiting: 0, safetyOpen: 0, tasksOverdue: 0, tasksHigh: 0, fees60: 0, families60: 0, overBudget: 0 };
+}
+
+/** Setup completeness, access controls, policies, audit volume and the reporting structure. */
+async function governanceBlock(c: string | null) {
+  const [setup, access, policies, trail, hierarchy] = await Promise.all([
+    one<Record<string, boolean>>(
+      `SELECT EXISTS (SELECT 1 FROM academic_years WHERE is_current) AS "academicYear",
+              EXISTS (SELECT 1 FROM classes cl WHERE ($1::uuid IS NULL OR cl.campus_id = $1)) AS classes,
+              EXISTS (SELECT 1 FROM fee_structures fs JOIN classes cl ON cl.id = fs.class_id
+                       WHERE fs.academic_year_id = ${YEAR_ID} AND fs.status = 'Active'
+                         AND ($1::uuid IS NULL OR cl.campus_id = $1)) AS fees,
+              EXISTS (SELECT 1 FROM timetable_entries te JOIN sections sec ON sec.id = te.section_id
+                        JOIN classes cl ON cl.id = sec.class_id
+                       WHERE ($1::uuid IS NULL OR cl.campus_id = $1)) AS timetable,
+              EXISTS (SELECT 1 FROM employees emp WHERE emp.deleted_at IS NULL
+                         AND ($1::uuid IS NULL OR emp.campus_id = $1)) AS staff,
+              EXISTS (SELECT 1 FROM transport_routes) AS transport`,
+      [c],
+    ),
+    one<{ active: number; suspended: number; invited: number; locked: number; dormant: number; roles: number; failed7: number }>(
+      `SELECT count(*) FILTER (WHERE u.status = 'active')::int AS active,
+              count(*) FILTER (WHERE u.status = 'suspended')::int AS suspended,
+              count(*) FILTER (WHERE u.status = 'invited')::int AS invited,
+              count(*) FILTER (WHERE u.locked_until > now())::int AS locked,
+              count(*) FILTER (WHERE u.status = 'active'
+                AND (u.last_login_at IS NULL OR u.last_login_at < now() - interval '30 days'))::int AS dormant,
+              count(DISTINCT u.role_id)::int AS roles,
+              (SELECT count(*) FROM audit_logs a
+                WHERE a.action LIKE '%\\_failed' AND a.created_at > now() - interval '7 days')::int AS failed7
+         FROM users u
+        WHERE u.deleted_at IS NULL AND ($1::uuid IS NULL OR u.campus_id = $1)`,
+      [c],
+    ),
+    one<{ active: number; review: number; draft: number; lastChange: string | null }>(
+      `SELECT count(*) FILTER (WHERE status = 'Active')::int AS active,
+              count(*) FILTER (WHERE status = 'Under review')::int AS review,
+              count(*) FILTER (WHERE status = 'Draft')::int AS draft,
+              max(updated_at) AS "lastChange"
+         FROM group_policies`,
+      [],
+    ),
+    one<{ day: number; week: number; sensitive: number }>(
+      `SELECT count(*) FILTER (WHERE a.created_at > now() - interval '1 day')::int AS day,
+              count(*)::int AS week,
+              count(*) FILTER (WHERE ${IMPORTANT})::int AS sensitive
+         FROM audit_logs a
+        WHERE a.created_at > now() - interval '7 days' AND ${CHANGE_ACTIONS}`,
+      [],
+    ),
+    many<{ role: string; users: number }>(
+      `SELECT r.name AS role, count(u.id)::int AS users
+         FROM roles r
+         JOIN users u ON u.role_id = r.id AND u.deleted_at IS NULL AND u.status = 'active'
+        WHERE r.scope = 'school' AND ($1::uuid IS NULL OR u.campus_id = $1)
+        GROUP BY r.id, r.name
+        ORDER BY min(r.created_at), r.name
+        LIMIT 8`,
+      [c],
+    ),
+  ]);
+
+  const checks = [
+    { label: 'Academic year', ok: !!setup?.academicYear },
+    { label: 'Classes', ok: !!setup?.classes },
+    { label: 'Fee structures', ok: !!setup?.fees },
+    { label: 'Timetable', ok: !!setup?.timetable },
+    { label: 'Staff records', ok: !!setup?.staff },
+    { label: 'Transport routes', ok: !!setup?.transport },
+  ];
+  return {
+    setup: { pct: Math.round((checks.filter((x) => x.ok).length / checks.length) * 100), checks },
+    access: access ?? { active: 0, suspended: 0, invited: 0, locked: 0, dormant: 0, roles: 0, failed7: 0 },
+    policies: policies ?? { active: 0, review: 0, draft: 0, lastChange: null },
+    trail: trail ?? { day: 0, week: 0, sensitive: 0 },
+    hierarchy,
+  };
 }
