@@ -123,8 +123,8 @@ const EXPECT: Record<string, RegExp[]> = {
   '/student-tracking/:id': [/Aditya Kumar/, /Latitude/],
   '/command-center': [/Total Students/, /Attendance analytics/],
   '/students': [/Aditya Kumar|Students/],
-  '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /2\. Strategic goals/, /3\. Final approvals/,
-    /4\. Critical exceptions/, /5\. School configuration/, /Fees collected/, /Net position/, /What families still owe/],
+  // Sections 2–5 need audit.read, so only the parts every permitted role sees are asserted.
+  '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /Fees collected/, /Net position/, /What families still owe/],
 };
 
 const onlyRoles = process.env.ROLES?.split(',');
