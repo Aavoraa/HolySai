@@ -627,3 +627,6 @@ a.ov-tile:hover { border-color: var(--brand-line); box-shadow: var(--sh-2); }
 .ov-details[open] > summary { margin-bottom: var(--s-4); }
 .ov-details[open] > summary .ov-chev { transform: rotate(180deg); }
 .ov-campus { width: auto; min-width: 190px; font-weight: 600; }
+.ov-date { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; width: 40px; height: 42px; border-radius: var(--r-sm, 8px); background: var(--brand-tint, var(--surface-alt)); color: var(--brand); line-height: 1.1; }
+.ov-date > span { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.ov-date > strong { font-size: 15px; }

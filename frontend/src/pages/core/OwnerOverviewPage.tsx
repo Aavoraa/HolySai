@@ -83,6 +83,39 @@ type Activity = NonNullable<Overview['activity']>;
 /** Dropdown value for the consolidated group view. */
 const GROUP = '__group__';
 
+/**
+ * Campus calendar highlights. Sample data until the calendar is wired to the
+ * events table; keyed by campus code, dates as days from today so it stays upcoming.
+ */
+const SAMPLE_EVENTS: Record<string, { in: number; title: string; kind: string; icon: string }[]> = {
+  gdv: [
+    { in: 4, title: 'Inter-house Sports Day', kind: 'Sports', icon: 'award' },
+    { in: 11, title: 'Parent–Teacher Meeting · Term 1', kind: 'PTM', icon: 'users' },
+    { in: 19, title: 'Science Exhibition', kind: 'Academic', icon: 'lightbulb' },
+    { in: 37, title: 'Annual Day Celebration', kind: 'Cultural', icon: 'star' },
+  ],
+  vdv: [
+    { in: 6, title: 'Annual Sports Meet', kind: 'Sports', icon: 'award' },
+    { in: 14, title: 'Diwali Celebration', kind: 'Festival', icon: 'sun' },
+    { in: 23, title: 'Term 1 Examinations begin', kind: 'Exam', icon: 'clipboard' },
+    { in: 45, title: 'Annual Day', kind: 'Cultural', icon: 'star' },
+  ],
+  plc: [
+    { in: 3, title: "Children's Day Assembly", kind: 'Cultural', icon: 'heart' },
+    { in: 9, title: 'Sports Day', kind: 'Sports', icon: 'award' },
+    { in: 17, title: 'Field Trip · Grade 5', kind: 'Trip', icon: 'bus' },
+    { in: 40, title: 'Annual Day & Prize Distribution', kind: 'Cultural', icon: 'star' },
+  ],
+};
+const sampleEventsFor = (code: string | undefined, campuses: { code: string; shortName: string }[]) => {
+  const pick = code ? campuses.filter((c) => c.code === code) : campuses;
+  return pick
+    .flatMap((c) => (SAMPLE_EVENTS[c.code] ?? SAMPLE_EVENTS.gdv).map((e) => ({ ...e, campus: c.shortName })))
+    .sort((a, b) => a.in - b.in)
+    .slice(0, 4)
+    .map((e) => ({ ...e, date: new Date(Date.now() + e.in * 86_400_000) }));
+};
+
 /** Modules read better in the owner's language than in the API's. */
 const MODULE_LABEL: Record<string, string> = {
   finance: 'Finance', communication: 'Communication', academics: 'Academics', workforce: 'Staff',
@@ -249,7 +282,7 @@ export default function OwnerOverviewPage() {
           </div>
         </div>
 
-        <Grid cols="g-3col">
+        <Grid cols="g-4col">
           <OverviewTile eyebrow="Finance" title="Revenue" sub="Collection & expenditure" to={revenue ? '/financial-reports' : undefined}
             figs={revenue ? [
               ['Collected', fmt.money(revenue.collected, { compact: true })],
@@ -273,6 +306,8 @@ export default function OwnerOverviewPage() {
               ['Behaviour concerns', `${fmt.n(sc.discipline.concerns30)} in 30 days`],
               ['Positive notes', `${fmt.n(sc.discipline.positive30)} in 30 days`],
             ] : []} />
+          <EventsTile events={sampleEventsFor(school.scope === 'group' ? undefined : school.campus?.code, campusOptions)}
+            showCampus={school.scope === 'group'} />
         </Grid>
 
         {revenue && (
@@ -695,6 +730,38 @@ function OverviewTile({ eyebrow, title, sub, to, figs }: {
     </>
   );
   return to ? <Link className="ov-tile" to={to}>{content}</Link> : <div className="ov-tile">{content}</div>;
+}
+
+/** Calendar tile: the next few events on the campus calendar. */
+function EventsTile({ events, showCampus }: {
+  events: { title: string; kind: string; icon: string; campus: string; date: Date; in: number }[]; showCampus: boolean;
+}) {
+  return (
+    <Link className="ov-tile" to="/events">
+      <div className="row between g-2">
+        <span className="ov-tile__eyebrow">Calendar</span>
+        <Badge>Sample data</Badge>
+      </div>
+      <div className="ov-tile__title">Upcoming events</div>
+      <div className="ov-tile__sub">As per the campus calendar</div>
+      <div className="ov-tile__figs" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--s-2)' }}>
+        {events.length ? events.map((e) => (
+          <div key={e.campus + e.title} className="row g-3">
+            <span className="ov-date none">
+              <span>{e.date.toLocaleDateString('en-IN', { month: 'short' })}</span>
+              <strong>{e.date.getDate()}</strong>
+            </span>
+            <div className="grow" style={{ minWidth: 0 }}>
+              <div className="t-sm t-bold" style={{ color: 'var(--text-strong)' }}>{e.title}</div>
+              <div className="t-micro t-muted">
+                {e.kind}{showCampus ? ` · ${e.campus}` : ''} · {e.in === 1 ? 'tomorrow' : `in ${e.in} days`}
+              </div>
+            </div>
+          </div>
+        )) : <div className="t-sm t-muted">Nothing on the calendar.</div>}
+      </div>
+    </Link>
+  );
 }
 
 /** A label / value line inside a governance tile. */
