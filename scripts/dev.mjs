@@ -48,7 +48,7 @@ if (env.EXAM_VISION_URL && env.EXAM_VISION_SECRET) {
   } else {
     run('exam', python, ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', url.port || '8006'], {
       cwd: examDir, direct: true, optional: true,
-      env: { ...process.env, EXAM_GATEWAY_SECRET: env.EXAM_VISION_SECRET, PYTHONUNBUFFERED: '1' },
+      env: { ...process.env, EXAM_GATEWAY_SECRET: env.EXAM_VISION_SECRET, EXAM_DEMO: env.EXAM_DEMO ?? '1', PYTHONUNBUFFERED: '1' },
     });
   }
 }

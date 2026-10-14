@@ -132,3 +132,10 @@ services:
       # Type 1 once the school's consent covers sending pages to Anthropic.
       - key: EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED
         sync: false
+      # One sheet at a time: the free instance has 512 MB.
+      - key: EXAM_WORKERS
+        value: "1"
+      # SAMPLE demo: two Grade 5 A tests (Science, Maths) already read and marked,
+      # rebuilt automatically after every wipe. Set to 0 to switch off.
+      - key: EXAM_DEMO
+        value: "1"

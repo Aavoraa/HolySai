@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import demo
 from ..config import STARTED_AT, settings
 from ..db import get_db
 from ..models import Student, User
@@ -96,5 +97,6 @@ def sync(body: Annotated[bytes, Depends(signed_body)], db: DB) -> dict:
     audit(db, None, "roster_synced", "student", None, created=created, updated=updated,
           staff=len(seen), staff_disabled=disabled)
     db.commit()
+    demo_created = demo.ensure_demo(db)  # EXAM_DEMO=1: the sample exams, rebuilt after a wipe
     return {"students_created": created, "students_updated": updated, "staff": len(seen), "staff_disabled": disabled,
-            "started": STARTED_AT}
+            "started": STARTED_AT, "demo_exams_created": len(demo_created)}

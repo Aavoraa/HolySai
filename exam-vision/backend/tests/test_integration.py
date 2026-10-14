@@ -116,3 +116,36 @@ def test_server_defaults_survive_an_empty_database(client, integrated, monkeypat
     client.put("/api/settings/ai", headers=admin, json={"changes": {"claude_enabled": False}})
     assert client.get("/api/settings/ai/status", headers=admin).json()["reading_available"] is False
     assert isinstance(client.get("/api/health").json()["started"], int)
+
+
+def test_demo_exams_are_built_once_after_the_roster_sync(client, integrated, monkeypatch):
+    monkeypatch.setenv("EXAM_DEMO", "1")
+    names = {"HS-2026-1041": "Aditya Kumar", "HS-2026-1055": "Bhavana Iyer", "HS-2026-1058": "Dinesh Selvam",
+             "HS-2026-1076": "Nithya Venkatesh", "HS-2026-1082": "Reshma Chandran", "HS-2026-1085": "Surya Kumar"}
+    roster = {"students": [{"admission_no": no, "name": n, "class_name": "Grade 5 · GDV", "section": "A", "roll_no": str(i)}
+                           for i, (no, n) in enumerate(names.items(), start=1)],
+              "staff": [{"id": TEACHER, "name": "Ms. Priya Raghavan", "role": "teacher"},
+                        {"id": PRINCIPAL, "name": "Mr. Ganesh Venkat", "role": "teacher"}]}
+    assert sync(client, roster).json()["demo_exams_created"] == 2
+    assert sync(client, roster).json()["demo_exams_created"] == 0  # idempotent
+
+    admin = who("99999999-2222-3333-4444-555555555555", "admin", "Admin")
+    exams = {e["name"]: e for e in client.get("/api/exams", headers=admin).json()}
+    sci, maths = exams["Unit Test 2 — Science"], exams["Unit Test 2 — Mathematics"]
+    assert sci["results_status"] == "published" and sci["counts"]["approved"] == 5
+    assert maths["counts"]["submissions"] == 5 and maths["counts"]["pending_review"] == 2
+
+    report = client.get(f"/api/exams/{sci['id']}/report", headers=admin).json()
+    totals = {s["name"]: s["total"] for s in report["students"]}
+    assert totals == {"Aditya Kumar": 9, "Bhavana Iyer": 8, "Dinesh Selvam": 6, "Nithya Venkatesh": 7, "Reshma Chandran": 6}
+    assert report["overrides"]["count"] == 1  # Reshma Q3: the teacher accepted her own-words answer
+    assert any("roots" in m for m, _ in report["common_misconceptions"])
+
+    # the Maths teacher sees only Maths; sheets open with their page image
+    priya = who(TEACHER, "teacher", "Ms. Priya Raghavan")
+    assert [e["name"] for e in client.get("/api/exams", headers=priya).json()] == ["Unit Test 2 — Mathematics"]
+    sub = client.get(f"/api/exams/{maths['id']}/submissions", headers=priya).json()[0]
+    sheet = client.get(f"/api/submissions/{sub['id']}", headers=priya).json()
+    assert sheet["name_check"]["status"] == "match" and len(sheet["questions"]) == 5
+    img = client.get(f"/api/pages/{sheet['page_list'][0]['id']}/image", headers=priya)
+    assert img.status_code == 200 and img.content[:4] == b"\x89PNG"
