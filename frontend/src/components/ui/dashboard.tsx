@@ -12,6 +12,7 @@ import { fmt, todayKey } from '@/lib/format';
 import type { NotificationItem } from '@/api/types';
 import type { SchoolEvent } from '@/pages/parents-experience/types';
 import { Card, CardLink, Empty, Icon } from './primitives';
+import { QuoteCard } from './dashboardViz';
 
 /** Main column + right rail. The rail stacks under the main column below 1280 px. */
 export function DashLayout({ rail, children }: { rail?: ReactNode; children: ReactNode }) {
@@ -35,7 +36,7 @@ export interface QuickAction {
 }
 
 /** Muted hues the quick-action icons rotate through (tokens in system.css). */
-const QA_HUES = ['brand', 'blue', 'plum', 'sage', 'amber', 'teal', 'indigo'];
+const QA_HUES = ['brand', 'blue', 'plum', 'sage', 'amber', 'steel', 'teal'];
 
 export function QuickActions({ items, title = 'Quick Actions' }: { items: QuickAction[]; title?: string }) {
   const visible = items.filter((x) => x.show !== false);
@@ -48,7 +49,7 @@ export function QuickActions({ items, title = 'Quick Actions' }: { items: QuickA
           const hue = QA_HUES[i % QA_HUES.length];
           return (
           <Link key={x.label + x.to} className="qa__item" to={x.to}>
-            <span className={`qa__ico${tone ? ` qa__ico--${tone}` : ''}`} data-hue={tone ? undefined : hue}><Icon name={x.icon} size={16} /></span>
+            <span className={`qa__ico${tone ? ` qa__ico--${tone}` : ''}`} data-hue={tone ? undefined : hue}><Icon name={x.icon} size={17} /></span>
             {x.label}
             <Icon name="chevronRight" size={15} />
           </Link>
@@ -59,17 +60,21 @@ export function QuickActions({ items, title = 'Quick Actions' }: { items: QuickA
   );
 }
 
-/** Standard right rail: role-specific quick actions, upcoming events and notifications. */
-export function DashRail({ actions, events = true, children }: { actions: QuickAction[]; events?: boolean; children?: ReactNode }) {
+/** Standard right rail: role-specific quick actions, the school's line, notifications and upcoming events. */
+export function DashRail({ actions, events = true, quote = true, children }: { actions: QuickAction[]; events?: boolean; quote?: boolean; children?: ReactNode }) {
   return (
     <>
       <QuickActions items={actions} />
       {children}
+      {quote && <QuoteCard />}
       <RecentNotifications />
       {events && <UpcomingEvents />}
     </>
   );
 }
+
+/** "early_warning" → "Early warning" */
+const topicLabel = (t?: string | null) => (t ? t.replace(/[_-]+/g, ' ').replace(/^./, (c) => c.toUpperCase()) : 'General');
 
 const NOTE_DOT: Record<string, string> = { critical: 'critical', warning: 'warning', caution: 'warning', success: 'success', info: 'info', neutral: 'violet' };
 
@@ -87,8 +92,8 @@ export function RecentNotifications() {
             <button key={n.id} type="button" className="nlist__item" onClick={() => navigate(n.route ?? '/notifications')}>
               <span className={`nlist__dot nlist__dot--${NOTE_DOT[n.tone] ?? 'info'}`} />
               <span className="grow" style={{ minWidth: 0 }}>
-                <span className={`nlist__title t-clip${n.readAt ? '' : ' t-bold'}`} style={{ display: 'block' }}>{n.title}</span>
-                <span className="nlist__meta" style={{ display: 'block' }}>{n.topic} · {fmt.relative(n.createdAt)}</span>
+                <span className={`nlist__title${n.readAt ? '' : ' nlist__title--unread'}`}>{n.title}</span>
+                <span className="nlist__meta">{topicLabel(n.topic)} · {fmt.relative(n.createdAt)}</span>
               </span>
               <Icon name="chevronRight" size={14} />
             </button>
@@ -120,7 +125,7 @@ export function UpcomingEvents({ limit = 4 }: { limit?: number }) {
   const loading = staff ? staffQ.isLoading : familyQ.isLoading;
 
   return (
-    <Card icon="calendar" title="Upcoming Events" actions={staff ? <CardLink to="/events">View Calendar</CardLink> : undefined}>
+    <Card icon="calendar" title="Upcoming Events" actions={staff ? <CardLink to="/events">View All</CardLink> : undefined}>
       {loading ? (
         <div className="col g-3">{[0, 1, 2].map((i) => <span key={i} className="skeleton" style={{ height: 44 }} />)}</div>
       ) : rows.length ? (

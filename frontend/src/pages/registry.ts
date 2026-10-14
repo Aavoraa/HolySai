@@ -28,3 +28,12 @@ export const APP_ROUTES: AppRoute[] = [
   ...academics, ...admissions, ...finance, ...workforce, ...safety,
   ...parentsExperience, ...operations, ...innovation, ...group, ...intelligence, ...reports,
 ];
+
+/** Starts downloading the code of the page a path opens (no-op when already loaded or unknown). */
+export function preloadRoute(to: string) {
+  const path = to.split('?')[0];
+  const route = APP_ROUTES.find((r) => r.path === path)
+    ?? APP_ROUTES.find((r) => r.path.includes('/:') && path.startsWith(r.path.slice(0, r.path.indexOf('/:') + 1)));
+  const type = (route?.element as { type?: { preload?: () => Promise<unknown> } } | undefined)?.type;
+  type?.preload?.().catch(() => undefined);
+}

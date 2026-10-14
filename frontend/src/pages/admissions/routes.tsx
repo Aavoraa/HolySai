@@ -1,20 +1,20 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
  * Admissions & CRM screens. Each route declares the permissions that may open it (any of);
  * the API enforces the same rule. Pages are lazy-loaded.
  */
-const AdmissionsDashboardPage = lazy(() => import('./AdmissionsDashboardPage'));
-const LeadsPage = lazy(() => import('./LeadsPage'));
-const EnquiriesPage = lazy(() => import('./EnquiriesPage'));
-const PipelinePage = lazy(() => import('./PipelinePage'));
-const ApplicationsPage = lazy(() => import('./ApplicationsPage'));
-const VisitsPage = lazy(() => import('./VisitsPage'));
-const ConversionPage = lazy(() => import('./ConversionPage'));
-const ReferralsPage = lazy(() => import('./ReferralsPage'));
-const AlumniPage = lazy(() => import('./AlumniPage'));
-const VendorsPage = lazy(() => import('./VendorsPage'));
+const AdmissionsDashboardPage = page(() => import('./AdmissionsDashboardPage'));
+const LeadsPage = page(() => import('./LeadsPage'));
+const EnquiriesPage = page(() => import('./EnquiriesPage'));
+const PipelinePage = page(() => import('./PipelinePage'));
+const ApplicationsPage = page(() => import('./ApplicationsPage'));
+const VisitsPage = page(() => import('./VisitsPage'));
+const ConversionPage = page(() => import('./ConversionPage'));
+const ReferralsPage = page(() => import('./ReferralsPage'));
+const AlumniPage = page(() => import('./AlumniPage'));
+const VendorsPage = page(() => import('./VendorsPage'));
 
 const ADMISSIONS = ['admissions.read'];
 const CRM = ['crm.read'];

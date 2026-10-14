@@ -65,10 +65,10 @@ table { border-collapse: collapse; width: 100%; }
 .t-center { text-align: center; }
 .t-right  { text-align: right; }
 .t-nowrap { white-space: nowrap; }
-.t-critical { color: var(--critical); }
-.t-warning  { color: var(--warning); }
-.t-success  { color: var(--success); }
-.t-info     { color: var(--info); }
+.t-critical { color: var(--critical-text); }
+.t-warning  { color: var(--warning-text); }
+.t-success  { color: var(--success-text); }
+.t-info     { color: var(--info-text); }
 .t-mono     { font-family: var(--font-mono); }
 .t-magenta  { color: var(--magenta); }
 .t-gold     { color: var(--gold-deep); }

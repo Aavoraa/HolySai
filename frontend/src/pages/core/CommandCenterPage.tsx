@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
   AiNotice, AlertItem, Badge, Button, CampusBanner, Card, CardLink, Chart, charts, Empty, ErrorState, Feed, Funnel, greeting, Icon, Kpi, Meter, Page,
-  PageSkeleton, QuickActions, RecentNotifications, Ring, SchoolPulse, SectionHead,
+  PageSkeleton, QuickActions, QuoteCard, RecentNotifications, Ring, SchoolPulse, SectionHead,
 } from '@/components/ui';
 import type { FeeDashboard } from '@/pages/finance/types';
 import { fmt } from '@/lib/format';
@@ -60,7 +60,7 @@ export default function CommandCenterPage() {
   const greet = greeting();
 
   const welcome = (
-    <CampusBanner title={<>{greet}, {firstName(user?.fullName)}</>} sub="Here's what's happening across your school today." />
+    <CampusBanner title={<>{greet}, {firstName(user?.fullName)}</>} sub={school.scope === 'group' ? "Here's what's happening across all campuses today." : `Here's what's happening at ${school.campus?.name ?? 'your school'} today.`} />
   );
 
   if (q.isLoading) return <Page>{welcome}<PageSkeleton kpis={4} /></Page>;
@@ -69,25 +69,6 @@ export default function CommandCenterPage() {
   const a = d.attendance;
   const risk = d.students;
   const adm = d.admissions;
-
-  // Attendance rate: today's figure, or the latest school day when today is not yet marked.
-  const last = a.trend[a.trend.length - 1];
-  const prev = a.trend[a.trend.length - 2];
-  const attRate = a.todayPct ?? last?.value ?? null;
-  const attDelta = a.todayPct == null && last && prev ? Math.round((last.value - prev.value) * 10) / 10 : null;
-
-  const headline = [
-    <Kpi key="s" size="hero" icon="users" label={t('Total Students')} value={fmt.n(d.students.total)}
-      foot={`${fmt.n(risk.onTrack)} on track · ${school.scope === 'group' ? 'all campuses' : school.campus?.place ?? ''}`} to="/students" />,
-    <Kpi key="p" size="hero" icon="calendar" tone="amber" label="Attendance Rate" value={attRate != null ? fmt.pct(attRate, 1) : '—'}
-      delta={attDelta} deltaUnit=" pts"
-      foot={a.todayPct != null ? `${fmt.n(a.today.marked)} of ${fmt.n(a.today.total)} marked today` : last ? `vs. previous day · ${last.label}` : 'Not marked yet today'}
-      to="/attendance" />,
-    <Kpi key="st" size="hero" icon="user" tone="violet" label="Staff Present" value={fmt.n(d.staff.present)}
-      foot={`of ${fmt.n(d.staff.total)} staff · ${d.staff.onLeave} on leave`} to={can('hr.read') ? '/staff-attendance' : undefined} />,
-    <Kpi key="ap" size="hero" icon="fileText" tone="teal" label="Pending Actions" value={fmt.n(d.approvals.total)}
-      foot={`${d.approvals.leave} leave · ${d.approvals.expenses} expenses · ${d.approvals.certificates} certificates`} to="/my-tasks" />,
-  ];
 
   const glance = [
     <Kpi key="a" size="compact" label={t('Absent Today')} value={fmt.n(a.today.absent)} unit={`· ${a.today.late} late`} tone="critical"
@@ -142,9 +123,7 @@ export default function CommandCenterPage() {
       {welcome}
       <div className="dash">
         <div className="dash__main">
-          <div className="grid g-4col">{headline}</div>
-
-          <SchoolPulse />
+          <SchoolPulse metrics events={false} />
 
           <div className={adm ? 'grid dash__bottom' : 'grid'}>
             {adm && (
@@ -182,6 +161,7 @@ export default function CommandCenterPage() {
 
         <aside className="dash__rail" aria-label="Shortcuts and updates">
           <QuickActions items={quick} />
+          <QuoteCard />
           <RecentNotifications />
 
           {d.finance && (

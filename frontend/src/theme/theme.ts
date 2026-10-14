@@ -28,14 +28,13 @@ function apply(theme: Theme) {
   listeners.forEach((l) => l());
 }
 
-/** Applies the saved choice, or the device setting on a first visit, and follows device changes until the user picks. */
+/**
+ * The application uses the light theme only (the dark theme is switched off).
+ * A dark choice saved by an earlier version is cleared.
+ */
 export function initTheme() {
-  apply(stored() ?? system());
-  if (typeof matchMedia === 'function') {
-    matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
-      if (!stored()) apply(system());
-    });
-  }
+  try { if (stored() === 'dark') localStorage.removeItem(KEY); } catch { /* storage unavailable */ }
+  apply('light');
 }
 
 function subscribe(cb: () => void) {

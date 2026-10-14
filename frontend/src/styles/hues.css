@@ -9,9 +9,9 @@
   --hue-brand: var(--brand);  --hue-brand-tint: var(--brand-tint);
   --hue-blue: #3E6E9E;        --hue-blue-tint: #EAF1F8;
   --hue-plum: #7A4E8C;        --hue-plum-tint: #F3EDF6;
-  --hue-sage: #3F7F5E;        --hue-sage-tint: #EAF4EE;
-  --hue-amber: #9C6B12;       --hue-amber-tint: #FAF2E1;
-  --hue-teal: #2A7A7C;        --hue-teal-tint: #E6F2F2;
+  --hue-sage: #2F6A4C;        --hue-sage-tint: #EAF4EE;
+  --hue-amber: #855A0B;       --hue-amber-tint: #FAF2E1;
+  --hue-teal: #22686A;        --hue-teal-tint: #E6F2F2;
   --hue-indigo: #50559E;      --hue-indigo-tint: #EDEEF7;
   --hue-rose: #A8456B;        --hue-rose-tint: #F8ECF1;
   --hue-terracotta: #A3533D;  --hue-terracotta-tint: #F8EDE9;
@@ -41,33 +41,6 @@
 [data-hue="terracotta"] { --h: var(--hue-terracotta); --h-tint: var(--hue-terracotta-tint); }
 [data-hue="steel"]      { --h: var(--hue-steel);      --h-tint: var(--hue-steel-tint); }
 
-/* ---- Sidebar: each module's icon in a small tinted chip ------------------------ */
-.sidebar .navgroup[data-hue] .navhead__ico,
-.sidebar .navgroup[data-hue] .navquick .navitem__ico,
-.sidebar .navgroup--pinned[data-hue] .navitem__ico,
-.sidebar .sidebar__foot .navitem__ico {
-  width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
-  background: var(--h-tint, var(--bg-sunken)); color: var(--h, var(--text-muted));
-}
-.sidebar .sidebar__foot .navitem__ico { --h: var(--hue-steel); --h-tint: var(--hue-steel-tint); }
-.sidebar .navgroup[data-hue] .navhead__ico svg,
-.sidebar .navgroup[data-hue] .navquick .navitem__ico svg,
-.sidebar .navgroup--pinned[data-hue] .navitem__ico svg,
-.sidebar .sidebar__foot .navitem__ico svg { width: 16px; height: 16px; }
-/* Pinned items (Dashboard, Notifications, Tasks) get their own quiet hues */
-.sidebar .navgroup--pinned .navitem:nth-child(2) .navitem__ico { --h: var(--hue-amber); --h-tint: var(--hue-amber-tint); }
-.sidebar .navgroup--pinned .navitem:nth-child(3) .navitem__ico { --h: var(--hue-sage); --h-tint: var(--hue-sage-tint); }
-.sidebar .navgroup--pinned .navitem:nth-child(n+4) .navitem__ico { --h: var(--hue-blue); --h-tint: var(--hue-blue-tint); }
-/* Hover and active keep the chip; the row itself stays brand for the active page */
-.sidebar .navgroup[data-hue] .navitem:hover .navitem__ico,
-.sidebar .navgroup[data-hue] .navhead:hover .navhead__ico,
-.sidebar .navgroup[data-hue] .navitem[aria-current="page"] .navitem__ico { color: var(--h); }
-.sidebar .navgroup[data-current="true"] > .navhead .navhead__ico { color: var(--h); }
-/* Nested items: plain icons in the module hue */
-.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navgroup__items .navitem__ico { color: var(--h); opacity: .8; }
-.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navgroup__items .navitem[aria-current="page"] .navitem__ico { opacity: 1; }
-.app[data-rail="true"] .sidebar .navgroup[data-hue] .navhead__ico { width: 32px; height: 32px; }
-
 /* ---- Page header: a small tinted tile in the module hue ------------------------- */
 .pagehead { align-items: flex-end; }
 .pagehead__ico {
@@ -89,8 +62,8 @@
 .kpi:not(:has(.kpi__tile)):not(.kpi--compact)::before { display: block; background: var(--kpi-tone); }
 
 /* ---- Card header icons: a small tinted chip, rotating through the hues ---------- */
-.card__ico { --h: var(--hue-brand); --h-tint: var(--hue-brand-tint); width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--h-tint); color: var(--h); }
-.card__ico svg { width: 16px; height: 16px; }
+.card__ico { --h: var(--hue-brand); --h-tint: var(--hue-brand-tint); width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; background: var(--h-tint); color: var(--h); }
+.card__ico svg { width: 18px; height: 18px; }
 .grid > .card:nth-child(5n+2) .card__ico, .dash__rail > .card:nth-child(4n+2) .card__ico { --h: var(--hue-blue); --h-tint: var(--hue-blue-tint); }
 .grid > .card:nth-child(5n+3) .card__ico, .dash__rail > .card:nth-child(4n+3) .card__ico { --h: var(--hue-teal); --h-tint: var(--hue-teal-tint); }
 .grid > .card:nth-child(5n+4) .card__ico, .dash__rail > .card:nth-child(4n+4) .card__ico { --h: var(--hue-plum); --h-tint: var(--hue-plum-tint); }
@@ -120,9 +93,5 @@
 .avatar--slate      { background: var(--hue-steel-tint); color: var(--hue-steel); }
 
 /* ---- Empty states and section heads pick up the brand tint ------------------------ */
-.empty__ico { background: var(--hue-brand-tint); color: var(--hue-brand); }
 
-/* Direct links get the same chip as group rows (beats the size rule in system.css) */
-.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navquick > .navitem .navitem__ico { width: 28px; height: 28px; }
-.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navquick > .navitem .navitem__ico svg { width: 16px; height: 16px; }
-:root { --sidebar-w: 280px; }
+

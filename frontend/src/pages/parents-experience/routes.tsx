@@ -1,13 +1,13 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const ParentDirectoryPage = lazy(() => import('./ParentDirectoryPage'));
-const ParentCommunicationPage = lazy(() => import('./ParentCommunicationPage'));
-const PtmPage = lazy(() => import('./PtmPage'));
-const CircularsPage = lazy(() => import('./CircularsPage'));
-const OpCircularsPage = lazy(() => import('./OpCircularsPage'));
-const EventsPage = lazy(() => import('./EventsPage'));
-const AcknowledgementsPage = lazy(() => import('./AcknowledgementsPage'));
+const ParentDirectoryPage = page(() => import('./ParentDirectoryPage'));
+const ParentCommunicationPage = page(() => import('./ParentCommunicationPage'));
+const PtmPage = page(() => import('./PtmPage'));
+const CircularsPage = page(() => import('./CircularsPage'));
+const OpCircularsPage = page(() => import('./OpCircularsPage'));
+const EventsPage = page(() => import('./EventsPage'));
+const AcknowledgementsPage = page(() => import('./AcknowledgementsPage'));
 
 /**
  * parents-experience screens. Each route declares the permissions that may open it (any of);
