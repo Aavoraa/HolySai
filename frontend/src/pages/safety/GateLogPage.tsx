@@ -7,7 +7,7 @@ import { usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
-  Badge, Button, Card, DataTable, ErrorState, FilterSelect, Page, PageHead, Pagination, SearchInput, Segment, StudentLink, useToast,
+  Badge, Button, Card, DataTable, ErrorState, FilterSelect, Page, PageHead, Pagination, SearchInput, Segment, StudentLink, Toolbar, useToast,
 } from '@/components/ui';
 import { errorMessage } from '@/components/ui/states';
 import { GateEventModal, gradeOf, TimeCell, todayIso } from './shared';
@@ -70,10 +70,11 @@ export default function GateLogPage() {
           </>
         }
       />
-      <div className="filterbar">
+      <Card flush>
+        <Toolbar>
         <Segment<View> items={[{ id: 'students', label: 'By student' }, { id: 'scans', label: 'All scans' }]} active={view} onChange={setView} />
         <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or admission no." />
-        <input className="input" type="date" aria-label="Date" value={date} max={todayIso()} style={{ width: 'auto' }}
+        <input className="input st-date" type="date" aria-label="Date" value={date} max={todayIso()}
           onChange={(e) => list.setFilter('date', e.target.value === todayIso() ? '' : e.target.value)} />
         {view === 'students' ? (
           <>
@@ -89,9 +90,7 @@ export default function GateLogPage() {
           </>
         )}
         {list.hasFilters && <Button variant="quiet" size="sm" onClick={list.clear}>Clear</Button>}
-      </div>
-
-      <Card flush>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : view === 'students' ? (
           <DataTable
             rows={students.data?.rows}
@@ -107,7 +106,7 @@ export default function GateLogPage() {
               { key: 'exit', label: 'Exit', render: (r) => <span>{r.lastOut ? <><TimeCell value={r.lastOut} /> <span className="t-micro t-muted">{r.exitGate}</span></> : <span className="t-faint">—</span>}</span> },
               {
                 key: 'status', label: 'Status',
-                render: (r) => <Badge dot tone={r.status === 'Inside' ? 'success' : r.status === 'Exited' ? 'info' : 'warning'}>{r.status === 'Inside' ? 'Inside campus' : r.status}</Badge>,
+                render: (r) => <Badge dot tone={r.status === 'Inside' ? 'success' : r.status === 'Exited' ? 'neutral' : 'warning'}>{r.status === 'Inside' ? 'Inside campus' : r.status}</Badge>,
               },
               {
                 key: 'notify', label: 'Parent notified', sortable: false,

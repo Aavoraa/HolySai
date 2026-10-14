@@ -5,11 +5,11 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Button, Card, Chart, DataTable, Empty, ErrorState, FilterSelect, Grid, InlineError, Kpi, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Status, TextArea, TextField, charts, useConfirm,
+  Button, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Grid, InlineError, Kpi, Modal, Page, PageHead,
+  Pagination, SearchInput, SelectField, Skeleton, Status, TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
-import { EmpLink, addDays, fieldErrors, useEmployeeModal } from './shared';
+import { EmpLink, ListCount, addDays, fieldErrors, useEmployeeModal } from './shared';
 import type { OvertimeRow, OvertimeSummary, WorkforceSummary } from './types';
 
 export default function OvertimePage() {
@@ -37,23 +37,25 @@ export default function OvertimePage() {
         actions={can('hr.manage') && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Record overtime</Button>} />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={summary.isLoading} label="Hours this month" value={fmt.n(k?.hours)} tone="amber" foot={k ? `${k.employees} employees` : undefined} />
-          <Kpi loading={summary.isLoading} label="Approved" value={fmt.n(k?.approvedHours)} unit="hours" tone="teal" onClick={() => list.setFilter('status', 'Approved')} />
-          <Kpi loading={summary.isLoading} label="Pending approval" value={fmt.n(k?.pendingCount)} unit={k ? `claims · ${k.pendingHours} h` : undefined} tone="critical"
+          <Kpi loading={summary.isLoading} icon="clock" label="Hours this month" value={fmt.n(k?.hours)} tone="amber" foot={k ? `${k.employees} employees` : undefined} />
+          <Kpi loading={summary.isLoading} icon="checkSquare" label="Approved" value={fmt.n(k?.approvedHours)} unit="hours" tone="teal" onClick={() => list.setFilter('status', 'Approved')} />
+          <Kpi loading={summary.isLoading} icon="alertCircle" label="Pending approval" value={fmt.n(k?.pendingCount)} unit={k ? `claims · ${k.pendingHours} h` : undefined} tone="critical"
             onClick={() => list.setFilter('status', 'open')} />
-          <Kpi loading={summary.isLoading} label="Cost this month" value={fmt.money(k?.cost ?? 0, { compact: true })} to={can('payroll.read') ? '/payroll' : undefined} />
+          <Kpi loading={summary.isLoading} icon="wallet" label="Cost this month" value={fmt.money(k?.cost ?? 0, { compact: true })} to={can('payroll.read') ? '/payroll' : undefined} />
         </Grid>
       )}
 
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee or reason" />
-        <FilterSelect label="Approval" value={list.filters.status} onChange={(v) => list.setFilter('status', v)}
-          options={[{ value: 'open', label: 'Awaiting approval' }, 'Submitted', 'Under Review', 'Approved', 'Paid', 'Rejected']} />
-        <FilterSelect label="Month" value={list.filters.month} onChange={(v) => list.setFilter('month', v)} options={months} />
-        <FilterSelect label="Department" value={list.filters.department} onChange={(v) => list.setFilter('department', v)} options={depts.data ?? []} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee or reason" />
+          <FilterSelect label="Approval" value={list.filters.status} onChange={(v) => list.setFilter('status', v)}
+            options={[{ value: 'open', label: 'Awaiting approval' }, 'Submitted', 'Under Review', 'Approved', 'Paid', 'Rejected']} />
+          <FilterSelect label="Month" value={list.filters.month} onChange={(v) => list.setFilter('month', v)} options={months} />
+          <FilterSelect label="Department" value={list.filters.department} onChange={(v) => list.setFilter('department', v)} options={depts.data ?? []} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="claims" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             emptyText={list.hasFilters ? 'No overtime matches these filters.' : 'No overtime recorded yet.'}
@@ -63,14 +65,14 @@ export default function OvertimePage() {
               { key: 'date', label: 'Date', render: (r) => fmt.dateShort(r.workDate) },
               { key: 'hours', label: 'Hours', className: 'num', render: (r) => <span className="t-num t-bold">{r.hours} h</span> },
               { key: 'reason', label: 'Reason', sortable: false, render: (r) => <span className="t-xs t-muted">{r.reason}</span> },
-              { key: 'cost', label: 'Cost', className: 'num', render: (r) => <span title={`${r.hours} h × ${fmt.money(r.rate)}`}>{fmt.money(r.cost)}</span> },
+              { key: 'cost', label: 'Cost', className: 'num', render: (r) => <span className="t-num" title={`${r.hours} h × ${fmt.money(r.rate)}`}>{fmt.money(r.cost)}</span> },
               { key: 'status', label: 'Approval', render: (r) => <Status value={r.status} /> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => can('hr.approve') && ['Submitted', 'Under Review'].includes(r.status) ? (
-                <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
-                  <Button size="sm" variant="teal" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
+                <div className="row g-2 end wrap">
+                  <Button size="sm" variant="teal" icon="check" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
                     if (await confirm({ title: `Approve ${r.hours} h for ${r.employeeName}?`, body: `${fmt.money(r.cost)} will be paid in the next payroll run.`, confirmLabel: 'Approve' })) approve.mutate(r.id);
                   }}>Approve</Button>
-                  <Button size="sm" onClick={() => setRejecting(r)}>Reject</Button>
+                  <Button size="sm" icon="x" onClick={() => setRejecting(r)}>Reject</Button>
                 </div>
               ) : null },
             ]} />
@@ -79,15 +81,15 @@ export default function OvertimePage() {
       </Card>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Hours by department" sub="This month">
+        <Card icon="grid" title="Hours by department" sub="This month">
           {summary.data?.byDepartment.length ? (
             <Chart svg={charts.hbar({ rows: summary.data.byDepartment.map((d) => ({ label: d.label, value: d.value, display: `${d.value} h` })), labelW: 140, rowH: 30 })} />
-          ) : summary.isLoading ? <span className="skeleton" style={{ display: 'block', height: 160 }} /> : <Empty title="No overtime this month" icon="clock" />}
+          ) : summary.isLoading ? <Skeleton height={160} /> : <Empty title="No overtime this month" icon="clock" sub="Approved and pending claims for this month appear here." />}
         </Card>
-        <Card title="Overtime trend" sub="Hours claimed per month">
+        <Card icon="clock" title="Overtime trend" sub="Hours claimed per month">
           {summary.data ? (
             <Chart svg={charts.bar({ labels: summary.data.trend.map((t) => t.label), series: [{ name: 'Hours', values: summary.data.trend.map((t) => t.value), color: 'var(--amber)' }], height: 180 })} />
-          ) : <span className="skeleton" style={{ display: 'block', height: 180 }} />}
+          ) : <Skeleton height={180} />}
         </Card>
       </div>
       {adding && <OvertimeModal onClose={() => setAdding(false)} />}

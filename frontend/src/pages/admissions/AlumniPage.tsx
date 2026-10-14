@@ -4,7 +4,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useAuth } from '@/auth/AuthContext';
 import {
   Badge, Button, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Page, PageHead, Pagination, Person,
-  SearchInput, SelectField, Skeleton, TextField,
+  SearchInput, SelectField, Skeleton, TextField, Toolbar,
 } from '@/components/ui';
 import { FormModal, useFieldErrors } from './LeadForms';
 import { EMAIL_RE, PHONE_RE } from './shared';
@@ -34,24 +34,24 @@ export default function AlumniPage() {
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setEditing('new')}>Add alumnus</Button>} />
       {s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi label="Alumni on record" value={d?.total ?? '—'} loading={s.isLoading} foot={d?.latestBatch ? `Latest batch ${d.latestBatch}` : undefined} />
-          <Kpi label="Actively engaged" value={d?.engaged ?? '—'} unit={d ? `${d.engagedPct}%` : undefined} tone="teal" loading={s.isLoading}
+          <Kpi icon="graduation" label="Alumni on record" value={d?.total ?? '—'} loading={s.isLoading} foot={d?.latestBatch ? `Latest batch ${d.latestBatch}` : undefined} />
+          <Kpi icon="activity" label="Actively engaged" value={d?.engaged ?? '—'} unit={d ? `${d.engagedPct}%` : undefined} tone="teal" loading={s.isLoading}
             onClick={() => list.setFilter('engagement', 'High')} foot="High or medium engagement" />
-          <Kpi label="Mentoring students" value={d?.mentoring ?? '—'} tone="amber" loading={s.isLoading} />
-          <Kpi label="Referrals from alumni" value={d?.referrals ?? '—'} tone="info" loading={s.isLoading} foot="This year" />
+          <Kpi icon="lightbulb" label="Mentoring students" value={d?.mentoring ?? '—'} tone="amber" loading={s.isLoading} />
+          <Kpi icon="link" label="Referrals from alumni" value={d?.referrals ?? '—'} tone="info" loading={s.isLoading} foot="This year" />
         </Grid>
       )}
       <div className="grid g-main mt-4">
-        <Card title="Alumni directory" flush>
-          <div className="toolbar">
+        <Card icon="grid" title="Alumni directory" flush>
+          <Toolbar>
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search name, university or career" />
             <FilterSelect label="Engagement" value={list.filters.engagement} onChange={(x) => list.setFilter('engagement', x)} options={['High', 'Medium', 'Low']} />
             <FilterSelect label="Batch" value={list.filters.batch} onChange={(x) => list.setFilter('batch', x)} options={batches} />
-          </div>
+          </Toolbar>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
             <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
               onRowClick={manage ? (r) => setEditing(r) : undefined}
-              emptyText={list.hasFilters ? 'No alumni match the current filters.' : 'No alumni on record yet.'}
+              emptyText={list.hasFilters ? 'No alumni match the current filters.' : (manage ? 'No alumni on record yet. Use “Add alumnus” to start the directory.' : 'No alumni on record yet.')}
               columns={[
                 { key: 'name', label: 'Alumnus', render: (r) => <Person name={r.fullName} meta={`Batch of ${r.batchYear}`} /> },
                 { key: 'university', label: 'University', render: (r) => r.university ?? '—' },
@@ -62,7 +62,7 @@ export default function AlumniPage() {
           )}
           <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
         </Card>
-        <Card title="Destinations" sub="Where the last five batches went">
+        <Card icon="grid" title="Destinations" sub="Where the last five batches went">
           {s.isLoading ? <Skeleton height={220} /> : d?.destinations.length
             ? <Chart svg={charts.hbar({ rows: d.destinations.map((x, i) => ({ label: x.label, value: x.value, color: ['var(--navy)', 'var(--teal)', 'var(--amber)', 'var(--viz-8)'][i % 4] })), labelW: 190, rowH: 32, label: 'Alumni destinations' })} />
             : <Empty icon="graduation" title="No destinations recorded" />}
@@ -103,15 +103,25 @@ function AlumnusModal({ alumnus, onClose }: { alumnus: Alumnus | null; onClose: 
   return (
     <FormModal title={alumnus ? `Edit ${alumnus.fullName}` : 'Add alumnus'} onClose={onClose} busy={save.isPending} error={save.error}
       fieldErrors={fe.errors} submitLabel={alumnus ? 'Save changes' : 'Add alumnus'} formId="alumni-form" size="wide">
-      <form id="alumni-form" onSubmit={submit} noValidate className="form-grid">
-        <TextField label="Full name" required value={v.fullName} onChange={(x) => set('fullName', x)} error={fe.errors.fullName} maxLength={120} autoFocus />
-        <TextField label="Batch year" required type="number" value={v.batchYear} onChange={(x) => set('batchYear', x)} error={fe.errors.batchYear} />
-        <TextField label="University" value={v.university} onChange={(x) => set('university', x)} maxLength={120} />
-        <TextField label="Now" value={v.career} onChange={(x) => set('career', x)} maxLength={120} placeholder="Role, organisation or course" />
-        <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
-        <TextField label="Phone" type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} />
-        <SelectField label="Engagement" value={v.engagement} onChange={(x) => set('engagement', x)} options={['High', 'Medium', 'Low']} />
-        <TextField label="Last interaction" value={v.lastEngagement} onChange={(x) => set('lastEngagement', x)} maxLength={160} placeholder="e.g. Career talk — Aug 2026" />
+      <form id="alumni-form" onSubmit={submit} noValidate>
+        <div className="formsection">
+          <div className="formsection__title">Alumnus</div>
+          <div className="form-grid">
+            <TextField label="Full name" required value={v.fullName} onChange={(x) => set('fullName', x)} error={fe.errors.fullName} maxLength={120} autoFocus />
+            <TextField label="Batch year" required type="number" value={v.batchYear} onChange={(x) => set('batchYear', x)} error={fe.errors.batchYear} />
+            <TextField label="University" value={v.university} onChange={(x) => set('university', x)} maxLength={120} />
+            <TextField label="Now" value={v.career} onChange={(x) => set('career', x)} maxLength={120} placeholder="Role, organisation or course" />
+          </div>
+        </div>
+        <div className="formsection">
+          <div className="formsection__title">Contact and engagement</div>
+          <div className="form-grid">
+            <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
+            <TextField label="Phone" type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} />
+            <SelectField label="Engagement" value={v.engagement} onChange={(x) => set('engagement', x)} options={['High', 'Medium', 'Low']} />
+            <TextField label="Last interaction" value={v.lastEngagement} onChange={(x) => set('lastEngagement', x)} maxLength={160} placeholder="e.g. Career talk — Aug 2026" />
+          </div>
+        </div>
       </form>
     </FormModal>
   );

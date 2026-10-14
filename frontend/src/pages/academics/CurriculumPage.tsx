@@ -53,7 +53,7 @@ export default function CurriculumPage() {
               />
             </Card>
             <div className="grid g-2col g-4 mt-4">
-              <Card title="Coverage by subject" sub="Objectives taught against objectives planned">
+              <Card icon="trending" title="Coverage by subject" sub="Objectives taught against objectives planned">
                 {d.coverageBySubject.length ? (
                   <Chart svg={charts.bar({
                     labels: d.coverageBySubject.map((s) => SUBJECT_SHORT[s.subject] ?? s.subject),
@@ -62,7 +62,7 @@ export default function CurriculumPage() {
                   })} />
                 ) : <Empty icon="target" title="No objectives mapped yet" />}
               </Card>
-              <Card title="Mastery against coverage" sub={`Taught is not the same as learned · ${d.totals?.objectives ?? 0} objectives`}>
+              <Card icon="grid" title="Mastery against coverage" sub={`Taught is not the same as learned · ${d.totals?.objectives ?? 0} objectives`}>
                 {d.trend.labels.length > 1 ? (
                   <>
                     <Chart svg={charts.line({

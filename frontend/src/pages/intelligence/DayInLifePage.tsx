@@ -47,7 +47,7 @@ export default function DayInLifePage() {
                     <span style={{
                       width: 44, height: 44, borderRadius: '50%', display: 'grid', placeItems: 'center',
                       background: done ? 'var(--navy)' : 'var(--surface)', border: `2px solid ${done ? 'var(--navy)' : 'var(--border-strong)'}`,
-                      color: done ? '#fff' : 'var(--text-muted)', boxShadow: i === step ? '0 0 0 5px var(--brand-tint-2)' : undefined,
+                      color: done ? 'var(--text-invert)' : 'var(--text-muted)', boxShadow: i === step ? '0 0 0 5px var(--brand-tint-2)' : undefined,
                     }}><Icon name={x.icon} size={19} /></span>
                     <span className={`t-micro t-num ${i === step ? 't-bold t-strong' : 't-muted'}`}>{x.time}</span>
                   </button>
@@ -59,7 +59,7 @@ export default function DayInLifePage() {
       </div>
 
       <div className="grid g-main mt-4">
-        <Card
+        <Card icon="grid"
           title={`${s.time} — ${s.title}`}
           sub={s.role}
           actions={<>
@@ -78,7 +78,7 @@ export default function DayInLifePage() {
           </div>
         </Card>
         <div className="col g-4">
-          <Card title="The whole day" flush>
+          <Card icon="grid" title="The whole day" flush>
             <div>
               {steps.map((x, i) => (
                 <button key={x.time} type="button" className={`alert-item ${i === step ? 'alert-item--info' : ''}`} onClick={() => setStep(i)}
@@ -93,7 +93,7 @@ export default function DayInLifePage() {
               ))}
             </div>
           </Card>
-          <Card title="What this demonstrates">
+          <Card icon="grid" title="What this demonstrates">
             <LabelledPoints rows={[
               ['One event, many audiences', 'A single gate scan informs the parent, the register, the attendance analytics and the Command Center.'],
               ['Nothing is re-keyed', 'Boarding, attendance, marks, payments and overtime are each entered once and used everywhere.'],

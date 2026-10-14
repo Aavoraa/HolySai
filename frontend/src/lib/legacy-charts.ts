@@ -25,7 +25,7 @@ const HS: any = { fmt };
       ? 'width:100%;max-width:' + w + 'px;height:auto;display:block;margin:0 auto'
       : 'width:100%;height:auto;display:block';
     return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="' + style + '" ' +
-      'role="img" aria-label="' + esc(label || 'chart') + '" font-family="DM Sans, sans-serif">';
+      'role="img" aria-label="' + esc(label || 'chart') + '" font-family="Inter, system-ui, sans-serif">';
   }
   function path(pts, close, baseY) {
     var d = pts.map(function (p, i) { return (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); }).join(' ');
@@ -109,21 +109,23 @@ const HS: any = { fmt };
   };
 
   /* ---- Horizontal bars --------------------------------------------------- */
+  /* Rendered as fluid HTML rather than a fixed-width SVG, so labels keep their
+     size in narrow cards and on phones. */
   HS.charts.hbar = function (o) {
-    var rows = o.rows, W = 680, rowH = o.rowH || 30, H = rows.length * rowH + 10;
-    var labelW = o.labelW || 150, valW = 54;
+    var rows = o.rows, rowH = o.rowH || 30;
+    var labelW = Math.min(o.labelW || 150, 180);
     var max = Math.max.apply(null, rows.map(function (r) { return r.value; })) || 1;
-    var iw = W - labelW - valW - 10;
-    var out = svgOpen(W, H, o.label || 'Horizontal bar chart');
+    var bh = Math.max(6, Math.min(14, rowH - 16));
+    var out = '<div class="hbar" role="img" aria-label="' + esc(o.label || 'Horizontal bar chart') + '" style="--hbar-label:' + labelW + 'px;--hbar-row:' + rowH + 'px;--hbar-bar:' + bh + 'px">';
     rows.forEach(function (r, i) {
-      var y = i * rowH + 6, bh = rowH - 14;
-      var w = Math.max(2, (r.value / max) * iw);
-      out += '<text x="' + (labelW - 10) + '" y="' + (y + bh / 2 + 4) + '" text-anchor="end" font-size="11" fill="var(--text)">' + esc(r.label) + '</text>';
-      out += '<rect x="' + labelW + '" y="' + y + '" width="' + iw + '" height="' + bh + '" rx="3" fill="var(--bg-sunken)"/>';
-      out += '<rect x="' + labelW + '" y="' + y + '" width="' + w.toFixed(1) + '" height="' + bh + '" rx="3" fill="' + (r.color || SERIES[i % SERIES.length]) + '"><title>' + esc(r.label + ': ' + r.value) + '</title></rect>';
-      out += '<text x="' + (W - 4) + '" y="' + (y + bh / 2 + 4) + '" text-anchor="end" font-size="11" font-weight="600" fill="var(--text-strong)">' + esc(r.display != null ? r.display : r.value) + '</text>';
+      var pct = Math.max(r.value > 0 ? 1.5 : 0, (r.value / max) * 100);
+      var shown = r.display != null ? r.display : r.value;
+      out += '<div class="hbar__row" title="' + esc(r.label + ': ' + shown) + '">' +
+        '<span class="hbar__label">' + esc(r.label) + '</span>' +
+        '<span class="hbar__track"><span class="hbar__fill" style="width:' + pct.toFixed(1) + '%;background:' + (r.color || SERIES[i % SERIES.length]) + '"></span></span>' +
+        '<span class="hbar__val">' + esc(shown) + '</span></div>';
     });
-    return out + '</svg>';
+    return out + '</div>';
   };
 
   /* ---- Stacked bars ------------------------------------------------------ */

@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { env } from './env.js';
+import { logger } from '../utils/logger.js';
 
 // Return DATE columns as 'YYYY-MM-DD' strings (no timezone shifting) and
 // NUMERIC as JS numbers (all money/scores here are well within double precision).
@@ -25,6 +26,14 @@ export const pool = new pg.Pool({
   idleTimeoutMillis: 30_000,
   // Managed poolers drop idle connections; fail fast instead of hanging.
   connectionTimeoutMillis: 15_000,
+});
+
+// An idle client can be dropped by the server or a pooler (e.g. Supabase
+// recycling connections). pg emits that on the pool; without a listener Node
+// treats it as unhandled and the whole API exits. The pool discards the dead
+// client and opens a fresh one on the next query, so logging is enough.
+pool.on('error', (err) => {
+  logger.warn({ err: err.message }, 'Idle database connection closed; it will be replaced on next use');
 });
 
 export type Queryable = pg.Pool | pg.PoolClient;

@@ -1,0 +1,104 @@
+/* Module styles: portals (Parent 360, student portal, staff self-service).
+   Uses tokens from tokens.css only — no new colours. */
+
+/* ---- Page frame ---------------------------------------------------------- */
+.portal { max-width: 1180px; }
+.portal-greet {
+  font-size: var(--fs-micro); font-weight: 600; letter-spacing: var(--track-caps); text-transform: uppercase;
+  color: var(--accent-strong); margin-bottom: 2px;
+}
+.portal .profilehead__stats dd.t-warning { color: var(--warning); }
+.portal-stack { display: flex; flex-direction: column; gap: var(--s-4); min-width: 0; }
+.portal-back { display: flex; align-items: center; gap: var(--s-2); max-width: var(--content-max); margin: 0 auto; padding: var(--s-3) var(--page-x) 0; }
+
+/* ---- Child switcher (shown only for families with more than one child) -- */
+.childpick { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; margin-bottom: var(--s-3); }
+.childpick::-webkit-scrollbar { display: none; }
+.childpick__item {
+  display: inline-flex; align-items: center; gap: var(--s-2); flex: none; min-height: 48px;
+  padding: 6px 14px 6px 6px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--surface); color: var(--text); text-align: left;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.childpick__item:hover { border-color: var(--brand-line); }
+.childpick__item[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-tint); box-shadow: inset 0 0 0 1px var(--brand); }
+.childpick__name { font-size: var(--fs-sm); font-weight: 600; color: var(--text-strong); line-height: 1.2; }
+.childpick__meta { font-size: var(--fs-micro); color: var(--text-muted); }
+
+/* ---- List rows ----------------------------------------------------------- */
+.portal-list { display: flex; flex-direction: column; }
+.portal-item {
+  display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: 48px;
+  padding: var(--s-3) 0; border-bottom: 1px solid var(--border-soft); color: inherit; text-align: left;
+}
+.portal-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.portal-item:first-child { padding-top: 0; }
+button.portal-item { border-radius: 0; transition: background var(--t-fast); }
+button.portal-item:hover .portal-item__title { color: var(--brand); }
+.portal-item__ico {
+  flex: none; width: 36px; height: 36px; border-radius: var(--r-md); display: grid; place-items: center;
+  background: var(--bg-sunken); color: var(--text-muted);
+}
+.portal-item__ico--success  { background: var(--success-tint);  color: var(--success); }
+.portal-item__ico--warning  { background: var(--warning-tint);  color: var(--warning); }
+.portal-item__ico--critical { background: var(--critical-tint); color: var(--critical); }
+.portal-item__ico--brand    { background: var(--brand-tint);    color: var(--brand); }
+.portal-item__body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.portal-item__title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-strong); overflow-wrap: anywhere; transition: color var(--t-fast); }
+.portal-item__meta { font-size: var(--fs-micro); color: var(--text-muted); overflow-wrap: anywhere; }
+.portal-item__end { flex: none; display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; justify-content: flex-end; text-align: right; }
+.portal-item__end--col { flex-direction: column; align-items: flex-end; gap: 2px; }
+.portal-item--wrap { flex-wrap: wrap; }
+
+/* Calendar date chip (events, PTM) */
+.portal-date {
+  flex: none; width: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 4px 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-alt); line-height: 1.15;
+}
+.portal-date__mon { font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--brand); }
+.portal-date__day { font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--text-strong); }
+
+/* ---- Figures ------------------------------------------------------------- */
+.portal-amount { font-family: var(--font-display); font-size: 30px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--text-strong); line-height: 1.15; }
+.portal-amount--due { color: var(--critical); }
+.portal-amount--clear { color: var(--success); }
+.portal-figs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s-3); }
+.portal-fig { padding: var(--s-3); border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--surface-alt); min-width: 0; }
+.portal-fig__label { font-size: var(--fs-micro); color: var(--text-muted); font-weight: 600; }
+.portal-fig__value { font-family: var(--font-display); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-strong); margin-top: 2px; }
+
+/* Text-style link action used in card headers */
+.portal-link {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0 var(--s-2);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--brand); border-radius: var(--r-sm);
+}
+.portal-link:hover { background: var(--brand-tint); }
+
+/* ---- Payment modal ------------------------------------------------------- */
+.portal-paybox { padding: var(--s-3) var(--s-4); border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--surface-alt); }
+.portal-payline { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; min-height: 40px; }
+.portal-paytotal { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding-top: var(--s-3); margin-top: var(--s-2); border-top: 1px solid var(--border-soft); }
+.portal-method { display: flex; align-items: center; gap: var(--s-3); min-height: 48px; padding: 0 var(--s-4); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); cursor: pointer; }
+.portal-method:has(input:checked) { border-color: var(--brand); background: var(--brand-tint); }
+.portal-done { text-align: center; padding: var(--s-4) 0; }
+.portal-done__ico { width: 62px; height: 62px; margin: 0 auto; border-radius: var(--r-pill); display: grid; place-items: center; background: var(--success-tint); color: var(--success); }
+
+/* ---- Misc helpers -------------------------------------------------------- */
+.portal-pad { padding: var(--s-3) var(--s-4); }
+.portal-scroll { max-height: 360px; overflow: auto; }
+.pre-wrap { white-space: pre-wrap; }
+
+/* ---- Mobile -------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .portal-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portal-link { min-height: 44px; }
+  .portal-item { min-height: 52px; }
+  .portal-item--wrap .portal-item__end { flex-basis: 100%; justify-content: flex-end; }
+  .portal-amount { font-size: 26px; }
+  .childpick { margin-left: calc(-1 * var(--page-x)); margin-right: calc(-1 * var(--page-x)); padding-left: var(--page-x); padding-right: var(--page-x); }
+}
+
+/* Grid helpers scoped to the portals */
+.portal .span-2 { grid-column: 1 / -1; }
+.portal-titlebtn { text-align: left; color: inherit; font: inherit; padding: 0; }
+.portal-titlebtn:hover { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }

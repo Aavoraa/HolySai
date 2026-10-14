@@ -6,10 +6,10 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   Badge, Button, Card, Checkbox, DataTable, Empty, ErrorState, FilterSelect, Grid, InlineError, Kpi, Meter, Modal, Page, PageHead,
-  Pagination, SearchInput, SelectField, Skeleton, StudentLink, TextArea, TextField, useConfirm,
+  Pagination, SearchInput, SelectField, Skeleton, StudentLink, TextArea, TextField, useConfirm, Toolbar,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
-import { meterTone, ratio, serverFieldErrors, useSections } from './shared';
+import { DueDate, meterTone, ratio, serverFieldErrors, useSections } from './shared';
 
 interface HomeworkRow {
   id: string; title: string; instructions: string | null; status: string; displayStatus: string; assignedOn: string; dueOn: string;
@@ -59,20 +59,20 @@ export default function HomeworkPage() {
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Set homework</Button>} />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="Open assignments" value={s?.open ?? 0} onClick={() => list.setFilter('status', 'Open')} />
-          <Kpi loading={!s} label="Average submission" value={s?.averageSubmission != null ? `${s.averageSubmission}%` : '—'} tone="amber" foot="Across open assignments" />
-          <Kpi loading={!s} label="Overdue" value={s?.overdue ?? 0} tone="critical" foot={s?.overdueSubjects.length ? s.overdueSubjects.join(' and ') : 'Nothing overdue'} onClick={() => list.setFilter('status', 'Overdue')} />
-          <Kpi loading={!s} label="Students below 50%" value={s?.studentsBelow50 ?? 0} tone="critical" foot="Submission rate this year" to={can('earlywarning.read') ? '/early-warning' : undefined} />
+          <Kpi loading={!s} icon="fileText" label="Open assignments" value={s?.open ?? 0} foot="Select to filter the list" onClick={() => list.setFilter('status', 'Open')} />
+          <Kpi loading={!s} icon="checkSquare" label="Average submission" value={s?.averageSubmission != null ? `${s.averageSubmission}%` : '—'} tone="amber" foot="Across open assignments" />
+          <Kpi loading={!s} icon="clock" label="Overdue" value={s?.overdue ?? 0} tone={s?.overdue ? 'critical' : 'teal'} foot={s?.overdueSubjects.length ? s.overdueSubjects.join(' and ') : 'Nothing overdue'} onClick={() => list.setFilter('status', 'Overdue')} />
+          <Kpi loading={!s} icon="alert" label="Students below 50%" value={s?.studentsBelow50 ?? 0} tone="critical" foot="Submission rate this year" to={can('earlywarning.read') ? '/early-warning' : undefined} />
         </Grid>
       )}
       <div className="mt-4">
         <Card flush>
-          <div className="filterbar" style={{ padding: '12px 16px' }}>
+          <Toolbar>
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search homework" />
             <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Open', 'Overdue', 'Closed', 'Draft']} />
             <FilterSelect label="Class" value={list.filters.sectionId} onChange={(v) => list.setFilter('sectionId', v)} options={(sections.data ?? []).map((x) => ({ value: x.id, label: x.label }))} />
             <FilterSelect label="Subject" value={list.filters.subjectId} onChange={(v) => list.setFilter('subjectId', v)} options={(lookups?.subjects ?? []).map((x) => ({ value: x.id, label: x.name }))} />
-          </div>
+          </Toolbar>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
             <DataTable
               rows={q.data?.rows}
@@ -81,15 +81,16 @@ export default function HomeworkPage() {
               sort={list.sort}
               onSort={list.setSort}
               onRowClick={(r) => setViewing(r.id)}
-              emptyText={list.hasFilters ? 'No homework matches these filters.' : 'No homework has been set yet.'}
+              rowClassName={(r) => (r.displayStatus === 'Overdue' ? 'ac-row--overdue' : r.displayStatus === 'Closing today' ? 'ac-row--today' : undefined)}
+              emptyText={list.hasFilters ? 'No homework matches these filters.' : manage ? 'No homework has been set yet. Use “Set homework” to assign the first one.' : 'No homework has been set yet.'}
               columns={[
                 { key: 'title', label: 'Assignment', render: (r) => <><span className="t-bold">{r.title}</span><div className="t-micro t-muted">{r.subject} · {r.sectionLabel}{r.assignedBy ? ` · ${r.assignedBy}` : ''}</div></> },
-                { key: 'due', label: 'Due', render: (r) => fmt.dateShort(r.dueOn) },
+                { key: 'due', label: 'Due', render: (r) => <DueDate date={r.dueOn} done={r.status === 'Closed' || r.status === 'Draft'} doneLabel={r.status === 'Closed' ? 'Closed' : 'Not published'} /> },
                 { key: 'submitted', label: 'Submitted', render: (r) => <Meter label="" value={ratio(r.submitted, r.of)} right={`${r.submitted}/${r.of}`} tone={meterTone(ratio(r.submitted, r.of))} /> },
                 { key: 'status', label: 'Status', render: (r) => <Badge tone={STATUS_TONE[r.displayStatus] ?? 'neutral'}>{r.displayStatus}</Badge> },
                 {
                   key: 'a', label: '', sortable: false, className: 'num', render: (r) => manage && (
-                    <span className="row g-2" style={{ justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                    <span className="ac-links" onClick={(e) => e.stopPropagation()}>
                       {r.status === 'Open' && <Button size="sm" icon="message" onClick={() => doRemind(r)} disabled={r.submitted >= r.of || remind.isPending}>Remind</Button>}
                       {r.status === 'Open' && <Button size="sm" onClick={() => doClose(r)} disabled={close.isPending}>Close</Button>}
                       {r.status === 'Draft' && <Button size="sm" variant="primary" onClick={() => publish.mutate(r.id)} loading={publish.isPending && publish.variables === r.id}>Publish</Button>}
@@ -143,14 +144,26 @@ function HomeworkForm({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} busy={save.isPending} title="Set homework" sub="Parents see it in the parent app as soon as it is published."
       foot={<><Button onClick={onClose} disabled={save.isPending}>Cancel</Button><Button variant="primary" onClick={submit} loading={save.isPending}>{f.draft ? 'Save draft' : 'Set homework'}</Button></>}>
       {save.error && !Object.keys(serverFieldErrors(save.error)).length && <div className="mb-3"><InlineError error={save.error} /></div>}
-      <div className="grid g-2col g-3">
-        <SelectField label="Class" required value={f.sectionId} onChange={set('sectionId')} placeholder="Choose a class" error={errors.sectionId} options={(sections.data ?? []).map((s) => ({ value: s.id, label: s.label }))} />
-        <SelectField label="Subject" required value={f.subjectId} onChange={set('subjectId')} placeholder="Choose a subject" error={errors.subjectId} options={subjects} />
-        <TextField label="Title" required value={f.title} onChange={set('title')} error={errors.title} maxLength={160} placeholder="Fractions worksheet 4" />
-        <TextField label="Due date" type="date" required min={todayKey()} value={f.dueOn} onChange={set('dueOn')} error={errors.dueOn} />
+      <div className="formsection">
+        <div className="formsection__title">Class</div>
+        <div className="grid g-2col g-3">
+          <SelectField label="Class" required value={f.sectionId} onChange={set('sectionId')} placeholder="Choose a class" error={errors.sectionId} options={(sections.data ?? []).map((s) => ({ value: s.id, label: s.label }))} />
+          <SelectField label="Subject" required value={f.subjectId} onChange={set('subjectId')} placeholder="Choose a subject" error={errors.subjectId} options={subjects}
+            hint={section && !section.isClassTeacher && section.mySubjects.length && !can('students.read') ? 'Only the subjects you teach in this class are listed.' : undefined} />
+        </div>
       </div>
-      <div className="mt-3"><TextArea label="Instructions" rows={3} value={f.instructions} onChange={set('instructions')} maxLength={2000} error={errors.instructions} /></div>
-      <div className="mt-3"><Checkbox checked={f.draft} onChange={set('draft')} label="Save as a draft (parents are not notified yet)" /></div>
+      <div className="formsection">
+        <div className="formsection__title">Assignment</div>
+        <div className="grid g-2col g-3">
+          <TextField label="Title" required value={f.title} onChange={set('title')} error={errors.title} maxLength={160} placeholder="Fractions worksheet 4" />
+          <TextField label="Due date" type="date" required min={todayKey()} value={f.dueOn} onChange={set('dueOn')} error={errors.dueOn} />
+        </div>
+        <div className="mt-3"><TextArea label="Instructions" rows={3} value={f.instructions} onChange={set('instructions')} maxLength={2000} error={errors.instructions}
+          hint="Parents and students see these instructions in their apps." /></div>
+      </div>
+      <div className="formsection">
+        <Checkbox checked={f.draft} onChange={set('draft')} label="Save as a draft (parents are not notified yet)" />
+      </div>
     </Modal>
   );
 }
@@ -170,6 +183,15 @@ function SubmissionsModal({ id, onClose }: { id: string; onClose: () => void }) 
       foot={<Button variant="primary" onClick={onClose}>Done</Button>}>
       {q.isLoading ? <Skeleton height={240} /> : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : d && (
         <>
+          <div className="row between wrap g-3 mb-3">
+            <span className="reg-counts" aria-live="polite">
+              {(['Submitted', 'Late', 'Reviewed'] as const).map((st) => (
+                <span key={st} className="reg-count">{st}<strong>{d.students.filter((x) => x.status === st).length}</strong></span>
+              ))}
+              <span className={d.students.length - done ? 'reg-count reg-count--unmarked' : 'reg-count'}>Not submitted<strong>{d.students.length - done}</strong></span>
+            </span>
+            <DueDate date={d.homework.dueOn} done={d.homework.status !== 'Open'} doneLabel={d.homework.status} />
+          </div>
           {d.homework.instructions && <p className="t-sm mb-3">{d.homework.instructions}</p>}
           {save.error && <div className="mb-3"><InlineError error={save.error} /></div>}
           {d.students.length === 0 ? <Empty icon="users" title="No students in this class" /> : (

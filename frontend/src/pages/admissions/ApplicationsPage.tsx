@@ -2,7 +2,7 @@ import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Button, Card, DataTable, ErrorState, FilterSelect, Flow, Page, PageHead, Pagination, SearchInput, Skeleton, Status,
+  Badge, Button, Card, DataTable, ErrorState, FilterSelect, Flow, Page, PageHead, Pagination, SearchInput, Skeleton, Status, Toolbar,
 } from '@/components/ui';
 import { LeadProfileHost } from './LeadProfile';
 import { useLeadParam } from './shared';
@@ -39,16 +39,16 @@ export default function ApplicationsPage() {
           ]} />
         )}
       </Card>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search applicant, APP- or LD- reference" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(x) => list.setFilter('status', x)} options={STATUS_OPTIONS} />
-        <FilterSelect label="Documents" value={list.filters.documents} onChange={(x) => list.setFilter('documents', x)}
-          options={[{ value: 'incomplete', label: 'Incomplete' }, { value: 'complete', label: 'Complete' }]} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} applications` : ''}</span>
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search applicant, APP- or LD- reference" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(x) => list.setFilter('status', x)} options={STATUS_OPTIONS} />
+          <FilterSelect label="Documents" value={list.filters.documents} onChange={(x) => list.setFilter('documents', x)}
+            options={[{ value: 'incomplete', label: 'Incomplete' }, { value: 'complete', label: 'Complete' }]} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} applications` : ''}</span>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={q.data?.rows}
@@ -57,7 +57,7 @@ export default function ApplicationsPage() {
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => r.leadCode && openLead(r.leadCode)}
-            emptyText={list.hasFilters ? 'No applications match the current filters.' : 'No applications yet — open one from a lead profile.'}
+            emptyText={list.hasFilters ? 'No applications match the current filters.' : 'No applications yet. Open one from a lead profile, or move a lead to the Application stage — the document checklist is created automatically.'}
             columns={[
               {
                 key: 'student', label: 'Applicant', render: (r) => (
@@ -71,8 +71,14 @@ export default function ApplicationsPage() {
               { key: 'curriculum', label: 'Curriculum', render: (r) => <span className="t-xs t-muted">{r.curriculum ?? '—'}</span> },
               { key: 'status', label: 'Stage', render: (r) => <Status value={r.status} /> },
               {
-                key: 'blocking', label: 'Blocking item', sortable: false, render: (r) => (
-                  <span className={`t-xs ${r.offerExpiring ? 't-critical t-bold' : ''}`}>{r.blockingItem}</span>
+                key: 'blocking', label: 'Next step', sortable: false, render: (r) => (
+                  <span className="adm-next">
+                    <span className={`adm-next__what ${r.offerExpiring ? 't-critical t-bold' : ''}`}>{r.blockingItem}</span>
+                    <span className="adm-next__when">
+                      {r.offerExpiring && <Badge tone="critical" dot>Offer expiring</Badge>}
+                      {r.counsellor ? <span>{r.counsellor}</span> : null}
+                    </span>
+                  </span>
                 ),
               },
               {
@@ -82,7 +88,7 @@ export default function ApplicationsPage() {
               },
               {
                 key: 'a', label: '', sortable: false, className: 'num', render: (r) => r.leadCode
-                  ? <Button size="sm" onClick={(e) => { e.stopPropagation(); openLead(r.leadCode!); }}>{r.status === 'Accepted' ? 'Enrol' : 'Open'}</Button>
+                  ? <Button size="sm" variant={r.status === 'Accepted' ? 'primary' : undefined} icon={r.status === 'Accepted' ? 'userCheck' : undefined} onClick={(e) => { e.stopPropagation(); openLead(r.leadCode!); }}>{r.status === 'Accepted' ? 'Enrol' : 'Open'}</Button>
                   : null,
               },
             ]}

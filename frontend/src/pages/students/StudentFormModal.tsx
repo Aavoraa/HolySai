@@ -3,7 +3,7 @@ import { ApiError } from '@/api/client';
 import { useApiMutation } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
-import { Button, Checkbox, InlineError, Modal, SectionHead, SelectField, TextArea, TextField } from '@/components/ui';
+import { Banner, Button, Checkbox, InlineError, Modal, SelectField, TextArea, TextField } from '@/components/ui';
 import { todayKey } from '@/lib/format';
 
 export interface StudentFormValues {
@@ -93,6 +93,8 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
     return !Object.keys(e).length;
   };
 
+  const errorCount = Object.values(errors).filter(Boolean).length;
+
   const submit = (ev: FormEvent) => {
     ev.preventDefault();
     if (!validate()) return;
@@ -129,69 +131,83 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
         </>
       }
     >
-      <form id="student-form" onSubmit={submit} noValidate className="col g-5">
-        {save.error && !Object.keys((save.error as ApiError).fieldErrors ?? {}).length && <InlineError error={save.error} />}
-        <div>
-          <SectionHead title="Student" />
+      <form id="student-form" onSubmit={submit} noValidate>
+        {save.error && !Object.keys((save.error as ApiError).fieldErrors ?? {}).length && <div className="mb-4"><InlineError error={save.error} /></div>}
+        {errorCount > 0 && (
+          <div className="mb-4">
+            <Banner tone="critical" icon="alertCircle">
+              {errorCount === 1 ? '1 field needs attention' : `${errorCount} fields need attention`} — check the highlighted fields below.
+            </Banner>
+          </div>
+        )}
+        <div className="formsection">
+          <div className="formsection__title">Identity</div>
           <div className="form-grid">
             <TextField label="First name" required value={v.firstName} onChange={(x) => set('firstName', x)} error={errors.firstName} maxLength={60} autoFocus />
             <TextField label="Last name" required value={v.lastName} onChange={(x) => set('lastName', x)} error={errors.lastName} maxLength={60} />
             <TextField label="Date of birth" type="date" required value={v.dateOfBirth} max={todayKey()} onChange={(x) => set('dateOfBirth', x)} error={errors.dateOfBirth} />
             <SelectField label="Gender" required value={v.gender} onChange={(x) => set('gender', x)} error={errors.gender} placeholder="Select…"
               options={[{ value: 'F', label: 'Female' }, { value: 'M', label: 'Male' }, { value: 'O', label: 'Other' }]} />
-            <SelectField label="Blood group" value={v.bloodGroup} onChange={(x) => set('bloodGroup', x)} placeholder="Not recorded"
-              options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
-            <SelectField label="House" value={v.house} onChange={(x) => set('house', x)} placeholder="Not assigned" options={lookups?.houses?.length ? lookups.houses : ['Emerald', 'Sapphire', 'Amber', 'Coral']} />
           </div>
         </div>
-        <div>
-          <SectionHead title="Placement" />
+
+        <div className="formsection">
+          <div className="formsection__title">Class &amp; campus</div>
           <div className="form-grid">
             <SelectField label="Campus" required value={v.campusId} error={errors.campusId} placeholder="Select…"
-              onChange={(x) => setV((s) => ({ ...s, campusId: x, classId: '', sectionId: '', routeId: '', stopId: '' }))}
+              onChange={(x) => { setV((s) => ({ ...s, campusId: x, classId: '', sectionId: '', routeId: '', stopId: '' })); setErrors((e) => ({ ...e, campusId: '' })); }}
               options={(lookups?.campuses ?? []).map((c) => ({ value: c.id, label: c.name }))} />
             <TextField label="Admitted on" type="date" value={v.admittedOn} max={todayKey()} onChange={(x) => set('admittedOn', x)} />
-            <SelectField label="Class" required value={v.classId} placeholder="Select…" disabled={!v.campusId}
+            <SelectField label="Class" required value={v.classId} placeholder="Select…" disabled={!v.campusId} hint={!v.campusId ? 'Choose a campus first' : undefined}
               onChange={(x) => setV((s) => ({ ...s, classId: x, sectionId: '' }))} options={classOptions(v.campusId)} />
             <SelectField label="Section" required value={v.sectionId} error={errors.sectionId} placeholder="Select…" disabled={!v.classId}
               onChange={(x) => set('sectionId', x)} options={sectionOptions(v.classId)} />
+            <SelectField label="House" value={v.house} onChange={(x) => set('house', x)} placeholder="Not assigned" options={lookups?.houses?.length ? lookups.houses : ['Emerald', 'Sapphire', 'Amber', 'Coral']} />
           </div>
         </div>
-        <div>
-          <SectionHead title="Address" />
+
+        <div className="formsection">
+          <div className="formsection__title">Contact &amp; address</div>
+          {!editing && <div className="formsection__sub">Primary guardian. An existing parent can be linked later from the parent directory.</div>}
           <div className="form-grid">
-            <TextField className="span-2" label="Address" value={v.address} onChange={(x) => set('address', x)} maxLength={300} />
-            <TextField label="City" value={v.city} onChange={(x) => set('city', x)} maxLength={60} />
-            <TextField label="PIN code" value={v.pincode} onChange={(x) => set('pincode', x)} error={errors.pincode} maxLength={6} />
-          </div>
-        </div>
-        {!editing && (
-          <>
-            <div>
-              <SectionHead title="Primary guardian" sub="An existing parent can be linked later from the parent directory." />
-              <div className="form-grid">
-                <TextField label="Full name" required value={v.guardianName} onChange={(x) => set('guardianName', x)} error={errors.guardianName} maxLength={120} />
+            {!editing && (
+              <>
+                <TextField label="Guardian full name" required value={v.guardianName} onChange={(x) => set('guardianName', x)} error={errors.guardianName} maxLength={120} />
                 <SelectField label="Relationship" value={v.guardianRelationship} onChange={(x) => set('guardianRelationship', x)} options={['Father', 'Mother', 'Guardian']} />
                 <TextField label="Mobile" required type="tel" value={v.guardianPhone} onChange={(x) => set('guardianPhone', x)} error={errors.guardianPhone} placeholder="+91 98xxxxxxxx" />
                 <TextField label="Email" type="email" value={v.guardianEmail} onChange={(x) => set('guardianEmail', x)} error={errors.guardianEmail} />
+              </>
+            )}
+            <TextField className="span-2" label="Address" value={v.address} onChange={(x) => set('address', x)} maxLength={300} />
+            <TextField label="City" value={v.city} onChange={(x) => set('city', x)} maxLength={60} />
+            <TextField label="PIN code" value={v.pincode} onChange={(x) => set('pincode', x)} error={errors.pincode} maxLength={6} hint="6 digits" />
+          </div>
+        </div>
+
+        {!editing && (
+          <div className="formsection">
+            <div className="formsection__title">Transport &amp; tracking</div>
+            <div className="form-grid">
+              <SelectField label="Bus route" value={v.routeId} placeholder="Own transport" onChange={(x) => setV((s) => ({ ...s, routeId: x, stopId: '' }))}
+                options={routes.map((r) => ({ value: r.id, label: `${r.name} · ${r.area}` }))} />
+              <SelectField label="Pickup stop" value={v.stopId} error={errors.stopId} placeholder="Select…" disabled={!v.routeId} required={!!v.routeId}
+                onChange={(x) => set('stopId', x)} options={stops.map((st) => ({ value: st.id, label: st.name }))} />
+              <div className="span-2">
+                <Checkbox checked={v.enableTracking} onChange={(x) => set('enableTracking', x)}
+                  label="Enable GPS tracking (requires the guardian's consent, recorded when the tag is issued)" />
               </div>
             </div>
-            <div>
-              <SectionHead title="Transport & tracking" />
-              <div className="form-grid">
-                <SelectField label="Bus route" value={v.routeId} placeholder="Own transport" onChange={(x) => setV((s) => ({ ...s, routeId: x, stopId: '' }))}
-                  options={routes.map((r) => ({ value: r.id, label: `${r.name} · ${r.area}` }))} />
-                <SelectField label="Pickup stop" value={v.stopId} error={errors.stopId} placeholder="Select…" disabled={!v.routeId}
-                  onChange={(x) => set('stopId', x)} options={stops.map((st) => ({ value: st.id, label: st.name }))} />
-                <div className="span-2">
-                  <Checkbox checked={v.enableTracking} onChange={(x) => set('enableTracking', x)}
-                    label="Enable GPS tracking (requires the guardian's consent, recorded when the tag is issued)" />
-                </div>
-              </div>
-            </div>
-          </>
+          </div>
         )}
-        <TextArea label="Medical notes" hint="Visible only to staff with access to sensitive records." value={v.medicalNotes} onChange={(x) => set('medicalNotes', x)} rows={2} maxLength={1000} />
+
+        <div className="formsection">
+          <div className="formsection__title">Health</div>
+          <div className="form-grid">
+            <SelectField label="Blood group" value={v.bloodGroup} onChange={(x) => set('bloodGroup', x)} placeholder="Not recorded"
+              options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
+            <TextArea className="span-2" label="Medical notes" hint="Allergies, conditions or medication. Visible only to staff with access to sensitive records." value={v.medicalNotes} onChange={(x) => set('medicalNotes', x)} rows={2} maxLength={1000} />
+          </div>
+        </div>
       </form>
     </Modal>
   );

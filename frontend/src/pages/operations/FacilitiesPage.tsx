@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Badge, Button, Card, DataTable, Empty, ErrorState, Meter, Modal, Page, PageHead, SearchInput, SelectField, Status, TextField, useConfirm,
+  Badge, Banner, Button, Card, DataTable, Empty, ErrorState, Grid, Kpi, Meter, Modal, Page, PageHead, SearchInput, SelectField, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
-import { FormGrid, addDaysIso, req, todayIso, useCampusOptions, useForm } from './shared';
+import { FormError, FormGrid, addDaysIso, req, todayIso, useCampusOptions, useForm } from './shared';
 
 interface Facility {
   id: string; name: string; facilityType: string; capacity: number | null; status: string; campusId: string; campusName: string;
@@ -15,40 +15,74 @@ interface Facility {
 interface Booking { id: string; bookedOn: string; startsAt: string; endsAt: string; purpose: string; bookedBy: string | null; bookedById: string | null }
 
 const TYPES = ['Classroom', 'Lab', 'Hall', 'Field', 'Library', 'Studio', 'Other'];
+const STATUSES = ['Available', 'In use', 'Maintenance', 'Closed'];
+/** Facility statuses read differently from workflow statuses (a closed room is not a "done" item). */
+const facilityTone = (s: string) => (s === 'Available' ? 'success' : s === 'In use' ? 'info' : s === 'Maintenance' ? 'warning' : 'neutral');
+const isBookable = (f: Facility) => f.status !== 'Closed' && f.status !== 'Maintenance';
 
 export default function FacilitiesPage() {
   const { campusParam } = useSchool();
   const { can } = useAuth();
+  const manage = can('operations.manage');
   const [q, setQ] = useState('');
   const list = useApiQuery<Facility[]>('/facilities', { ...campusParam, q: q || undefined });
   const [book, setBook] = useState<Facility | null>(null);
   const [edit, setEdit] = useState<Facility | 'new' | null>(null);
+  const stats = useMemo(() => {
+    const rows = list.data ?? [];
+    const util = rows.length ? Math.round(rows.reduce((a, r) => a + r.utilisation, 0) / rows.length) : null;
+    return {
+      total: rows.length,
+      available: rows.filter((r) => r.status === 'Available').length,
+      blocked: rows.filter((r) => !isBookable(r)).length,
+      requests: rows.reduce((a, r) => a + r.openRequests, 0),
+      util,
+      busy: rows.filter((r) => r.utilisation > 80).length,
+    };
+  }, [list.data]);
+  const firstBookable = list.data?.find((f) => f.status === 'Available') ?? list.data?.find(isBookable);
   return (
     <Page>
       <PageHead title="Facilities" sub="Rooms, capacity, bookings and how heavily each space is used."
         actions={<>
-          {can('operations.manage') && <Button icon="plus" onClick={() => setEdit('new')}>Add space</Button>}
-          <Button variant="primary" icon="calendar" disabled={!list.data?.length} onClick={() => setBook(list.data?.find((f) => f.status === 'Available') ?? list.data![0])}>Book a room</Button>
+          {manage && <Button icon="plus" onClick={() => setEdit('new')}>Add space</Button>}
+          <Button variant="primary" icon="calendar" disabled={!firstBookable} onClick={() => firstBookable && setBook(firstBookable)}>Book a room</Button>
         </>} />
-      <div className="filterbar"><SearchInput value={q} onSearch={setQ} placeholder="Search spaces" /></div>
+      <Grid cols="g-4col" className="mb-4">
+        <Kpi label="Spaces" icon="building" value={fmt.n(stats.total)} loading={list.isLoading} foot={q ? 'Matching your search' : undefined} />
+        <Kpi label="Available now" icon="door" value={fmt.n(stats.available)} tone="teal" loading={list.isLoading} />
+        <Kpi label="Closed or in maintenance" icon="wrench" value={fmt.n(stats.blocked)} tone="amber" loading={list.isLoading}
+          foot={stats.requests ? `${stats.requests} open maintenance request${stats.requests === 1 ? '' : 's'}` : undefined} />
+        <Kpi label="Average utilisation" icon="activity" value={stats.util != null ? `${stats.util}%` : '—'} tone="info" loading={list.isLoading}
+          foot={stats.busy ? `${stats.busy} space${stats.busy === 1 ? '' : 's'} above 80%` : 'Booked hours of a 40-hour week'} />
+      </Grid>
       <Card flush>
-        {list.error ? <ErrorState error={list.error} onRetry={list.refetch} /> : (
+        <Toolbar>
+          <SearchInput value={q} onSearch={setQ} placeholder="Search spaces" />
+          {q && <Button variant="quiet" size="sm" icon="x" onClick={() => setQ('')}>Clear</Button>}
+        </Toolbar>
+        {list.error ? <ErrorState error={list.error} onRetry={list.refetch} /> : !list.isLoading && list.data && !list.data.length && !q ? (
+          <Empty icon="building" title="No spaces recorded for this campus"
+            sub="Add classrooms, labs, halls and fields to take bookings and track how heavily each one is used."
+            action={manage ? <Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add space</Button> : undefined} />
+        ) : (
           <DataTable<Facility>
-            rows={list.data} loading={list.isLoading} rowKey={(r) => r.id} emptyText="No spaces recorded for this campus."
+            rows={list.data} loading={list.isLoading} rowKey={(r) => r.id} emptyText="No spaces match your search."
             columns={[
               { key: 'name', label: 'Space', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.facilityType} · {r.campusName}</div></> },
               { key: 'capacity', label: 'Capacity', className: 'num', render: (r) => <span className="t-num">{r.capacity ?? '—'}</span> },
               { key: 'today', label: 'Today', render: (r) => r.today.length
                 ? <span className="t-sm">{r.today.map((b) => `${b.purpose} (${b.startsAt}–${b.endsAt})`).join(', ')}</span>
                 : <span className="t-faint">No bookings</span> },
-              { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.openRequests > 0 && <div className="t-micro t-warning mt-1">{r.openRequests} open request(s)</div>}</> },
+              { key: 'status', label: 'Status', render: (r) => <><Badge tone={facilityTone(r.status)}>{r.status}</Badge>
+                {r.openRequests > 0 && <div className="t-micro t-warning mt-1">{r.openRequests} open request{r.openRequests === 1 ? '' : 's'}</div>}</> },
               { key: 'util', label: 'Weekly utilisation', render: (r) => (
                 <Meter label={`${fmt.n(r.bookedHours)} h of 40 h`} value={r.utilisation} tone={r.utilisation > 80 ? 'critical' : r.utilisation > 60 ? 'amber' : 'teal'} />
               ) },
               { key: 'a', label: '', className: 'num', render: (r) => (
-                <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
-                  <Button size="sm" disabled={r.status === 'Closed' || r.status === 'Maintenance'} onClick={() => setBook(r)}>Book</Button>
-                  {can('operations.manage') && <Button size="sm" variant="quiet" icon="edit" aria-label={`Edit ${r.name}`} onClick={() => setEdit(r)} />}
+                <div className="row g-2 end">
+                  <Button size="sm" icon="calendar" disabled={!isBookable(r)} title={isBookable(r) ? undefined : `${r.status} — bookings are blocked`} onClick={() => setBook(r)}>Book</Button>
+                  {manage && <Button size="sm" variant="quiet" icon="edit" aria-label={`Edit ${r.name}`} title="Edit" onClick={() => setEdit(r)} />}
                 </div>
               ) },
             ]}
@@ -78,7 +112,7 @@ function BookingModal({ facilities, initial, onClose }: { facilities: Facility[]
     })) return;
     try { await save.mutateAsync({ bookedOn: v.bookedOn, startsAt: v.startsAt, endsAt: v.endsAt, purpose: v.purpose }); f.set('purpose', ''); } catch (e) { f.fromError(e); }
   };
-  const bookable = facilities.filter((x) => x.status !== 'Closed' && x.status !== 'Maintenance');
+  const bookable = facilities.filter(isBookable);
   return (
     <Modal open onClose={onClose} title="Book a room" sub="Clashing bookings are refused automatically." size="wide" busy={save.isPending}
       foot={<><Button onClick={onClose}>Close</Button><Button variant="primary" loading={save.isPending} onClick={submit}>Confirm booking</Button></>}>
@@ -90,11 +124,12 @@ function BookingModal({ facilities, initial, onClose }: { facilities: Facility[]
         <TextField label="To" type="time" required value={v.endsAt} onChange={(x) => f.set('endsAt', x)} error={f.errors.endsAt} />
       </FormGrid>
       <div className="mt-3"><TextField label="Purpose" required value={v.purpose} maxLength={160} onChange={(x) => f.set('purpose', x)} error={f.errors.purpose} placeholder="e.g. Grade 6C practical, P6" /></div>
+      <FormError error={save.error} />
       <div className="eyebrow mt-4 mb-2">Next two weeks</div>
       {bookings.isLoading ? <span className="t-sm t-muted">Loading bookings…</span> : bookings.error ? <ErrorState error={bookings.error} onRetry={bookings.refetch} />
         : !bookings.data?.bookings.length ? <Empty icon="calendar" title="No bookings yet" sub="This space is free for the next two weeks." /> : (
           <DataTable<Booking> compact stack={false} rows={bookings.data.bookings} rowKey={(b) => b.id} columns={[
-            { key: 'bookedOn', label: 'Date', render: (b) => fmt.date(b.bookedOn) },
+            { key: 'bookedOn', label: 'Date', render: (b) => <span className="t-num">{fmt.date(b.bookedOn)}</span> },
             { key: 'time', label: 'Time', render: (b) => <span className="t-num">{b.startsAt}–{b.endsAt}</span> },
             { key: 'purpose', label: 'Purpose' },
             { key: 'by', label: 'Booked by', render: (b) => b.bookedBy ?? '—' },
@@ -130,11 +165,14 @@ function FacilityModal({ facility, onClose }: { facility: Facility | null; onClo
       <FormGrid>
         <TextField label="Name" required value={v.name} onChange={(x) => f.set('name', x)} error={f.errors.name} maxLength={120} />
         <SelectField label="Type" required value={v.facilityType} onChange={(x) => f.set('facilityType', x)} options={TYPES} placeholder="Choose…" error={f.errors.facilityType} />
-        <SelectField label="Campus" required value={v.campusId} onChange={(x) => f.set('campusId', x)} options={campuses.options} />
+        <SelectField label="Campus" required value={v.campusId} onChange={(x) => f.set('campusId', x)} options={campuses.options} error={f.errors.campusId} />
         <TextField label="Capacity" type="number" min={1} value={v.capacity} onChange={(x) => f.set('capacity', x)} error={f.errors.capacity} />
-        <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={['Available', 'In use', 'Maintenance', 'Closed']} />
+        <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={STATUSES} />
       </FormGrid>
-      {facility?.status === 'Maintenance' && <div className="mt-3"><Badge tone="warning">Bookings are blocked while under maintenance</Badge></div>}
+      {(v.status === 'Maintenance' || v.status === 'Closed') && (
+        <div className="mt-3"><Banner tone="warning" icon="lock">New bookings are blocked while this space is {v.status === 'Closed' ? 'closed' : 'under maintenance'}.</Banner></div>
+      )}
+      <FormError error={save.error} />
     </Modal>
   );
 }

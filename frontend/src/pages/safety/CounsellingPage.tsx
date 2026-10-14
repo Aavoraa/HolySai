@@ -44,16 +44,16 @@ export default function CounsellingPage() {
       )}
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="Students supported" value={fmt.n(s?.studentsSupported ?? 0)} foot="This academic year" />
-          <Kpi loading={!s} label="Sessions this year" value={fmt.n(s?.sessionsThisYear ?? 0)} tone="info" foot="Completed sessions" />
-          <Kpi loading={!s} label="Open cases" value={fmt.n(s?.openCases ?? 0)} tone="amber" foot={s ? `${s.upcoming} upcoming session${s.upcoming === 1 ? '' : 's'}` : undefined}
+          <Kpi icon="users" loading={!s} label="Students supported" value={fmt.n(s?.studentsSupported ?? 0)} foot="This academic year" />
+          <Kpi icon="activity" loading={!s} label="Sessions this year" value={fmt.n(s?.sessionsThisYear ?? 0)} tone="info" foot="Completed sessions" />
+          <Kpi icon="checkSquare" loading={!s} label="Open cases" value={fmt.n(s?.openCases ?? 0)} tone="amber" foot={s ? `${s.upcoming} upcoming session${s.upcoming === 1 ? '' : 's'}` : undefined}
             onClick={() => list.setFilter('when', 'upcoming')} />
-          <Kpi loading={!s} label="External referrals" value={fmt.n(s?.referrals ?? 0)} tone="critical" onClick={() => list.setFilter('status', 'Referred')} />
+          <Kpi icon="target" loading={!s} label="External referrals" value={fmt.n(s?.referrals ?? 0)} tone="critical" onClick={() => list.setFilter('status', 'Referred')} />
         </Grid>
       )}
 
       <div className="grid g-main mt-4">
-        <Card title="Sessions" flush>
+        <Card icon="grid" title="Sessions" flush>
           <div className="toolbar">
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
             <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={SESSION_STATUSES} />
@@ -69,6 +69,7 @@ export default function CounsellingPage() {
               sort={list.sort}
               onSort={list.setSort}
               onRowClick={manage || s?.canViewNotes ? setModal : undefined}
+              rowClassName={(r) => (r.status === 'Referred' ? 'st-row--critical' : undefined)}
               emptyText="No sessions match these filters."
               columns={[
                 { key: 'date', label: 'Date', render: (r) => <span className="t-num">{fmt.dateTime(r.sessionOn)}</span> },
@@ -79,7 +80,7 @@ export default function CounsellingPage() {
                 {
                   key: 'notes', label: 'Notes', sortable: false,
                   render: (r) => !r.hasNotes ? <span className="t-faint">—</span>
-                    : r.notes ? <span className="t-xs t-clip" style={{ maxWidth: 220, display: 'inline-block' }}>{r.notes}</span>
+                    : r.notes ? <span className="t-xs t-clip st-notes-cell">{r.notes}</span>
                     : <span className="row g-1 t-muted t-xs"><Icon name="lock" size={12} />Restricted</span>,
                 },
               ]}
@@ -87,7 +88,7 @@ export default function CounsellingPage() {
           )}
           <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
         </Card>
-        <Card title="Reasons for support" sub="Sessions this year by reason">
+        <Card icon="grid" title="Reasons for support" sub="Sessions this year by reason">
           {!s ? <Skeleton height={200} /> : !reasons.length ? <Empty icon="heart" title="No sessions yet this year" /> : (
             <>
               <Chart svg={charts.donut({ size: 190, thickness: 28, center: String(reasonTotal), centerSub: 'sessions', data: reasons })} />

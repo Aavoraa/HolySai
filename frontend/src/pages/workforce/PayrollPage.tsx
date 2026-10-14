@@ -9,7 +9,7 @@ import {
   SelectField, StatStrip, Status, TextArea, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
-import { PayslipModal, monthLabel } from './shared';
+import { PayslipModal, TotalsBar, monthLabel } from './shared';
 import type { PayrollRun, PayslipRow, RunDetail } from './types';
 
 export default function PayrollPage() {
@@ -77,7 +77,7 @@ export default function PayrollPage() {
       }}>Release payslips</Button>;
     } else if (r.status === 'Released' && a.canPay) {
       primary = <Button variant="primary" icon="check" loading={pay.isPending} disabled={busy} onClick={async () => {
-        if (await confirm({ title: 'Mark this run as paid?', body: `Net ${fmt.money(r.net)} has been transferred. Included overtime and reimbursements are settled. This cannot be undone.`, confirmLabel: 'Mark as paid' })) pay.mutate();
+        if (await confirm({ title: 'Mark this run as paid?', body: `Net ${fmt.money(r.net)} has been transferred. Included overtime and reimbursements are settled. This cannot be undone.`, confirmLabel: 'Mark as paid', icon: 'check' })) pay.mutate();
       }}>Mark as paid</Button>;
     } else if (r.status === 'Approved' || r.status === 'Paid') {
       primary = <Button variant="teal" icon="check" disabled>{r.status === 'Paid' ? 'Payroll paid' : 'Payroll approved'}</Button>;
@@ -119,18 +119,23 @@ export default function PayrollPage() {
           {r.status === 'Inputs' && r.reviewNote && <div className="mb-4"><Banner tone="warning" icon="alert"><strong>Returned for changes:</strong> {r.reviewNote}</Banner></div>}
           {a?.makerChecker && <div className="mb-4"><Banner tone="neutral" icon="lock">You calculated this run, so another approver must review it (maker-checker).</Banner></div>}
           <Grid cols="g-4col">
-            <Kpi label="Payroll month" value={r.monthLabel.split(' ')[0].slice(0, 3)} unit={r.monthLabel.split(' ')[1]} foot={scope === 'group' ? r.campusName ?? undefined : undefined} />
-            <Kpi label="Employees" value={fmt.n(r.employeeCount)} />
-            <Kpi label="Gross salary" value={fmt.money(r.gross, { compact: true })} />
-            <Kpi label="Deductions" value={fmt.money(r.deductions, { compact: true })} tone="critical" />
-            <Kpi label="Overtime" value={fmt.money(r.overtime, { compact: true })} tone="amber" to="/overtime" />
-            <Kpi label="Allowances" value={fmt.money(r.allowances, { compact: true })} tone="info" to="/staff-allowances" />
-            <Kpi label="Net payroll" value={fmt.money(r.net, { compact: true })} tone="teal" />
-            <Kpi label="Pending approvals" value={d.inputs?.pendingCount ?? 0} tone={d.inputs?.pendingCount ? 'critical' : 'teal'}
+            <Kpi size="hero" icon="wallet" label="Net payroll" value={fmt.money(r.net, { compact: true })} tone="teal"
+              foot={`${r.monthLabel}${scope === 'group' && r.campusName ? ` · ${r.campusName}` : ''}`} />
+            <Kpi size="hero" icon="trending" label="Gross salary" value={fmt.money(r.gross, { compact: true })}
+              foot={`${fmt.money(r.deductions, { compact: true })} deductions`} />
+            <Kpi size="hero" icon="users" label="Employees" value={fmt.n(r.employeeCount)} foot={<Status value={r.status} />} />
+            <Kpi size="hero" icon="alertCircle" label="Pending approvals" value={d.inputs?.pendingCount ?? 0} tone={d.inputs?.pendingCount ? 'critical' : 'teal'}
               foot={d.inputs?.pendingCount ? 'Leave, overtime and claims awaiting a decision' : 'Nothing waiting'} />
           </Grid>
+          <div className="statgrid statgrid--card fw-fit mt-3" aria-label="Run components">
+            <Kpi size="compact" label="Payroll month" value={r.monthLabel.split(' ')[0].slice(0, 3)} unit={r.monthLabel.split(' ')[1]} />
+            <Kpi size="compact" label="Deductions" value={fmt.money(r.deductions, { compact: true })} tone="critical" />
+            <Kpi size="compact" label="Overtime" value={fmt.money(r.overtime, { compact: true })} tone="amber" to="/overtime" />
+            <Kpi size="compact" label="Allowances" value={fmt.money(r.allowances, { compact: true })} tone="info" to="/staff-allowances" />
+          </div>
           <div className="mt-5">
-            <Card title="Payroll workflow" sub="Attendance → Leave → Overtime → Allowances → Approval → Payroll processing → Payslip">
+            <Card icon="receipt" title="Payroll workflow" sub="Attendance → Leave → Overtime → Allowances → Approval → Payroll processing → Payslip"
+              actions={<Status value={r.status} lg />}>
               <Flow steps={flow} />
               {d.inputs && (
                 <div className="mt-4">
@@ -146,13 +151,19 @@ export default function PayrollPage() {
             </Card>
           </div>
           <div className="grid g-main mt-4">
-            <Card title="Payroll preview by category" flush>
+            <Card icon="receipt" title="Payroll preview by category" flush
+              foot={d.byCategory.length ? <TotalsBar items={[
+                { label: 'Employees', value: fmt.n(d.byCategory.reduce((acc, c) => acc + c.count, 0)) },
+                { label: 'Gross', value: fmt.money(r.gross, { compact: true }) },
+                { label: 'Deductions', value: fmt.money(-r.deductions, { compact: true }), tone: 'critical' },
+                { label: 'Net', value: fmt.money(r.net, { compact: true }) },
+              ]} /> : undefined}>
               {d.byCategory.length ? (
                 <DataTable rows={d.byCategory} rowKey={(c) => c.label}
                   columns={[
                     { key: 'label', label: 'Category' },
                     { key: 'count', label: 'Employees', className: 'num' },
-                    { key: 'gross', label: 'Gross', className: 'num', render: (c) => fmt.money(c.gross, { compact: true }) },
+                    { key: 'gross', label: 'Gross', className: 'num', render: (c) => <span className="t-num">{fmt.money(c.gross, { compact: true })}</span> },
                     { key: 'share', label: 'Share of payroll', sortable: false, render: (c) => (
                       <Meter label="" value={r.gross ? (c.gross / r.gross) * 100 : 0} right={fmt.pct(r.gross ? (c.gross / r.gross) * 100 : 0)} tone="info" />
                     ) },
@@ -160,7 +171,7 @@ export default function PayrollPage() {
               ) : <Empty icon="zap" title="Not calculated yet" sub="Collect inputs and calculate to preview the run." />}
             </Card>
             <div className="col g-4">
-              <Card title="Recent runs" flush>
+              <Card icon="grid" title="Recent runs" flush>
                 <DataTable compact rows={runs.data.rows.slice(0, 6)} rowKey={(x) => x.id} onRowClick={(x) => selectRun(x.id)}
                   rowClassName={(x) => (x.id === r.id ? 'is-selected' : undefined)}
                   columns={[
@@ -169,9 +180,9 @@ export default function PayrollPage() {
                     { key: 'status', label: 'Status', render: (x) => <Status value={x.status} /> },
                   ]} />
               </Card>
-              <Card title="Sample payslip" sub={sampleSlip?.employeeName ?? 'No payslips in this run yet'}>
+              <Card icon="receipt" title="Sample payslip" sub={sampleSlip?.employeeName ?? 'No payslips in this run yet'}>
                 <div className="row g-3">
-                  <Button variant="primary" block icon="receipt" disabled={!sampleSlip} onClick={() => sampleSlip && setSlipId(sampleSlip.id)}>Open payslip</Button>
+                  <Button block icon="receipt" disabled={!sampleSlip} onClick={() => sampleSlip && setSlipId(sampleSlip.id)}>Open payslip</Button>
                 </div>
                 <p className="t-xs t-muted mt-3">Payslips are released to the staff app and printable from the payslip view. Non-teaching staff receive them the same way.</p>
               </Card>
@@ -202,8 +213,8 @@ function ApproveModal({ detail, onClose }: { detail: RunDetail; onClose: () => v
   return (
     <Modal open onClose={onClose} busy={approve.isPending} title="Approve payroll" sub={`${r.monthLabel} · ${r.campusName ?? ''} · ${r.employeeCount} employees · net ${fmt.money(r.net)}`}
       foot={<>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" icon="check" loading={approve.isPending} onClick={() => approve.mutate()}>Approve payroll</Button>
+        <Button onClick={onClose} disabled={approve.isPending}>Cancel</Button>
+        <Button variant="primary" icon="check" loading={approve.isPending} onClick={() => approve.mutate()}>Approve {fmt.money(r.net, { compact: true })}</Button>
       </>}>
       <DataTable compact stack={false} rows={[
         { what: 'Gross salary', count: r.employeeCount, value: r.gross },
@@ -216,6 +227,10 @@ function ApproveModal({ detail, onClose }: { detail: RunDetail; onClose: () => v
           { key: 'count', label: 'Items', className: 'num' },
           { key: 'value', label: 'Value', className: 'num', render: (x) => fmt.money(x.value) },
         ]} />
+      <div className="fw-grandtotal">
+        <span className="fw-grandtotal__label">Net payroll to approve</span>
+        <span className="fw-grandtotal__value">{fmt.money(r.net)}</span>
+      </div>
       {items.length > 0 && (
         <div className="mt-4">
           <div className="eyebrow mb-2">Still awaiting a decision — not included</div>
@@ -243,8 +258,8 @@ function ReturnModal({ run, onClose }: { run: PayrollRun; onClose: () => void })
   return (
     <Modal open onClose={onClose} busy={m.isPending} title="Return for changes?" sub={`${run.monthLabel} · ${run.campusName ?? ''}`}
       foot={<>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="danger" loading={m.isPending} onClick={() => { setTouched(true); if (!error) m.mutate(); }}>Return run</Button>
+        <Button onClick={onClose} disabled={m.isPending}>Cancel</Button>
+        <Button variant="danger" icon="arrowLeft" loading={m.isPending} onClick={() => { setTouched(true); if (!error) m.mutate(); }}>Return run</Button>
       </>}>
       <p className="t-sm mb-3">The run goes back to Inputs. It must be recalculated and submitted again before approval.</p>
       <TextArea label="What needs to change" required rows={3} value={note} onChange={setNote} error={touched ? error : undefined} maxLength={500} />
@@ -289,7 +304,7 @@ function HistoryModal({ runs, current, onPick, onClose }: { runs: PayrollRun[]; 
           { key: 'month', label: 'Month', render: (x) => monthLabel(x.payMonth) },
           { key: 'campus', label: 'Campus', render: (x) => x.campusName ?? 'Group' },
           { key: 'employees', label: 'Employees', className: 'num', render: (x) => x.employeeCount },
-          { key: 'net', label: 'Net', className: 'num', render: (x) => fmt.money(x.net) },
+          { key: 'net', label: 'Net', className: 'num', render: (x) => <span className="t-num">{fmt.money(x.net)}</span> },
           { key: 'status', label: 'Status', render: (x) => <Status value={x.status} /> },
           { key: 'released', label: 'Released', render: (x) => fmt.date(x.releasedAt) },
         ]} />

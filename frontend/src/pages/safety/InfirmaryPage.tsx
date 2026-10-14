@@ -35,10 +35,10 @@ export default function InfirmaryPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="Visits today" value={fmt.n(s?.today ?? 0)} foot={s?.parentNotInformed ? `${s.parentNotInformed} parent${s.parentNotInformed === 1 ? '' : 's'} not yet informed` : 'All parents informed'} />
-          <Kpi loading={!s} label="Sent home" value={fmt.n(s?.sentHome ?? 0)} tone="amber" foot={s ? `${s.awaitingPickup} awaiting pickup` : undefined} />
-          <Kpi loading={!s} label="Visits this month" value={fmt.n(s?.thisMonth ?? 0)} tone="info" delta={s?.monthDeltaPct ?? null} inverse foot="vs same point last month" />
-          <Kpi loading={!s} label="Medical notes on file" value={fmt.n(s?.medicalOnFile ?? 0)} unit="students" tone="critical" foot="Allergy or condition flagged" />
+          <Kpi icon="target" loading={!s} label="Visits today" value={fmt.n(s?.today ?? 0)} foot={s?.parentNotInformed ? `${s.parentNotInformed} parent${s.parentNotInformed === 1 ? '' : 's'} not yet informed` : 'All parents informed'} />
+          <Kpi icon="activity" loading={!s} label="Sent home" value={fmt.n(s?.sentHome ?? 0)} tone="amber" foot={s ? `${s.awaitingPickup} awaiting pickup` : undefined} />
+          <Kpi icon="target" loading={!s} label="Visits this month" value={fmt.n(s?.thisMonth ?? 0)} tone="info" delta={s?.monthDeltaPct ?? null} inverse foot="vs same point last month" />
+          <Kpi icon="fileText" loading={!s} label="Medical notes on file" value={fmt.n(s?.medicalOnFile ?? 0)} unit="students" tone="critical" foot="Allergy or condition flagged" />
         </Grid>
       )}
 
@@ -46,7 +46,7 @@ export default function InfirmaryPage() {
         <Card title={isToday ? 'Today’s visits' : `Visits on ${fmt.date(date)}`} flush>
           <div className="toolbar">
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
-            <input className="input" type="date" aria-label="Date" value={date} max={todayIso()} style={{ width: 'auto' }}
+            <input className="input st-date" type="date" aria-label="Date" value={date} max={todayIso()}
               onChange={(e) => list.setFilter('date', e.target.value === todayIso() ? '' : e.target.value)} />
             <FilterSelect label="Outcome" value={list.filters.outcome} onChange={(v) => list.setFilter('outcome', v)} options={OUTCOMES} />
           </div>
@@ -57,13 +57,14 @@ export default function InfirmaryPage() {
               rowKey={(r) => r.id}
               sort={list.sort}
               onSort={list.setSort}
+              rowClassName={(r) => (r.outcome === 'Referred to hospital' ? 'st-row--critical' : undefined)}
               emptyText="No infirmary visits for this day."
               columns={[
                 { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={gradeOf(r.grade, r.section)} /> },
                 { key: 'time', label: 'Time', render: (r) => <span className="t-num">{fmt.time(r.visitedAt)}</span> },
                 { key: 'reason', label: 'Reason' },
-                { key: 'action', label: 'Action taken', sortable: false, render: (r) => <>{r.actionTaken ?? '—'}<div className="t-micro t-muted">{r.parentInformed ? 'Parent informed' : 'Parent not informed'}</div></> },
-                { key: 'outcome', label: 'Outcome', render: (r) => <Badge tone={outcomeTone(r.outcome)}>{r.outcome}</Badge> },
+                { key: 'action', label: 'Action taken', sortable: false, render: (r) => <>{r.actionTaken ?? '—'}<div className={`t-micro ${r.parentInformed ? 't-muted' : 't-warning'}`}>{r.parentInformed ? 'Parent informed' : 'Parent not yet informed'}</div></> },
+                { key: 'outcome', label: 'Outcome', render: (r) => <Badge tone={outcomeTone(r.outcome)} icon={r.outcome === 'Referred to hospital' ? 'alert' : undefined}>{r.outcome}</Badge> },
                 ...(manage ? [{
                   key: 'a', label: '', sortable: false, className: 'num',
                   render: (r: InfirmaryVisit) => <Button size="sm" onClick={() => setModal(r)}>Update</Button>,
@@ -73,7 +74,7 @@ export default function InfirmaryPage() {
           )}
           <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
         </Card>
-        <Card title="Reasons this term" sub="Most common reasons for a visit">
+        <Card icon="grid" title="Reasons this term" sub="Most common reasons for a visit">
           {!s ? <Skeleton height={180} /> : !s.reasons.length ? <Empty icon="stethoscope" title="No visits this term" /> : (
             <Chart svg={charts.hbar({ rows: s.reasons.map((r, i) => ({ label: r.label, value: r.value, color: SERIES[i % SERIES.length] })), labelW: 150, rowH: 30 })} />
           )}
@@ -106,14 +107,23 @@ function VisitModal({ onClose }: { onClose: () => void }) {
   };
   return (
     <FormModal title="Log an infirmary visit" onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors} onSubmit={submit} submitLabel="Log visit">
-      <div className="col g-4">
+      <div className="formsection">
+        <div className="formsection__title">Student</div>
         <StudentPicker value={student} onChange={(s) => { setStudent(s); fe.clear('studentId'); }} required error={fe.errors.studentId} />
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Visit</div>
         <div className="form-grid">
           <TextField label="Reason" required value={f.reason} onChange={set('reason')} maxLength={200} placeholder="Headache, minor cut…" error={fe.errors.reason} />
           <TextField label="Time" type="datetime-local" required value={f.visitedAt} onChange={set('visitedAt')} error={fe.errors.visitedAt} />
           <TextField className="span-2" label="Action taken" value={f.actionTaken} onChange={set('actionTaken')} maxLength={500} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Outcome</div>
+        <div className="form-grid">
           <SelectField label="Outcome" required value={f.outcome} onChange={set('outcome')} options={OUTCOMES} />
-          <div style={{ alignSelf: 'end', paddingBottom: 8 }}>
+          <div className="st-checkcell">
             <Checkbox checked={f.parentInformed} onChange={set('parentInformed')} label="Inform parents now" />
           </div>
         </div>
@@ -134,7 +144,7 @@ function OutcomeModal({ visit, onClose }: { visit: InfirmaryVisit; onClose: () =
       busy={save.isPending} error={save.error} onSubmit={submit} submitLabel="Save">
       <div className="form-grid">
         <SelectField label="Outcome" required value={f.outcome} onChange={(v) => setF((x) => ({ ...x, outcome: v }))} options={OUTCOMES} />
-        <div style={{ alignSelf: 'end', paddingBottom: 8 }}>
+        <div className="st-checkcell">
           <Checkbox checked={f.parentInformed} disabled={visit.parentInformed} onChange={(v) => setF((x) => ({ ...x, parentInformed: v }))}
             label={visit.parentInformed ? 'Parents already informed' : 'Inform parents now'} />
         </div>

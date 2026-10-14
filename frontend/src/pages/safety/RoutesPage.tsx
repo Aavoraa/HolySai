@@ -6,7 +6,7 @@ import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import {
   Badge, Button, Card, DataTable, Dl, Empty, ErrorState, IconButton, Modal, Page, PageHead, SearchInput, SelectField,
-  Skeleton, StudentLink, TextField, useConfirm,
+  Skeleton, StudentLink, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { RouteStopsMap } from './BusMap';
@@ -31,10 +31,11 @@ export default function RoutesPage() {
         sub="Route configuration, vehicle assignment and staffing."
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setEditing('new')}>Add route</Button>}
       />
-      <div className="filterbar">
-        <SearchInput value={q} onSearch={setQ} placeholder="Search route, name or area" />
-      </div>
       <Card flush>
+        <Toolbar>
+          <SearchInput value={q} onSearch={setQ} placeholder="Search route, name or area" />
+          {list.data && <span className="t-xs t-muted">{list.data.routes.length} routes · {list.data.summary.students} students</span>}
+        </Toolbar>
         {list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : (
           <DataTable
             rows={list.data?.routes}
@@ -49,7 +50,7 @@ export default function RoutesPage() {
               { key: 'attendant', label: 'Attendant', render: (r) => r.attendantName ?? <span className="t-faint">None</span> },
               { key: 'students', label: 'Students', className: 'num', render: (r) => <span className="t-num">{r.students}{r.capacity ? <span className="t-muted"> / {r.capacity}</span> : null}</span> },
               { key: 'stops', label: 'Stops', className: 'num', render: (r) => <span className="t-num">{r.stops}</span> },
-              { key: 'status', label: 'Status', render: (r) => <Badge tone={runTone(r.runStatus)}>{r.runStatus}</Badge> },
+              { key: 'status', label: 'Status', render: (r) => <Badge tone={runTone(r.runStatus)} dot>{r.runStatus}</Badge> },
             ]}
           />
         )}
@@ -179,7 +180,7 @@ function RouteDrawer({ id, campuses, onClose, onEdit }: { id: string; campuses: 
                     render: (s: StopRow) => {
                       const i = d.stopList.findIndex((x) => x.id === s.id);
                       return (
-                        <span className="row g-1" style={{ justifyContent: 'flex-end' }}>
+                        <span className="row g-1 end">
                           <IconButton icon="chevronUp" label={`Move ${s.name} up`} size={15} disabled={i === 0 || reorder.isPending} onClick={() => move(i, -1)} />
                           <IconButton icon="chevronDown" label={`Move ${s.name} down`} size={15} disabled={i === d.stopList.length - 1 || reorder.isPending} onClick={() => move(i, 1)} />
                           <IconButton icon="edit" label={`Edit ${s.name}`} size={15} onClick={() => setStopForm(s)} />

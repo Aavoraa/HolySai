@@ -26,19 +26,16 @@ function useTiles() {
   };
 }
 
-const BUS_COLOR: Record<string, string> = {
-  Delayed: 'var(--warning)', 'En route': 'var(--info)', 'At campus': 'var(--success)', Completed: 'var(--success)', Maintenance: 'var(--critical)', Scheduled: 'var(--neutral)',
-};
+/** Marker colour per run status (classes in styles/modules/safety-tracking.css). */
+const statusClass = (status: string) => `bus-pin--${status.toLowerCase().replace(/s+/g, '-')}`;
 
 function busIcon(label: string, status: string, selected: boolean, alert: boolean) {
-  const bg = BUS_COLOR[status] ?? 'var(--neutral)';
-  const ring = selected ? 'outline:3px solid var(--gold);outline-offset:1px;' : '';
-  const pulse = alert ? 'box-shadow:0 0 0 4px rgba(200,40,40,.28),0 2px 6px rgba(0,0,0,.3);' : 'box-shadow:0 2px 6px rgba(0,0,0,.3);';
+  const cls = ['bus-pin', statusClass(status), selected && 'bus-pin--selected', alert && 'bus-pin--alert'].filter(Boolean).join(' ');
   const safe = label.replace(/[<>&"]/g, '');
   return L.divIcon({
     className: '',
-    html: `<div style="display:flex;align-items:center;gap:4px;padding:3px 7px 3px 5px;border-radius:14px;background:${bg};color:#fff;border:2px solid #fff;${ring}${pulse}font:700 11px/1 var(--font-ui);white-space:nowrap">`
-      + `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${iconPaths.bus ?? ''}</svg>${safe}</div>`,
+    html: `<div class="${cls}">`
+      + `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconPaths.bus ?? ''}</svg>${safe}</div>`,
     iconSize: [70, 24],
     iconAnchor: [16, 12],
     tooltipAnchor: [40, 0],
@@ -54,8 +51,7 @@ const campusIcon = L.divIcon({
 
 const stopIcon = (n: number, done: boolean, highlight = false) => L.divIcon({
   className: '',
-  html: `<div style="width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font:700 10px/1 var(--font-ui);`
-    + `background:${done ? 'var(--teal)' : '#fff'};color:${done ? '#fff' : 'var(--navy)'};border:2px solid ${highlight ? 'var(--gold)' : done ? '#fff' : 'var(--navy)'};box-shadow:0 1px 3px rgba(0,0,0,.3)">${n}</div>`,
+  html: `<div class="stop-pin${done ? ' stop-pin--done' : ''}${highlight ? ' stop-pin--pending' : ''}">${n}</div>`,
   iconSize: [20, 20],
   iconAnchor: [10, 10],
 });
@@ -107,17 +103,17 @@ export function BusFleetMap({ routes, campuses, selectedId, onSelect, trail = []
         <FitBounds points={fit} />
         {campuses.map((c) => (
           <span key={c.id}>
-            {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ color: '#990033', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
+            {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ className: 'st-geofence', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
             <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
               <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
             </Marker>
           </span>
         ))}
         {planned.length > 1 && (
-          <Polyline positions={planned.map((p) => [p.latitude, p.longitude] as [number, number])} pathOptions={{ color: '#742588', weight: 3, opacity: 0.55, dashArray: '7 5' }} />
+          <Polyline positions={planned.map((p) => [p.latitude, p.longitude] as [number, number])} pathOptions={{ className: 'st-path-planned', weight: 3, opacity: 0.55, dashArray: '7 5' }} />
         )}
         {trail.length > 1 && (
-          <Polyline positions={trail.map((p) => [Number(p.latitude), Number(p.longitude)] as [number, number])} pathOptions={{ color: '#158055', weight: 4, opacity: 0.85 }} />
+          <Polyline positions={trail.map((p) => [Number(p.latitude), Number(p.longitude)] as [number, number])} pathOptions={{ className: 'st-path-trail', weight: 4, opacity: 0.85 }} />
         )}
         {selected && stopMarkers.map((s, i) => (
           <Marker key={`${s.name}-${i}`} position={[Number(s.latitude), Number(s.longitude)]} icon={stopIcon(i + 1, 'done' in s ? !!s.done : false)}>
@@ -148,12 +144,14 @@ export function BusFleetMap({ routes, campuses, selectedId, onSelect, trail = []
           </div>
         </div>
       )}
-      <div className="mapbox__overlay" aria-hidden="true">
-        <span className="row g-1"><span className="dot dot--info" />En route</span>
-        <span className="row g-1"><span className="dot dot--warning" />Delayed</span>
-        <span className="row g-1"><span className="dot dot--success" />At campus</span>
-        <span className="row g-1"><span style={{ width: 16, borderTop: '2px dashed #742588', display: 'inline-block' }} />Planned</span>
-        <span className="row g-1"><span style={{ width: 16, borderTop: '3px solid #158055', display: 'inline-block' }} />Travelled</span>
+      <div className="mapbox__overlay" role="group" aria-label="Map legend">
+        <span className="st-key"><span className="dot dot--info" />En route</span>
+        <span className="st-key"><span className="dot dot--warning" />Delayed</span>
+        <span className="st-key"><span className="dot dot--success" />At campus</span>
+        <span className="st-key"><span className="dot dot--critical" />Out of service</span>
+        <span className="st-key"><span className="dot dot--neutral" />Scheduled</span>
+        {selected && <span className="st-key"><span className="st-key__line st-key__line--planned" />Planned</span>}
+        {trail.length > 1 && <span className="st-key"><span className="st-key__line st-key__line--trail" />Travelled</span>}
       </div>
     </div>
   );
@@ -180,7 +178,7 @@ export function RouteStopsMap({ stops, campuses = [], pending, onPick }: {
             <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
           </Marker>
         ))}
-        {pts.length > 1 && <Polyline positions={pts} pathOptions={{ color: '#742588', weight: 3, opacity: 0.6 }} />}
+        {pts.length > 1 && <Polyline positions={pts} pathOptions={{ className: 'st-path-planned', weight: 3, opacity: 0.6 }} />}
         {stops.map((s, i) => (
           <Marker key={s.id} position={pts[i]} icon={stopIcon(i + 1, false)}>
             <Tooltip direction="top" offset={[0, -8]}>{s.name} · {s.pickupTime}</Tooltip>
@@ -189,7 +187,7 @@ export function RouteStopsMap({ stops, campuses = [], pending, onPick }: {
         {pending && <Marker position={[pending.latitude, pending.longitude]} icon={stopIcon(stops.length + 1, true, true)} />}
       </MapContainer>
       {onPick && (
-        <div className="mapbox__overlay" aria-hidden="true"><span>Click the map to place a new stop</span></div>
+        <div className="mapbox__overlay" role="note"><span>Click the map to place a new stop</span></div>
       )}
     </div>
   );

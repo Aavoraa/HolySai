@@ -10,11 +10,13 @@ import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, ErrorState, Flow, Grid, InlineError, Meter, Modal, Person, SelectField,
-  Skeleton, Status, Tabs, TextArea, TextField, useConfirm,
+  Avatar, Badge, Banner, Button, Card, Checkbox, DataTable, Dl, Empty, ErrorState, Flow, Grid, Icon, InlineError, Meter, Modal, Person,
+  SelectField, Skeleton, Status, Tabs, TextArea, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import type { EmployeeDetail, EmployeeProfile, LeaveBalance, LeaveType, Payslip, Shift } from './types';
+
+export { ListCount, TotalsBar } from '../finance/shared';
 
 export const TYPE_LABEL: Record<string, string> = { teaching: 'Teaching', non_teaching: 'Non-Teaching' };
 export const CATEGORIES = ['Leadership', 'Teachers', 'Reception & Admin', 'Security', 'Drivers & Attendants', 'Housekeeping', 'Lab Staff', 'Library Staff'];
@@ -95,9 +97,34 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : d && e ? (
         <>
-          <div className="mb-5"><Flow steps={d.journey} /></div>
-          <div className="grid g-3col g-4">
-            <Card title="Employment" tight>
+          <section className="card profilehead fw-profile" aria-label="Employee summary">
+            <div className="profilehead__main">
+              <Avatar name={e.fullName} size="xl" />
+              <div className="profilehead__id">
+                <div className="row g-2 wrap">
+                  <h2 className="profilehead__name">{e.fullName}</h2>
+                  <TypeBadge type={e.employeeType} />
+                  <TodayBadge status={e.today} />
+                  {e.employmentStatus && e.employmentStatus !== 'active' && <Status value={e.employmentStatus === 'on_notice' ? 'Due Soon' : 'Closed'} label={e.employmentStatus === 'on_notice' ? 'On notice' : 'Exited'} />}
+                </div>
+                <p className="profilehead__meta"><span className="t-strong t-semi">{e.code}</span> · {e.designation} · {e.department}</p>
+                <div className="profilehead__facts">
+                  <span title="Campus"><Icon name="building" size={14} />{e.campusFullName}</span>
+                  <span title="Shift"><Icon name="clock" size={14} />{e.shift ?? 'No fixed shift'}</span>
+                  <span title="Joined"><Icon name="calendar" size={14} />Joined {fmt.date(e.joinDate)}</span>
+                </div>
+              </div>
+            </div>
+            <dl className="profilehead__stats">
+              <div><dt>Attendance</dt><dd className={d.attendance.pct != null && d.attendance.pct < 90 ? 't-critical' : undefined}>{d.attendance.pct != null ? `${d.attendance.pct}%` : '—'}</dd><span>this month</span></div>
+              <div><dt>Leave balance</dt><dd>{e.leaveBalance} d</dd><span>of {e.leaveEntitled} days</span></div>
+              <div><dt>Overtime</dt><dd className={e.overtime > 15 ? 't-critical' : undefined}>{e.overtime} h</dd><span>this month</span></div>
+              <div><dt>CPD</dt><dd>{e.cpd} h</dd><span>this year</span></div>
+            </dl>
+          </section>
+          <Card icon="briefcase" title="Employee journey" tight><Flow steps={d.journey} /></Card>
+          <div className="grid g-3col g-4 mt-4">
+            <Card icon="grid" title="Employment" tight>
               <Dl items={[
                 ['Category', TYPE_LABEL[e.employeeType]],
                 ['Staff group', e.category],
@@ -113,7 +140,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
                 ...(e.basicSalary != null ? [['Basic salary', fmt.money(e.basicSalary)] as [string, ReactNode], ['Bank account', e.bankAccount ?? '—'] as [string, ReactNode]] : []),
               ]} />
             </Card>
-            <Card title="Time and leave" tight>
+            <Card icon="calendar" title="Time and leave" tight>
               <div className="col g-3">
                 <Meter label="Attendance this month" value={d.attendance.pct ?? 0} right={d.attendance.pct != null ? `${d.attendance.pct}%` : 'No marks'} tone={(d.attendance.pct ?? 100) < 90 ? 'critical' : 'teal'} />
                 <Meter label="Leave used" value={e.leaveEntitled ? ((e.leaveEntitled - e.leaveBalance) / e.leaveEntitled) * 100 : 0}
@@ -126,7 +153,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
                 <Meter label="CPD hours" value={Math.min(100, (e.cpd / (e.employeeType === 'teaching' ? 24 : 12)) * 100)} right={`${e.cpd} hours`} tone="teal" />
               </div>
             </Card>
-            <Card title="Documents" tight flush>
+            <Card icon="folder" title="Documents" tight flush>
               <DataTable compact stack={false} rows={d.documents} rowKey={(r) => r.id} emptyText="No documents on file."
                 columns={[
                   { key: 'name', label: 'Document' },
@@ -135,7 +162,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
             </Card>
           </div>
           <div className="card mt-4">
-            <div style={{ padding: '0 var(--s-2)' }}>
+            <div className="fw-tabs">
               <Tabs active={tab} onChange={setTab} items={[
                 { id: 'leave', label: 'Leave', count: d.leaveRequests.length },
                 { id: 'overtime', label: 'Overtime', count: d.overtime.length },
@@ -146,7 +173,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
             </div>
             {tab === 'leave' && (
               <>
-                <div className="row g-2 wrap" style={{ padding: 'var(--s-3) var(--s-4)' }}>
+                <div className="row g-2 wrap fw-tabpad">
                   {d.leaveBalances.map((b) => <Badge key={b.leaveTypeId} tone={b.balance > 0 ? 'info' : 'warning'}>{b.type}: {b.balance} of {b.entitled}</Badge>)}
                 </div>
                 <DataTable compact rows={d.leaveRequests} rowKey={(r) => r.id} emptyText="No leave requests."
@@ -268,15 +295,24 @@ export function EmployeeFormModal({ employee, onClose }: { employee?: EmployeeDe
     <Modal open onClose={onClose} busy={save.isPending} size="wide"
       title={e ? `Edit ${e.fullName}` : 'Add employee'} sub={e ? `${e.code} · changes are audited` : 'Teaching or non-teaching — one record from recruitment to payslip'}
       foot={<>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose} disabled={save.isPending}>Cancel</Button>
         <Button variant="primary" icon="check" loading={save.isPending} onClick={() => { setTouched(true); if (!Object.keys(errors).length) save.mutate(); }}>
           {e ? 'Save changes' : 'Create employee'}
         </Button>
       </>}>
       {save.error && !Object.keys(server).length && <div className="mb-3"><InlineError error={save.error} /></div>}
-      <div className="grid g-2col g-3">
+      <div className="formsection">
+        <div className="formsection__title">Personal details</div>
+        <div className="form-grid">
         <TextField label="Full name" required value={f.fullName} onChange={(v) => set('fullName', v)} error={err('fullName')} maxLength={120} />
         <SelectField label="Gender" value={f.gender} onChange={(v) => set('gender', v)} placeholder="Not stated" options={[{ value: 'F', label: 'Female' }, { value: 'M', label: 'Male' }, { value: 'O', label: 'Other' }]} />
+        <TextField label="Phone" value={f.phone} onChange={(v) => set('phone', v)} error={err('phone')} placeholder="+91…" />
+        <TextField label="Work email" type="email" value={f.email} onChange={(v) => set('email', v)} error={err('email')} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Employment</div>
+        <div className="form-grid">
         <SelectField label="Category" required value={f.employeeType} onChange={(v) => { set('employeeType', v); set('category', v === 'teaching' ? 'Teachers' : 'Reception & Admin'); }}
           options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
         <SelectField label="Staff group" required value={f.category} onChange={(v) => set('category', v)} options={CATEGORIES} />
@@ -286,13 +322,23 @@ export function EmployeeFormModal({ employee, onClose }: { employee?: EmployeeDe
           options={(shifts.data ?? []).map((s) => s.name)} />
         <TextField label="Department" required value={f.department} onChange={(v) => set('department', v)} error={err('department')} maxLength={60} />
         <TextField label="Designation" required value={f.designation} onChange={(v) => set('designation', v)} error={err('designation')} maxLength={80} />
-        <TextField label="Phone" value={f.phone} onChange={(v) => set('phone', v)} error={err('phone')} placeholder="+91…" />
-        <TextField label="Work email" type="email" value={f.email} onChange={(v) => set('email', v)} error={err('email')} />
         <TextField label="Join date" type="date" value={f.joinDate} onChange={(v) => set('joinDate', v)} />
         <SelectField label="Employment status" value={f.employmentStatus} onChange={(v) => set('employmentStatus', v)}
           options={[{ value: 'active', label: 'Active' }, { value: 'on_notice', label: 'On notice' }, { value: 'exited', label: 'Exited' }]} />
-        {showSalary && <TextField label="Basic salary (₹ / month)" required type="number" min={0} value={f.basicSalary} onChange={(v) => set('basicSalary', v)} error={err('basicSalary')} />}
-        {showSalary && <TextField label="Bank account (masked)" value={f.bankAccountMasked} onChange={(v) => set('bankAccountMasked', v)} error={err('bankAccountMasked')} placeholder="XXXXXX4417" />}
+        </div>
+      </div>
+      {showSalary && (
+        <div className="formsection">
+          <div className="formsection__title">Pay</div>
+          <div className="form-grid">
+        <TextField label="Basic salary (₹ / month)" required type="number" min={0} value={f.basicSalary} onChange={(v) => set('basicSalary', v)} error={err('basicSalary')} />
+        <TextField label="Bank account (masked)" value={f.bankAccountMasked} onChange={(v) => set('bankAccountMasked', v)} error={err('bankAccountMasked')} placeholder="XXXXXX4417" hint="Never enter a full account number" />
+          </div>
+        </div>
+      )}
+      <div className="formsection">
+        <div className="formsection__title">{f.employeeType === 'teaching' ? 'Teaching' : 'Role requirements'}</div>
+        <div className="form-grid">
         {f.employeeType === 'teaching' ? (
           <>
             <TextField label="Qualification" value={f.qualification} onChange={(v) => set('qualification', v)} />
@@ -306,8 +352,9 @@ export function EmployeeFormModal({ employee, onClose }: { employee?: EmployeeDe
             <TextField label="Licence expiry" type="date" value={f.licenceExpiry} onChange={(v) => set('licenceExpiry', v)} />
           </>
         )}
+        <div className="field span-2"><Checkbox checked={f.backgroundVerified} onChange={(v) => set('backgroundVerified', v)} label="Background verification completed" /></div>
+        </div>
       </div>
-      <div className="mt-3"><Checkbox checked={f.backgroundVerified} onChange={(v) => set('backgroundVerified', v)} label="Background verification completed" /></div>
     </Modal>
   );
 }
@@ -354,8 +401,8 @@ export function LeaveApplyModal({ mode, onClose }: { mode: 'self' | 'hr'; onClos
     <Modal open onClose={onClose} busy={submit.isPending} title="Apply for leave"
       sub={self ? 'Your request goes to HR for review' : 'Recorded on behalf of an employee'}
       foot={<>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="primary" loading={submit.isPending} onClick={() => { setTouched(true); if (!Object.keys(errors).length) submit.mutate(); }}>Submit request</Button>
+        <Button onClick={onClose} disabled={submit.isPending}>Cancel</Button>
+        <Button variant="primary" icon="send" loading={submit.isPending} onClick={() => { setTouched(true); if (!Object.keys(errors).length) submit.mutate(); }}>Submit request</Button>
       </>}>
       {submit.error && !Object.keys(server).length && <div className="mb-3"><InlineError error={submit.error} /></div>}
       <div className="grid g-2col g-3">
@@ -371,10 +418,10 @@ export function LeaveApplyModal({ mode, onClose }: { mode: 'self' | 'hr'; onClos
       </div>
       <div className="mt-3">
         <Checkbox checked={f.halfDay} onChange={(v) => set('halfDay', v)} label="Half day" />
-        {err('halfDay') && <div className="hint" style={{ color: 'var(--critical)' }}>{err('halfDay')}</div>}
+        {err('halfDay') && <div className="hint hint--error" role="alert">{err('halfDay')}</div>}
       </div>
       <div className="mt-3"><TextArea label="Reason" required rows={3} value={f.reason} onChange={(v) => set('reason', v)} error={err('reason')} maxLength={500} /></div>
-      {selected && selected.balance <= 0 && <div className="mt-3 banner banner--warning">No {selected.type.toLowerCase()} left this year.</div>}
+      {selected && selected.balance <= 0 && <div className="mt-3"><Banner tone="warning" icon="alert">No {selected.type.toLowerCase()} left this year.</Banner></div>}
       <div className="mt-3"><Flow steps={[{ label: 'Draft', state: 'active' }, { label: 'Submitted' }, { label: 'Under Review' }, { label: 'Approved / Rejected' }]} /></div>
     </Modal>
   );
@@ -385,7 +432,7 @@ export function LeaveApplyModal({ mode, onClose }: { mode: 'self' | 'hr'; onClos
 // ---------------------------------------------------------------------------
 function MoneyLine({ label, amount }: { label: string; amount: number }) {
   return (
-    <div className="row between" style={{ padding: '7px 0', borderBottom: '1px solid var(--border-soft)' }}>
+    <div className="payslip__line">
       <span className="t-sm">{label}</span>
       <span className="t-num">{fmt.money(amount)}</span>
     </div>
@@ -399,17 +446,17 @@ export function PayslipDocument({ slip }: { slip: Payslip }) {
         <div>
           <div className="eyebrow mb-3">Earnings</div>
           {slip.earnings.map((e) => <MoneyLine key={e.label} {...e} />)}
-          <div className="row between mt-3"><span className="t-bold">Gross</span><span className="t-bold t-num">{fmt.money(slip.gross)}</span></div>
+          <div className="payslip__subtotal"><span className="t-bold">Gross</span><span className="t-bold t-num">{fmt.money(slip.gross)}</span></div>
         </div>
         <div>
           <div className="eyebrow mb-3">Deductions</div>
           {slip.deductions.map((e) => <MoneyLine key={e.label} {...e} />)}
-          <div className="row between mt-3"><span className="t-bold">Total deductions</span><span className="t-bold t-num">{fmt.money(slip.totalDeductions)}</span></div>
+          <div className="payslip__subtotal"><span className="t-bold">Total deductions</span><span className="t-bold t-num">{fmt.money(slip.totalDeductions)}</span></div>
         </div>
       </div>
-      <div className="card card--tint mt-5 row between" style={{ padding: '16px 20px' }}>
+      <div className="card card--tint mt-5 payslip__net">
         <span className="t-bold">Net pay</span>
-        <span className="serif" style={{ fontSize: 24, fontWeight: 600 }}>{fmt.money(slip.net)}</span>
+        <span className="payslip__net-value">{fmt.money(slip.net)}</span>
       </div>
       <div className="mt-4">
         <Dl items={[
@@ -439,10 +486,10 @@ export function PayslipModal({ id, self, onClose }: { id: string; self?: boolean
       </>}>
       {q.isLoading ? <Skeleton height={320} /> : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : s ? (
         <>
-          {s.status !== 'Released' && <div className="mb-4 banner banner--warning">Not yet released — figures may change until the run is approved.</div>}
+          {s.status !== 'Released' && <div className="mb-4"><Banner tone="warning" icon="alert">Not yet released — figures may change until the run is approved.</Banner></div>}
           <PayslipDocument slip={s} />
         </>
-      ) : <Empty title="Payslip not found" />}
+      ) : <Empty icon="receipt" title="Payslip not found" sub="It may belong to a run that was recalculated." />}
     </Modal>
   );
 }

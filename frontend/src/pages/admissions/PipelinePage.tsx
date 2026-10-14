@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
-import { Button, ErrorState, Page, PageHead, Segment, Skeleton } from '@/components/ui';
+import { Badge, Button, ErrorState, Page, PageHead, Segment, Skeleton } from '@/components/ui';
 import { LeadFormModal } from './LeadForms';
 import { LeadProfileHost } from './LeadProfile';
 import { PipeCard, useLeadParam } from './shared';
@@ -35,20 +35,25 @@ export default function PipelinePage() {
         <div className="card card--pad">
           <div className="pipeline" aria-busy={q.isLoading || undefined}>
             {q.isLoading
-              ? Array.from({ length: 9 }).map((_, i) => <div key={i} className="pipeline__col"><Skeleton height={18} /><Skeleton height={70} style={{ marginTop: 12 }} /></div>)
+              ? Array.from({ length: 9 }).map((_, i) => <div key={i} className="pipeline__col"><Skeleton height={18} /><Skeleton height={70} style={{ marginTop: 'var(--s-3)' }} /></div>)
               : q.data!.map((col) => (
                 <section className="pipeline__col" key={col.stage} aria-label={`${col.stage}: ${col.count} leads`}>
                   <div className="pipeline__colhead">
                     <span className="pipeline__coltitle">{col.stage}</span>
-                    <span className="pipeline__count">{col.count}</span>
+                    <span className="row g-1">
+                      {col.leads.some((l) => l.overdue) && (
+                        <Badge tone="critical" title="Leads in this column with an overdue follow-up">{col.leads.filter((l) => l.overdue).length} overdue</Badge>
+                      )}
+                      <span className="pipeline__count">{col.count}</span>
+                    </span>
                   </div>
                   {col.leads.length
                     ? col.leads.map((l) => <PipeCard key={l.id} lead={l} onOpen={openLead} />)
-                    : <div className="t-micro t-muted t-center" style={{ padding: '16px 0' }}>No leads</div>}
+                    : <div className="adm-pipeline__empty">No leads at this stage</div>}
                 </section>
               ))}
           </div>
-          <p className="t-xs t-muted mt-3">Open a lead and change the stage from the profile — every move is recorded with a note in the stage history. Enrolled shows the last 60 days; lost leads are listed under Leads.</p>
+          <p className="t-xs t-muted mt-3">Each card shows the next step and its owner; overdue follow-ups are flagged in red. Open a lead to change its stage — every move is recorded with a note in the stage history. Enrolled shows the last 60 days; lost leads are listed under Leads.</p>
         </div>
       )}
       {adding && <LeadFormModal onClose={() => setAdding(false)} onCreated={(code) => { setAdding(false); openLead(code); }} />}

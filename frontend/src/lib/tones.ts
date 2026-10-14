@@ -1,7 +1,7 @@
 /** Status → tone mapping, identical to the wireframe so every module reads the same. */
 export type Tone = 'critical' | 'warning' | 'caution' | 'info' | 'success' | 'neutral';
 
-const AVATAR_TONES = ['', 'avatar--teal', 'avatar--amber', 'avatar--slate'];
+const AVATAR_TONES = ['', 'avatar--blue', 'avatar--plum', 'avatar--sage', 'avatar--amber-soft', 'avatar--slate'];
 
 export function toneFor(key: string) {
   const s = String(key || '');

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Badge, Button, Card, DataTable, ErrorState, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination, Person,
-  SearchInput, StudentLink, Tabs, useConfirm,
+  SearchInput, StudentLink, Tabs, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -45,15 +45,17 @@ export default function AcknowledgementsPage() {
       <PageHead title="Acknowledgements" sub="Which families have confirmed they read each circular, and who still needs a reminder." />
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.refetch} /> : (
         <Grid cols="g-3col">
-          <Kpi label="Acknowledgement rate" tone="teal" loading={summary.isLoading} value={s?.rate == null ? '—' : `${s.rate}%`}
+          <Kpi size="hero" icon="checkSquare" label="Acknowledgement rate" tone="teal" loading={summary.isLoading} value={s?.rate == null ? '—' : `${s.rate}%`}
             foot={`${fmt.n(s?.acknowledged)} of ${fmt.n(s?.targeted)} family confirmations`} />
-          <Kpi label="Outstanding" tone="amber" loading={summary.isLoading} value={fmt.n(s?.outstanding)}
+          <Kpi size="hero" icon="clock" label="Outstanding" tone="amber" loading={summary.isLoading} value={fmt.n(s?.outstanding)}
             foot={`Across ${fmt.n(s?.circulars)} released circular${s?.circulars === 1 ? '' : 's'}`} />
-          <Kpi label="Never acknowledged" tone="critical" loading={summary.isLoading} value={fmt.n(s?.neverAcknowledged)} foot="Families to call" />
+          <Kpi size="hero" icon="phone" label="Never acknowledged" tone="critical" loading={summary.isLoading} value={fmt.n(s?.neverAcknowledged)} foot="Families to call" />
         </Grid>
       )}
-      <Card title="By circular" flush className="mt-4"
-        actions={<SearchInput value={list.q} onSearch={list.setQ} placeholder="Search circulars" maxWidth={240} />}>
+      <Card icon="bell" title="By circular" sub="Open a circular to see who has not confirmed and chase them" flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search circulars" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Circular>
             rows={q.data?.rows}
@@ -62,7 +64,7 @@ export default function AcknowledgementsPage() {
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => r.status === 'Released' && r.requiresAck ? setOpen(r.id) : undefined}
-            emptyText="No circulars yet."
+            emptyText={list.hasFilters ? 'No circulars match your search.' : 'No circulars yet. Circulars that ask families to acknowledge appear here once released.'}
             columns={[
               { key: 'title', label: 'Circular', render: (r) => <><span className="t-bold">{r.title}</span><div className="t-micro t-muted">{r.publishedAt ? `Released ${fmt.date(r.publishedAt)}` : r.status}</div></> },
               { key: 'audience', label: 'Audience', sortable: false, render: (r) => r.audience },
@@ -79,7 +81,7 @@ export default function AcknowledgementsPage() {
                   if (r.status !== 'Released' || !r.requiresAck) return null;
                   const pending = Math.max(0, r.targetCount - r.ackCount);
                   return (
-                    <span className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                    <span className="adm-actions">
                       <Button size="sm" variant="quiet" onClick={(e) => { e.stopPropagation(); setOpen(r.id); }}>Families</Button>
                       {can('communication.send') && pending > 0 && (
                         <Button size="sm" icon="message" disabled={remind.pending} onClick={(e) => { e.stopPropagation(); void remind.run(r); }}>Chase {fmt.n(pending)}</Button>

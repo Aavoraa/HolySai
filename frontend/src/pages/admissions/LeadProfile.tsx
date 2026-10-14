@@ -4,12 +4,12 @@ import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  Badge, Banner, Button, Card, Dl, Empty, ErrorState, Feed, Modal, SelectField, Skeleton, Status, Stepper, TextArea, Timeline, useConfirm,
+  Avatar, Badge, Banner, Button, Card, Dl, Empty, ErrorState, Feed, Icon, Modal, SelectField, Skeleton, Status, Stepper, TextArea, Timeline, useConfirm,
 } from '@/components/ui';
-import { fmt } from '@/lib/format';
+import { cx, fmt } from '@/lib/format';
 import { ApplicationCard, DocumentsCard } from './ApplicationPanel';
 import { CloseFollowUpModal, CommunicationModal, FollowUpModal, StageModal } from './LeadForms';
-import { ScoreCell, SourceBadge, stageTone, useCounsellors, useLeadParam } from './shared';
+import { ScoreCell, SourceBadge, dueLabel, dueState, stageTone, useCounsellors, useLeadParam } from './shared';
 import { STAGES, type FollowUp, type LeadProfile } from './types';
 
 const CHANNEL_ICON: Record<string, string> = { WhatsApp: 'message', Call: 'phone', Email: 'mail', SMS: 'message', Note: 'edit', 'In-app': 'bell' };
@@ -29,20 +29,21 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
   const manage = can('admissions.manage');
   const [stageTarget, setStageTarget] = useState<string | null>(null);
   const [logging, setLogging] = useState(false);
+  const [scheduling, setScheduling] = useState<string | null>(null);
   const l = q.data;
   const nextStage = l && l.stageIndex >= 0 && l.stageIndex < STAGES.length - 2 ? STAGES[l.stageIndex + 1] : undefined;
+  const open = !!l && !['Enrolled', 'Lost'].includes(l.stage);
 
   return (
     <Modal open onClose={onClose} size="full"
-      title={l ? `${l.studentName} — ${l.grade}` : code}
-      sub={l ? `${l.code} · created ${fmt.date(l.createdAt)} · lead score ${l.score}` : 'Loading lead…'}
+      title={l ? `Lead ${l.code}` : code}
+      sub={l ? `Created ${fmt.date(l.createdAt)} · ${l.campusName}` : 'Loading lead…'}
       foot={
         <>
           <Button onClick={onClose}>Close</Button>
           <Button icon="user" disabled={!l?.studentId} onClick={() => navigate(`/student-360/${l!.studentId}`)}>Open Student 360</Button>
-          {manage && l && !['Enrolled', 'Lost'].includes(l.stage) && (
+          {manage && open && (
             <>
-              <Button icon="phone" onClick={() => setLogging(true)}>Log a call</Button>
               <Button icon="layers" onClick={() => setStageTarget('')}>Change stage</Button>
               {nextStage && (
                 <Button variant="primary" iconRight="arrowRight" onClick={() => setStageTarget(nextStage)}>Move to {nextStage}</Button>
@@ -53,16 +54,12 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
         </>
       }>
       {q.isLoading ? (
-        <div className="col g-4" aria-busy="true"><Skeleton height={40} /><Skeleton height={260} /></div>
+        <div className="col g-4" aria-busy="true"><Skeleton height={140} /><Skeleton height={260} /></div>
       ) : q.error ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} title="We could not load this lead" />
       ) : l ? (
         <>
-          <div className="mb-5">
-            {l.stage === 'Lost'
-              ? <Banner tone="critical" icon="x"><strong>Closed as lost.</strong> {l.lostReason ?? 'No reason recorded.'}</Banner>
-              : <Stepper steps={[...STAGES]} active={l.stageIndex} />}
-          </div>
+          <LeadHeader lead={l} manage={manage && open} onLog={() => setLogging(true)} onSchedule={setScheduling} />
           <div className="grid g-2col g-5">
             <div className="col g-4">
               <LeadDetail lead={l} />
@@ -70,6 +67,7 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
               <DocumentsCard app={l.application} />
             </div>
             <div className="col g-4">
+              <FollowUps lead={l} />
               <Card title="Communication history" tight actions={manage && !['Enrolled'].includes(l.stage) ? <Button size="sm" icon="plus" onClick={() => setLogging(true)}>Log</Button> : undefined}>
                 {l.communications.length ? (
                   <Feed items={l.communications.map((c) => ({
@@ -78,10 +76,9 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
                     text: `${c.channel} — ${c.subject}`,
                     meta: [c.sentBy, c.body, c.status !== 'Internal' ? c.status : null].filter(Boolean).join(' · '),
                   }))} />
-                ) : <p className="t-sm t-muted">No communication recorded yet.</p>}
+                ) : <Empty icon="message" title="No communication yet" sub="Calls, WhatsApp messages and notes with this family appear here. Use “Log” after you speak to them." />}
               </Card>
-              <FollowUps lead={l} />
-              <Card title="Stage history" tight>
+              <Card icon="activity" title="Stage history" tight>
                 <Timeline items={l.history.map((h) => ({
                   time: `${fmt.dateTime(h.changedAt)}${h.changedBy ? ` · ${h.changedBy}` : ''}`,
                   title: h.fromStage ? `${h.fromStage} → ${h.toStage}` : h.toStage,
@@ -93,9 +90,86 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
           </div>
           {stageTarget !== null && <StageModal lead={l} initial={stageTarget || undefined} onClose={() => setStageTarget(null)} />}
           {logging && <CommunicationModal leadCode={l.code} onClose={() => setLogging(false)} />}
+          {scheduling !== null && (
+            <FollowUpModal leadCode={l.code} leadName={l.studentName} counsellorId={l.counsellorId} type={scheduling || undefined} onClose={() => setScheduling(null)} />
+          )}
         </>
       ) : null}
     </Modal>
+  );
+}
+
+/** Identity, quick actions and the figures a counsellor needs before calling the family. */
+function LeadHeader({ lead: l, manage, onLog, onSchedule }: { lead: LeadProfile; manage: boolean; onLog: () => void; onSchedule: (type: string) => void }) {
+  const open = !['Enrolled', 'Lost'].includes(l.stage);
+  const due = open ? dueState(l.nextActionAt, l.overdue) : 'none';
+  const scheduled = l.followUps.filter((f) => f.status === 'Scheduled');
+  const overdueTasks = scheduled.filter((f) => f.overdue).length;
+  const days = Math.max(0, Math.floor((Date.now() - new Date(l.createdAt).getTime()) / 86_400_000));
+  const app = l.application;
+  return (
+    <section className="card profilehead adm-profile">
+      <div className="profilehead__main">
+        <Avatar name={l.studentName} size="xl" />
+        <div className="profilehead__id">
+          <div className="row g-2 wrap">
+            <h2 className="profilehead__name">{l.studentName}</h2>
+            <Badge tone={stageTone(l.stage)}>{l.stage}</Badge>
+            {due === 'overdue' && <Badge tone="critical" dot>Follow-up overdue</Badge>}
+          </div>
+          <p className="profilehead__meta">
+            <span className="t-strong t-semi">{l.grade}</span>{l.curriculum ? ` · ${l.curriculum}` : ''} · {l.campusName} · <SourceBadge source={l.source} />
+          </p>
+          <div className="profilehead__facts">
+            <span title="Parent"><Icon name="user" size={14} />{l.parentName}</span>
+            <span title="Phone"><Icon name="phone" size={14} /><a className="adm-tel" href={`tel:${l.phone.replace(/\s/g, '')}`}>{l.phone}</a></span>
+            {l.email && <span title="Email" className="t-clip"><Icon name="mail" size={14} />{l.email}</span>}
+            <span title="Counsellor"><Icon name="userCheck" size={14} />{l.counsellor ?? (open ? <span className="t-critical t-semi">No counsellor assigned</span> : '—')}</span>
+          </div>
+        </div>
+        {manage && (
+          <div className="profilehead__actions">
+            <Button size="sm" icon="phone" onClick={onLog}>Log a call</Button>
+            <Button size="sm" icon="clock" onClick={() => onSchedule('')}>Follow-up</Button>
+            <Button size="sm" icon="calendar" onClick={() => onSchedule('Campus Visit')}>Campus visit</Button>
+          </div>
+        )}
+      </div>
+      <dl className="profilehead__stats">
+        <div>
+          <dt>Next action</dt>
+          <dd className={cx('t-clip', due === 'overdue' && 'adm-due--overdue', due === 'today' && 'adm-due--today')}>
+            {!open ? '—' : l.nextActionAt ? (due === 'overdue' ? 'Overdue' : dueLabel(l.nextActionAt)) : 'Not set'}
+          </dd>
+          <span className="t-clip">{open ? l.nextAction ?? 'Schedule a follow-up' : `Lead ${l.stage.toLowerCase()}`}</span>
+        </div>
+        <div>
+          <dt>Open follow-ups</dt>
+          <dd className={overdueTasks ? 'adm-due--overdue' : undefined}>{scheduled.length}</dd>
+          <span>{overdueTasks ? `${overdueTasks} overdue` : scheduled.length ? 'none overdue' : 'nothing scheduled'}</span>
+        </div>
+        <div>
+          <dt>Lead score</dt>
+          <dd className={l.score >= 80 ? 't-success' : l.score < 55 ? 't-critical' : undefined}>{l.score}</dd>
+          <span>out of 100</span>
+        </div>
+        <div>
+          <dt>Application</dt>
+          <dd className="t-clip">{app ? app.status : 'Not opened'}</dd>
+          <span className="t-clip">{app ? `${app.applicationNo} · ${app.documents.filter((d) => d.status === 'Verified').length}/${app.documents.length} documents` : 'Opens at the Application stage'}</span>
+        </div>
+        <div>
+          <dt>In pipeline</dt>
+          <dd>{days} {days === 1 ? 'day' : 'days'}</dd>
+          <span>since {fmt.date(l.createdAt)}</span>
+        </div>
+      </dl>
+      <div className="adm-profile__stepper">
+        {l.stage === 'Lost'
+          ? <Banner tone="critical" icon="x"><strong>Closed as lost.</strong> {l.lostReason ?? 'No reason recorded.'}</Banner>
+          : <Stepper steps={[...STAGES]} active={l.stageIndex} />}
+      </div>
+    </section>
   );
 }
 
@@ -133,7 +207,7 @@ function LeadDetail({ lead: l }: { lead: LeadProfile }) {
   );
 
   return (
-    <Card title="Lead detail" tight actions={<Badge tone={stageTone(l.stage)}>{l.stage}</Badge>}>
+    <Card icon="target" title="Lead detail" tight actions={<Badge tone={stageTone(l.stage)}>{l.stage}</Badge>}>
       <Dl items={[
         ['Parent', l.parentName],
         ['Phone', <a key="p" href={`tel:${l.phone.replace(/\s/g, '')}`}>{l.phone}</a>],
@@ -172,16 +246,16 @@ function FollowUps({ lead: l }: { lead: LeadProfile }) {
       </span>
     ) : undefined}>
       {l.followUps.length ? (
-        <div className="col g-2">
+        <div>
           {l.followUps.map((f) => (
-            <div key={f.id} className="row between g-2 wrap">
-              <span className="t-sm grow" style={{ minWidth: 180 }}>
+            <div key={f.id} className={cx('adm-task', f.overdue && 'adm-task--overdue')}>
+              <span className="adm-task__body">
                 <strong>{f.type}</strong> — {fmt.dateTime(f.scheduledAt)}
-                <span className="t-micro t-muted" style={{ display: 'block' }}>
+                <span className="adm-task__meta">
                   {[f.notes, f.outcome && `Outcome: ${f.outcome}`, f.assignedName ?? (f.status === 'Scheduled' ? 'No one assigned' : null)].filter(Boolean).join(' · ')}
                 </span>
               </span>
-              <span className="row g-1">
+              <span className="adm-task__actions">
                 {f.overdue ? <Badge tone="critical">Overdue</Badge> : <Status value={f.status} />}
                 {manage && f.status === 'Scheduled' && (
                   <>
@@ -195,11 +269,11 @@ function FollowUps({ lead: l }: { lead: LeadProfile }) {
             </div>
           ))}
         </div>
-      ) : <Empty icon="calendar" title="No follow-ups" sub="Schedule the next call or campus visit." />}
+      ) : <Empty icon="calendar" title="No follow-ups scheduled" sub="Every open lead needs a next step — schedule the next call or a campus visit." />}
       {manage && (
         <form className="mt-3" onSubmit={(e) => { e.preventDefault(); if (note.trim().length >= 2) addNote.mutate({ channel: 'Note', subject: note.trim() }); }}>
           <TextArea label="Add a note" rows={2} value={note} onChange={setNote} maxLength={200} placeholder="What did the parent say?" />
-          <div className="row mt-2" style={{ justifyContent: 'flex-end' }}>
+          <div className="row end mt-2">
             <Button size="sm" type="submit" icon="edit" loading={addNote.isPending} disabled={note.trim().length < 2}>Save note</Button>
           </div>
         </form>

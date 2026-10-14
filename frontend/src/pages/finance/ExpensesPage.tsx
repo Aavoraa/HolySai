@@ -6,12 +6,12 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { fmt } from '@/lib/format';
 import {
-  Button, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Flow, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Status, Switch, TextField, useConfirm,
+  Button, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Flow, Modal, Page, PageHead, Pagination, SearchInput,
+  SelectField, Status, Switch, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { SERIES } from '@/lib/tones';
 import type { ExpenseRow, ExpenseSummary } from './types';
-import { fieldErrors, isMoney, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
+import { fieldErrors, isMoney, ListCount, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
 
 export default function ExpensesPage() {
   const { can, user } = useAuth();
@@ -50,15 +50,16 @@ export default function ExpensesPage() {
           { label: 'Rejected', meta: f ? `${f.rejected30d} in 30 days — returned with a reason` : '…' },
         ]} />
       </Card>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference or description" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid']} />
-        <FilterSelect label="Category" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={lk.data?.expenseCategories ?? []} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        <div className="spacer" />
-        {f && f.pendingValue > 0 && <span className="t-sm t-muted">Awaiting decision: <strong className="t-num">{fmt.money(f.pendingValue)}</strong></span>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference or description" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid']} />
+          <FilterSelect label="Category" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={lk.data?.expenseCategories ?? []} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          {f && f.pendingValue > 0 && <span className="fw-count">Awaiting decision <strong>{fmt.money(f.pendingValue)}</strong></span>}
+          <ListCount total={q.data?.meta.total} noun="expenses" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             emptyText={list.hasFilters ? 'No expenses match the current filters.' : 'No expenses raised yet.'}
@@ -71,7 +72,7 @@ export default function ExpensesPage() {
               {
                 key: 'status', label: 'Status', render: (r) => <>
                   <Status value={r.status} />
-                  {r.rejectionReason && <div className="t-micro t-muted" style={{ maxWidth: 220 }}>{r.rejectionReason}</div>}
+                  {r.rejectionReason && <div className="t-micro t-muted fw-note">{r.rejectionReason}</div>}
                   {r.decidedBy && !r.rejectionReason && <div className="t-micro t-muted">{r.decidedBy}</div>}
                 </>,
               },
@@ -81,10 +82,10 @@ export default function ExpensesPage() {
                     {r.status === 'Draft' && can('finance.manage') && <Button size="sm" loading={busy('submit', r.id)} onClick={() => act.submit.mutate(r.id)}>Submit</Button>}
                     {r.status === 'Submitted' && can('finance.approve') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
                     {['Submitted', 'Under Review'].includes(r.status) && can('finance.approve') && <>
-                      <Button size="sm" variant="teal" loading={busy('approve', r.id)} onClick={async () => {
+                      <Button size="sm" variant="teal" icon="check" loading={busy('approve', r.id)} onClick={async () => {
                         if (await confirm({ title: `Approve ${r.code}?`, body: `${r.description} — ${fmt.money(r.amount)} will count against the ${r.category} budget.`, confirmLabel: 'Approve', icon: 'check' })) act.approve.mutate(r.id);
                       }}>Approve</Button>
-                      <Button size="sm" onClick={() => setRejecting(r)}>Reject</Button>
+                      <Button size="sm" icon="x" onClick={() => setRejecting(r)}>Reject</Button>
                     </>}
                     {r.status === 'Approved' && can('finance.manage') && (
                       <Button size="sm" loading={busy('pay', r.id)} onClick={async () => {
@@ -99,13 +100,13 @@ export default function ExpensesPage() {
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>
       <div className="mt-4">
-        <Card title="Expense by category" sub="Approved and paid, this academic year">
+        <Card icon="wallet" title="Expense by category" sub="Approved and paid, this academic year">
           {s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : cats.length ? (
             <Chart svg={charts.hbar({
               rows: cats.map((c, i) => ({ label: c.label, value: c.value, color: SERIES[i % SERIES.length], display: fmt.money(c.value, { compact: true }) })),
               labelW: 160, rowH: 32,
             })} />
-          ) : <Empty icon="pieChart" title={s.isLoading ? 'Loading…' : 'No approved expenses yet'} />}
+          ) : <Empty icon="pieChart" title={s.isLoading ? 'Loading…' : 'No approved expenses yet'} sub={s.isLoading ? undefined : 'Spend by category appears once expenses are approved.'} />}
         </Card>
       </div>
       <ReasonModal open={!!rejecting} title={`Reject ${rejecting?.code ?? ''}`} sub={rejecting ? `${rejecting.description} — ${fmt.money(rejecting.amount)}` : ''}
@@ -148,7 +149,9 @@ function ExpenseModal({ open, onClose, defaultSubmitter }: { open: boolean; onCl
           save.mutate({ ...f, description: f.description.trim(), amount: Number(f.amount), vendorId: f.vendorId || undefined });
         }}>{f.submit ? 'Submit for approval' : 'Save draft'}</Button>
       </>}>
-      <div className="grid g-2col">
+      <div className="formsection">
+        <div className="formsection__title">What was spent</div>
+        <div className="form-grid">
         <SelectField label="Campus" required value={f.campusId} onChange={set('campusId')} placeholder="Choose…" error={errs.campusId}
           options={(lookups?.campuses ?? []).map((c) => ({ value: c.id, label: c.shortName }))} />
         <SelectField label="Category (budget line)" required value={f.category} onChange={set('category')} placeholder="Choose…" error={errs.category}
@@ -156,11 +159,17 @@ function ExpenseModal({ open, onClose, defaultSubmitter }: { open: boolean; onCl
         <TextField label="Description" required value={f.description} onChange={set('description')} maxLength={200} error={errs.description} className="span-2" />
         <TextField label="Amount (₹)" required type="number" min="0" step="0.01" value={f.amount} onChange={set('amount')} error={errs.amount} />
         <TextField label="Expense date" required type="date" max={todayIso()} value={f.expenseDate} onChange={set('expenseDate')} error={errs.expenseDate} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Who and where</div>
+        <div className="form-grid">
         <SelectField label="Raised by" required value={f.submittedBy} onChange={set('submittedBy')} placeholder="Choose…" error={errs.submittedBy}
           options={(lk.data?.employees ?? []).map((e) => ({ value: e.id, label: `${e.fullName} · ${e.department}` }))} />
         <SelectField label="Vendor" value={f.vendorId} onChange={set('vendorId')} placeholder="None / not listed"
           options={(lk.data?.vendors ?? []).map((v) => ({ value: v.id, label: v.name }))} />
-        <div className="field"><Switch checked={f.submit} onChange={(v) => setF((x) => ({ ...x, submit: v }))} label="Submit for approval now" /></div>
+        <div className="field span-2"><Switch checked={f.submit} onChange={(v) => setF((x) => ({ ...x, submit: v }))} label="Submit for approval now" /></div>
+        </div>
       </div>
     </Modal>
   );

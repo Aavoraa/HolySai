@@ -3,8 +3,8 @@ import { useAuth } from '@/auth/AuthContext';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import {
-  Badge, Button, Card, DataTable, ErrorState, FilterSelect, InlineError, Modal, Page, PageHead, Pagination, SearchInput, SelectField,
-  Status, TextArea, TextField, useConfirm,
+  Badge, Button, Card, DataTable, ErrorState, FilterSelect, Icon, InlineError, Modal, Page, PageHead, Pagination, SearchInput, SelectField,
+  Status, TextArea, TextField, useConfirm, Toolbar,
 } from '@/components/ui';
 import { serverFieldErrors } from './shared';
 
@@ -32,17 +32,17 @@ export default function QuestionBankPage() {
       <PageHead title="Question Bank" sub="Approved questions, tagged to Cambridge objectives and reused across assessments."
         actions={can('academics.manage') && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add question</Button>} />
       <Card flush>
-        <div className="filterbar" style={{ padding: '12px 16px' }}>
+        <Toolbar>
           <SearchInput value={search} onSearch={setSearch} placeholder="Search topics" />
           <FilterSelect label="Subject" value={subjectId} onChange={setSubjectId} options={(lookups?.subjects ?? []).map((x) => ({ value: x.id, label: x.name }))} />
-        </div>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={q.data}
             loading={q.isLoading}
             rowKey={(r) => `${r.subjectId}|${r.topic}|${r.stage}`}
             onRowClick={setBrowse}
-            emptyText={search || subjectId ? 'No topics match.' : 'The question bank is empty.'}
+            emptyText={search || subjectId ? 'No topics match these filters.' : 'The question bank is empty. Approved questions appear here, grouped by topic.'}
             columns={[
               { key: 'topic', label: 'Topic', render: (r) => <span className="t-bold">{r.topic}</span> },
               { key: 'subject', label: 'Subject' },
@@ -100,7 +100,7 @@ function BrowseModal({ topic, onClose }: { topic: Topic; onClose: () => void }) 
             { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
             {
               key: 'a', label: '', className: 'num', render: (r) => mayEdit(r) && (
-                <span className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                <span className="ac-links">
                   <Button size="sm" icon="edit" onClick={() => setEditing(r)} aria-label="Edit question">Edit</Button>
                   {r.timesUsed > 0 ? (
                     r.status !== 'Retired' && <Button size="sm" onClick={async () => {
@@ -155,21 +155,31 @@ function QuestionForm({ question, defaults, onClose }: { question?: Question; de
     <Modal open onClose={onClose} busy={save.isPending} size="wide" title={editing ? 'Edit question' : 'Add question'}
       foot={<><Button onClick={onClose} disabled={save.isPending}>Cancel</Button><Button variant="primary" onClick={submit} loading={save.isPending}>{editing ? 'Save changes' : 'Add question'}</Button></>}>
       {save.error && !Object.keys(serverFieldErrors(save.error)).length && <div className="mb-3"><InlineError error={save.error} /></div>}
-      <div className="grid g-2col g-3">
-        {!editing && <SelectField label="Subject" required value={f.subjectId} onChange={set('subjectId')} placeholder="Choose a subject" error={errors.subjectId} options={(lookups?.subjects ?? []).map((x) => ({ value: x.id, label: x.name }))} />}
-        <div className="field">
-          <label className="label" htmlFor="qb-topic">Topic<span className="req"> *</span></label>
-          <input id="qb-topic" className="input" list="qb-topics" value={f.topic} maxLength={120} onChange={(e) => set('topic')(e.target.value)} aria-invalid={!!errors.topic || undefined} />
-          <datalist id="qb-topics">{[...new Set((topics.data ?? []).filter((t) => !f.subjectId || t.subjectId === f.subjectId).map((t) => t.topic))].map((t) => <option key={t} value={t} />)}</datalist>
-          {errors.topic && <span className="hint" role="alert" style={{ color: 'var(--critical)' }}>{errors.topic}</span>}
+      <div className="formsection">
+        <div className="formsection__title">Where it belongs</div>
+        <div className="grid g-2col g-3">
+          {!editing && <SelectField label="Subject" required value={f.subjectId} onChange={set('subjectId')} placeholder="Choose a subject" error={errors.subjectId} options={(lookups?.subjects ?? []).map((x) => ({ value: x.id, label: x.name }))} />}
+          <div className="field">
+            <label className="label" htmlFor="qb-topic">Topic<span className="req"> *</span></label>
+            <input id="qb-topic" className="input" list="qb-topics" value={f.topic} maxLength={120} onChange={(e) => set('topic')(e.target.value)} aria-invalid={!!errors.topic || undefined} />
+            <datalist id="qb-topics">{[...new Set((topics.data ?? []).filter((t) => !f.subjectId || t.subjectId === f.subjectId).map((t) => t.topic))].map((t) => <option key={t} value={t} />)}</datalist>
+            {errors.topic
+              ? <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{errors.topic}</span>
+              : <span className="hint">Pick an existing topic or type a new one.</span>}
+          </div>
+          <TextField label="Stage" required value={f.stageLabel} onChange={set('stageLabel')} error={errors.stageLabel} placeholder="Primary 5" maxLength={40} />
         </div>
-        <TextField label="Stage" required value={f.stageLabel} onChange={set('stageLabel')} error={errors.stageLabel} placeholder="Primary 5" maxLength={40} />
-        <SelectField label="Question type" value={f.questionType} onChange={set('questionType')} options={TYPES} />
-        <SelectField label="Difficulty" value={f.difficulty} onChange={set('difficulty')} options={['Foundation', 'Core', 'Higher']} />
-        <TextField label="Marks" type="number" min={1} max={100} value={f.marks} onChange={set('marks')} error={errors.marks} />
-        <SelectField label="Status" value={f.status} onChange={set('status')} options={editing ? ['Draft', 'Approved', 'Retired'] : ['Draft', 'Approved']} />
       </div>
-      <div className="mt-3"><TextArea label="Question" required rows={4} value={f.question} onChange={set('question')} error={errors.question} maxLength={2000} /></div>
+      <div className="formsection">
+        <div className="formsection__title">Question</div>
+        <div className="grid g-2col g-3">
+          <SelectField label="Question type" value={f.questionType} onChange={set('questionType')} options={TYPES} />
+          <SelectField label="Difficulty" value={f.difficulty} onChange={set('difficulty')} options={['Foundation', 'Core', 'Higher']} />
+          <TextField label="Marks" required type="number" min={1} max={100} value={f.marks} onChange={set('marks')} error={errors.marks} />
+          <SelectField label="Status" value={f.status} onChange={set('status')} options={editing ? ['Draft', 'Approved', 'Retired'] : ['Draft', 'Approved']} />
+        </div>
+        <div className="mt-3"><TextArea label="Question" required rows={4} value={f.question} onChange={set('question')} error={errors.question} maxLength={2000} /></div>
+      </div>
     </Modal>
   );
 }

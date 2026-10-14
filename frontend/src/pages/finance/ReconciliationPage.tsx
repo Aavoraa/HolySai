@@ -4,11 +4,11 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { fmt } from '@/lib/format';
 import {
-  Badge, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Modal, Page, PageHead, Pagination,
-  SearchInput, Skeleton, Status, useConfirm,
+  Badge, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Modal, Page, PageHead, Pagination, SearchInput,
+  Skeleton, Status, Toolbar, useConfirm,
 } from '@/components/ui';
 import type { ReconCandidate, ReconLine, ReconSummary } from './types';
-import { Money, ReasonModal } from './shared';
+import { ListCount, Money, ReasonModal } from './shared';
 
 export default function ReconciliationPage() {
   const { can } = useAuth();
@@ -44,15 +44,15 @@ export default function ReconciliationPage() {
           }}>Run reconciliation</Button>
         )} />
       <Grid cols="g-4col">
-        <Kpi label="Matched in latest statement" value={d?.matchedLatest ?? '—'} tone="teal" loading={s.isLoading} foot={`Statement of ${latest}`} />
-        <Kpi label="Exceptions" value={d?.exceptions ?? '—'} tone="critical" loading={s.isLoading} foot={d?.unmatched ? `${d.unmatched} line(s) not yet run` : undefined}
+        <Kpi icon="checkSquare" label="Matched in latest statement" value={d?.matchedLatest ?? '—'} tone="teal" loading={s.isLoading} foot={`Statement of ${latest}`} />
+        <Kpi icon="alert" label="Exceptions" value={d?.exceptions ?? '—'} tone="critical" loading={s.isLoading} foot={d?.unmatched ? `${d.unmatched} line(s) not yet run` : undefined}
           onClick={() => list.setFilter('status', 'Exception')} />
-        <Kpi label="Settlement received" value={fmt.money(d?.settlementLatest, { compact: true })} loading={s.isLoading} foot={latest} />
-        <Kpi label="In transit" value={fmt.money(d?.inTransit, { compact: true })} tone="amber" loading={s.isLoading} foot="Online payments awaiting settlement" />
+        <Kpi icon="wallet" label="Settlement received" value={fmt.money(d?.settlementLatest, { compact: true })} loading={s.isLoading} foot={latest} />
+        <Kpi icon="truck" label="In transit" value={fmt.money(d?.inTransit, { compact: true })} tone="amber" loading={s.isLoading} foot="Online payments awaiting settlement" />
       </Grid>
 
       <div className="mt-4">
-        <Card title="Exceptions" sub="Items that did not match automatically" flush>
+        <Card title={<span className="fw-queue">Exceptions{exceptions.data?.length ? <Badge tone="critical">{exceptions.data.length}</Badge> : null}</span>} sub="Items that did not match automatically — match manually or resolve with a note" flush>
           {exceptions.error ? <ErrorState error={exceptions.error} onRetry={() => exceptions.refetch()} /> : (
             <DataTable rows={exceptions.data} loading={exceptions.isLoading} rowKey={(r) => r.id} emptyText="No exceptions — every settlement is matched."
               columns={[
@@ -65,21 +65,23 @@ export default function ReconciliationPage() {
         </Card>
       </div>
 
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference, receipt or note" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Matched', 'Unmatched', 'Exception', 'Resolved']} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-      </div>
-      <Card title="Statement lines" flush>
+      <Card icon="grid" title="Statement lines" flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference, receipt or note" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Matched', 'Unmatched', 'Exception', 'Resolved']} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="lines" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
-            emptyText="No statement lines match the current filters."
+            emptyText={list.hasFilters ? 'No statement lines match the current filters.' : 'No statement lines imported yet.'}
             columns={[
               { key: 'date', label: 'Date', render: (r) => fmt.date(r.statementDate) },
               { key: 'reference', label: 'Reference', render: (r) => <><span className="t-num">{r.reference}</span><div className="t-micro t-muted">{r.channel}</div></> },
               { key: 'amount', label: 'Amount', className: 'num', render: (r) => <Money v={r.amount} strong /> },
               { key: 'receipt', label: 'Ledger', sortable: false, render: (r) => (r.receiptNo ? <>{r.receiptNo}<div className="t-micro t-muted">{r.studentName}</div></> : <span className="t-faint">—</span>) },
-              { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.note && r.status !== 'Matched' && <div className="t-micro t-muted" style={{ maxWidth: 240 }}>{r.note}</div>}</> },
+              { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.note && r.status !== 'Matched' && <div className="t-micro t-muted fw-note">{r.note}</div>}</> },
               { key: 'a', label: '', className: 'num', sortable: false, render: actions },
             ]} />
         )}

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Banner, Button, Card, Chips, DataTable, Dl, ErrorState, Flow, Meter, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Skeleton, Status, TextArea, TextField, useConfirm, useToast,
+  SearchInput, SelectField, Skeleton, Status, TextArea, TextField, Toolbar, useConfirm, useToast,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -85,11 +85,12 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
         <div className="mb-4">
           <Banner tone="warning" icon="clipboard">
             <strong>{summary.data!.underReview} circular{summary.data!.underReview > 1 ? 's' : ''} awaiting your approval.</strong>{' '}
-            <button type="button" className="t-info" onClick={() => list.setFilter('status', 'Under Review')}>Review now</button>
+            <Button size="sm" variant="quiet" onClick={() => list.setFilter('status', 'Under Review')}>Review now</Button>
           </Banner>
         </div>
       )}
-      <div className="filterbar">
+      <Card flush>
+        <Toolbar>
         <Chips
           items={[
             { id: '', label: 'All' }, { id: 'Draft', label: 'Draft', count: summary.data?.drafts },
@@ -97,8 +98,7 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
           ]}
           active={list.filters.status} onChange={(v) => list.setFilter('status', v)} />
         <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search circulars" />
-      </div>
-      <Card flush>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Circular>
             rows={q.data?.rows}
@@ -107,7 +107,7 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => setOpen(r.id)}
-            emptyText={list.hasFilters ? 'No circulars match the current filters.' : 'No circulars yet.'}
+            emptyText={list.hasFilters ? 'No circulars match the current filters.' : canSend ? 'No circulars yet. Use “New circular” to draft one — it goes to the Principal for approval before release.' : 'No circulars yet.'}
             columns={[
               { key: 'title', label: 'Circular', render: (r) => <><span className="t-bold">{r.title}</span><div className="t-micro t-muted">{r.audience}{r.campus ? ` · ${r.campus}` : ''}</div></> },
               { key: 'issued', label: 'Issued', render: (r) => r.publishedAt ? fmt.date(r.publishedAt) : <span className="t-muted">{r.status === 'Under Review' ? `Submitted ${fmt.dateShort(r.submittedAt)}` : 'Draft'}</span> },
@@ -163,7 +163,7 @@ function CircularDetail({ id, onClose, onEdit }: { id: string | null; onClose: (
           <Flow steps={flowFor(c.status)} />
           {c.status === 'Withdrawn' && <Banner tone="neutral">This circular was withdrawn and is no longer shown to families.</Banner>}
           {c.status === 'Under Review' && !canRelease && <Banner tone="neutral" icon="clock">Waiting for approval by the Principal.</Banner>}
-          <div className="card card--tint" style={{ padding: 16, whiteSpace: 'pre-wrap' }}><p className="t-sm">{c.body}</p></div>
+          <div className="card card--tint pe-circular-body"><p className="t-sm">{c.body}</p></div>
           {c.status === 'Released' && c.requiresAck && (
             <Meter label="Acknowledged" value={c.targetCount ? (c.ackCount / c.targetCount) * 100 : 0} right={`${fmt.n(c.ackCount)} of ${fmt.n(c.targetCount)}`} tone={ackTone(c.ackCount, c.targetCount)} lg
               hint={c.lastRemindedAt ? `${c.reminderCount} reminder${c.reminderCount === 1 ? '' : 's'} sent · last ${fmt.relative(c.lastRemindedAt)}` : 'No reminders sent yet'} />
@@ -240,17 +240,28 @@ function CircularForm({ open, circular, onClose }: { open: boolean; circular: Ci
         <Button icon="save" onClick={() => save(false)} loading={create.isPending || update.isPending}>Save draft</Button>
         {circular?.status !== 'Under Review' && <Button variant="primary" icon="send" onClick={() => save(true)} loading={submit.isPending}>Send for approval</Button>}
       </>}>
-      <div className="col g-3">
+      <div className="formsection">
+        <div className="formsection__title">Message</div>
+        <div className="col g-3">
         <TextField label="Title" required value={title} onChange={setTitle} error={errors.title} placeholder="For example: Term 3 examination schedule" maxLength={160} autoFocus />
-        <AudiencePicker value={audience} onChange={setAudience} campusId={campusId} onCampus={setCampusId} error={errors['audience.grades'] ?? errors.audience} />
         <TextArea label="Message" required rows={6} value={body} onChange={setBody} error={errors.body} maxLength={5000} hint={`${body.length}/5000`} />
-        <div className="grid g-2col g-3">
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Audience</div>
+        <AudiencePicker value={audience} onChange={setAudience} campusId={campusId} onCampus={setCampusId} error={errors['audience.grades'] ?? errors.audience} />
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Delivery and approval</div>
+        <div className="col g-3">
+        <div className="form-grid">
           <SelectField label="Channels" value={channels} onChange={setChannels} options={CHANNEL_SETS.map((s) => s.label)} />
           <SelectField label="Acknowledgement" value={audience.kind === 'staff' ? 'Not required' : ack} onChange={setAck}
             options={['Required', 'Not required']} disabled={audience.kind === 'staff'}
             hint={audience.kind === 'staff' ? 'Staff circulars are informational' : undefined} />
         </div>
         <Flow steps={flowFor(circular?.status ?? 'Draft')} />
+        </div>
       </div>
     </Modal>
   );

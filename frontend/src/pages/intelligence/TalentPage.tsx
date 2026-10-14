@@ -56,12 +56,10 @@ export default function TalentPage() {
   return (
     <Page>
       {head}
-      <Card>
-        <AiNotice><strong>Advisory throughout.</strong> Talent signals surface evidence for a teacher to interpret. Nothing here selects, streams or excludes a student automatically.</AiNotice>
-      </Card>
+      <AiNotice><strong>Advisory throughout.</strong> Talent signals surface evidence for a teacher to interpret. Nothing here selects, streams or excludes a student automatically.</AiNotice>
 
       <div className="grid g-main mt-4">
-        <Card title="Strength distribution" sub={`Students with strong evidence (score ${d.threshold}+), by skill · ${d.totals.withStrength} of ${d.totals.students} students`}>
+        <Card icon="grid" title="Strength distribution" sub={`Students with strong evidence (score ${d.threshold}+), by skill · ${d.totals.withStrength} of ${d.totals.students} students`}>
           {d.distribution.length ? <>
             <Chart svg={charts.stacked({
               labels: d.distribution.map((x) => x.skill.split(' ')[0]),
@@ -75,7 +73,7 @@ export default function TalentPage() {
             <div className="mt-3"><Legend items={[{ label: 'Strong evidence', color: 'var(--teal)' }, { label: 'Developing', color: 'var(--amber)' }, { label: 'Emerging', color: 'var(--border-strong)' }]} /></div>
           </> : <Empty icon="star" title="No skill ratings yet" sub="Teacher rubric assessments will appear here." />}
         </Card>
-        <Card title="Unrecognised potential" sub="Strong evidence, no opportunity offered yet" flush>
+        <Card icon="grid" title="Unrecognised potential" sub={`Strong evidence, no opportunity offered yet${d.suggestions.length ? ` · open one to decide` : ''}`} flush>
           {d.suggestions.length ? (
             <div>
               {d.suggestions.map((s) => (
@@ -128,7 +126,7 @@ export default function TalentPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Recent decisions" sub="Every accept and dismiss is recorded against the person who made it">
+        <Card icon="grid" title="Recent decisions" sub="Every accept and dismiss is recorded against the person who made it">
           {d.decisions.length ? (
             <Feed items={d.decisions.map((x) => ({
               time: fmt.relative(x.at),

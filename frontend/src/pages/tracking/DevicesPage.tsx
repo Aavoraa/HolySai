@@ -6,10 +6,10 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   Banner, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Grid, InlineError, Kpi, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Skeleton, StudentLink, TextArea, TextField, useConfirm,
+  SearchInput, SelectField, Skeleton, StudentLink, TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import {
-  AssignDeviceModal, DEVICE_TYPE_LABEL, DeviceStatusBadge, GpsStatusBadge, QrCode, TokenModal, printDeviceLabels, useUnassign,
+  AssignDeviceModal, BatteryLevel, DEVICE_TYPE_LABEL, DeviceStatusBadge, GpsStatusBadge, LastSeen, QrCode, TokenModal, printDeviceLabels, useUnassign,
 } from '@/components/tracking/devices';
 import type { DeviceSummary, DeviceType, GpsDevice, GpsDeviceDetail } from '@/api/types';
 import { fmt } from '@/lib/format';
@@ -52,26 +52,34 @@ export default function DevicesPage() {
 
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col" className="mb-4">
-          <Kpi loading={!s} label="Total devices" value={s?.total ?? '—'} foot={s ? `${s.assigned} assigned · ${s.available} available` : undefined}
+          <Kpi icon="mapPin" loading={!s} label="Total devices" value={s?.total ?? '—'} foot={s ? `${s.assigned} assigned · ${s.available} available` : undefined}
             onClick={() => list.clear()} />
-          <Kpi loading={!s} label="Online" value={s?.online ?? '—'} tone="teal" unit={s ? `/ ${s.assigned}` : undefined}
+          <Kpi icon="activity" loading={!s} label="Online" value={s?.online ?? '—'} tone="teal" unit={s ? `/ ${s.assigned}` : undefined}
             foot={s ? `Contact in the last ${Math.round(s.thresholds.onlineSeconds / 60)} min` : undefined} onClick={() => list.setFilter('gpsStatus', 'online')} />
-          <Kpi loading={!s} label="Offline" value={s ? s.offline + s.stale : '—'} tone="critical"
+          <Kpi icon="alert" loading={!s} label="Offline" value={s ? s.offline + s.stale : '—'} tone="critical"
             foot={s ? `${s.stale} stale · ${offlineFoot}` : undefined} onClick={() => list.setFilter('gpsStatus', 'offline')} />
-          <Kpi loading={!s} label="Needs attention" value={s ? s.outOfService + s.lowBattery : '—'} tone="amber"
+          <Kpi icon="alert" loading={!s} label="Needs attention" value={s ? s.outOfService + s.lowBattery : '—'} tone="amber"
             foot={s ? `${s.maintenance} repair · ${s.lost} lost · ${s.lowBattery} low battery` : undefined} onClick={() => list.setFilter('status', 'maintenance')} />
         </Grid>
       )}
-
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search device ID, IMEI, serial or student" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={STATUS_OPTIONS} />
-        <FilterSelect label="GPS" value={list.filters.gpsStatus} onChange={(v) => list.setFilter('gpsStatus', v)} options={GPS_OPTIONS} />
-        <FilterSelect label="Type" value={list.filters.deviceType} onChange={(v) => list.setFilter('deviceType', v)} options={TYPE_OPTIONS} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-      </div>
+      {s && (
+        <div className="statgrid statgrid--card mb-4">
+          <Kpi size="compact" label="Assigned" value={fmt.n(s.assigned)} onClick={() => list.setFilter('status', 'assigned')} />
+          <Kpi size="compact" label="Available" value={fmt.n(s.available)} onClick={() => list.setFilter('status', 'available')} />
+          <Kpi size="compact" label="Stale signal" value={fmt.n(s.stale)} tone={s.stale ? 'amber' : undefined} onClick={() => list.setFilter('gpsStatus', 'stale')} />
+          <Kpi size="compact" label="Low battery" value={fmt.n(s.lowBattery)} tone={s.lowBattery ? 'amber' : undefined} />
+          <Kpi size="compact" label="Lost" value={fmt.n(s.lost)} tone={s.lost ? 'critical' : undefined} onClick={() => list.setFilter('status', 'lost')} />
+        </div>
+      )}
 
       <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search device ID, IMEI, serial or student" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={STATUS_OPTIONS} />
+          <FilterSelect label="GPS" value={list.filters.gpsStatus} onChange={(v) => list.setFilter('gpsStatus', v)} options={GPS_OPTIONS} />
+          <FilterSelect label="Type" value={list.filters.deviceType} onChange={(v) => list.setFilter('deviceType', v)} options={TYPE_OPTIONS} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {rows.error ? <ErrorState error={rows.error} onRetry={() => rows.refetch()} /> : (
           <DataTable
             rows={rows.data?.rows}
@@ -88,16 +96,11 @@ export default function DevicesPage() {
               { key: 'type', label: 'Type', render: (r) => DEVICE_TYPE_LABEL[r.deviceType] },
               { key: 'student', label: 'Assigned Student', render: (r) => (r.studentId ? <StudentLink id={r.studentId} name={r.studentName!} meta={r.admissionNo} /> : <span className="t-faint">—</span>) },
               { key: 'status', label: 'Status', render: (r) => <DeviceStatusBadge status={r.status} /> },
-              { key: 'seen', label: 'Last Seen', render: (r) => (
-                <span className="col g-1">
-                  <GpsStatusBadge status={r.gpsStatus} seenAt={r.lastSeenAt} />
-                  {r.lastSeenAt && <span className="t-micro t-muted" title={fmt.dateTime(r.lastSeenAt)}>{fmt.relative(r.lastSeenAt)}</span>}
-                </span>
-              ) },
-              { key: 'battery', label: 'Battery', className: 'num', render: (r) => (r.batteryPct != null ? <span className={r.batteryPct < 20 ? 't-critical t-bold' : undefined}>{r.batteryPct}%</span> : '—') },
+              { key: 'seen', label: 'Last Seen', render: (r) => <GpsStatusBadge status={r.gpsStatus} seenAt={r.lastSeenAt} showSeen /> },
+              { key: 'battery', label: 'Battery', className: 'num', render: (r) => <BatteryLevel pct={r.batteryPct} /> },
               {
                 key: 'a', label: 'Actions', sortable: false, className: 'num', render: (r) => (
-                  <span className="row g-1" style={{ justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                  <span className="row g-1 end" onClick={(e) => e.stopPropagation()}>
                     {manage && r.assignmentId && (
                       <Button size="sm" onClick={() => unassign.run({ id: r.assignmentId!, deviceCode: r.deviceCode, admissionNo: r.admissionNo!, studentName: r.studentName! })}>Unassign</Button>
                     )}
@@ -200,7 +203,7 @@ function DeviceDetailModal({ id, manage, onClose, onAssign, onToken }: {
       {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : !d ? <Skeleton height={320} /> : (
         <div className="col g-4">
           {d.isSampleData && <Banner tone="warning" icon="info">Sample device from the demo data. It has no token until you issue one.</Banner>}
-          <div className="row g-4 wrap" style={{ alignItems: 'flex-start' }}>
+          <div className="row-top g-4 wrap">
             <div className="col g-2" style={{ alignItems: 'center' }}>
               <QrCode text={d.deviceCode} size={150} />
               <span className="coord t-bold">{d.deviceCode}</span>
@@ -209,13 +212,13 @@ function DeviceDetailModal({ id, manage, onClose, onAssign, onToken }: {
             <div className="grow" style={{ minWidth: 260 }}>
               <Dl items={[
                 ['Status', <DeviceStatusBadge key="s" status={d.status} />],
-                ['GPS', <span key="g" className="row g-2"><GpsStatusBadge status={d.gpsStatus} seenAt={d.lastSeenAt} />{d.lastSeenAt && <span className="t-xs t-muted">{fmt.dateTime(d.lastSeenAt)}</span>}</span>],
+                ['GPS', <span key="g" className="row g-2 wrap"><GpsStatusBadge status={d.gpsStatus} seenAt={d.lastSeenAt} />{d.lastSeenAt ? <span className="t-xs t-muted">{fmt.dateTime(d.lastSeenAt)} · <LastSeen at={d.lastSeenAt} /></span> : <span className="t-xs t-muted">Never connected</span>}</span>],
                 ['Assigned student', d.studentId ? <StudentLink key="st" id={d.studentId} name={d.studentName!} meta={`${d.admissionNo} · since ${fmt.date(d.assignedAt!)}`} /> : '—'],
                 ['IMEI', <span key="i" className="coord">{d.imei ?? '—'}</span>],
                 ['Serial number', d.serialNumber ?? '—'],
                 ['Firmware', d.firmwareVersion ?? '—'],
                 ['Campus', d.campusName ?? '—'],
-                ['Battery', d.batteryPct != null ? `${d.batteryPct}%` : '—'],
+                ['Battery', <BatteryLevel key="b" pct={d.batteryPct} />],
                 ['Device token', d.hasToken ? `Issued ${fmt.dateTime(d.tokenIssuedAt!)}` : <span key="t" className="t-critical">Not issued — the device cannot send yet</span>],
                 ...(d.notes ? [['Notes', d.notes] as [string, string]] : []),
               ]} />
@@ -271,7 +274,7 @@ function StatusChange({ device, to, busy, error, onCancel, onConfirm }: {
   const [reason, setReason] = useState('');
   const verb = { maintenance: 'Send for maintenance', lost: 'Mark as lost', inactive: 'Disable device' }[to];
   return (
-    <div className="card card--tint col g-3" style={{ padding: 14 }}>
+    <div className="st-panel">
       <div className="t-bold">{verb}</div>
       {device.studentName && (
         <Banner tone="warning" icon="alert">

@@ -3,7 +3,8 @@ import { usePagedQuery, useApiMutation } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
-import { Button, Card, ErrorState, FilterSelect, Page, PageHead, Pagination, SearchInput, useConfirm } from '@/components/ui';
+import { Button, Card, ErrorState, FilterSelect, Page, PageHead, Pagination, SearchInput, Toolbar, useConfirm } from '@/components/ui';
+import { fmt } from '@/lib/format';
 import { LeadFormModal } from './LeadForms';
 import { LeadProfileHost } from './LeadProfile';
 import { LeadsTable, useCounsellors, useLeadParam } from './shared';
@@ -46,21 +47,21 @@ export default function LeadsPage() {
           </>
         )}
       />
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student, parent or reference" />
-        <FilterSelect label="Stage" value={list.filters.stage} onChange={(x) => list.setFilter('stage', x)} options={[...STAGES, 'Lost']} />
-        <FilterSelect label="Source" value={list.filters.source} onChange={(x) => list.setFilter('source', x)} options={[...SOURCES]} />
-        <FilterSelect label="Counsellor" value={list.filters.counsellorId} onChange={(x) => list.setFilter('counsellorId', x)}
-          options={[{ value: 'unassigned', label: 'Unassigned' }, ...(counsellors.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))]} />
-        <FilterSelect label="Follow-up" value={list.filters.overdue} onChange={(x) => list.setFilter('overdue', x)} options={[{ value: 'true', label: 'Overdue only' }]} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} leads` : ''}</span>
-      </div>
-      <Card title="Leads" sub={q.data ? `${q.data.meta.total} ${list.hasFilters ? 'matching' : 'in total'}` : undefined} flush>
+      <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student, parent or reference" />
+          <FilterSelect label="Stage" value={list.filters.stage} onChange={(x) => list.setFilter('stage', x)} options={[...STAGES, 'Lost']} />
+          <FilterSelect label="Source" value={list.filters.source} onChange={(x) => list.setFilter('source', x)} options={[...SOURCES]} />
+          <FilterSelect label="Counsellor" value={list.filters.counsellorId} onChange={(x) => list.setFilter('counsellorId', x)}
+            options={[{ value: 'unassigned', label: 'Unassigned' }, ...(counsellors.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))]} />
+          <FilterSelect label="Follow-up" value={list.filters.overdue} onChange={(x) => list.setFilter('overdue', x)} options={[{ value: 'true', label: 'Overdue only' }]} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <span className="t-sm t-muted t-num">{q.data ? `${fmt.n(q.data.meta.total)} ${list.hasFilters ? 'matching' : 'leads'}` : ''}</span>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <LeadsTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} sort={list.sort} onSort={list.setSort} onOpen={openLead}
-            emptyText={list.hasFilters ? 'No leads match the current filters.' : 'No leads yet. Add the first enquiry.'} />
+            emptyText={list.hasFilters ? 'No leads match the current filters. Clear them to see every lead.' : 'No leads yet. Enquiries from every channel appear here — use “Add lead” to record a walk-in or phone enquiry.'} />
         )}
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>

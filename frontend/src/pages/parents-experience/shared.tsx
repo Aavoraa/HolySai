@@ -76,7 +76,7 @@ export function AudiencePicker({ value, onChange, campusId, onCampus, error, all
   const toggle = (g: number) => onChange({ kind: 'grades', grades: grades.includes(g) ? grades.filter((x) => x !== g) : [...grades, g].sort((a, b) => a - b) });
   return (
     <div className="col g-3">
-      <div className="grid g-2col g-3">
+      <div className="form-grid">
         <SelectField label="Audience" required value={value.kind}
           onChange={(k) => onChange(k === 'grades' ? { kind: 'grades', grades } : { kind: k as AudienceKind })}
           options={KIND_OPTIONS.filter((o) => allowStaff || o.value !== 'staff')} />
@@ -89,7 +89,7 @@ export function AudiencePicker({ value, onChange, campusId, onCampus, error, all
           <div className="row g-3 wrap" role="group" aria-label="Grades">
             {levels.map((g) => <Checkbox key={g} checked={grades.includes(g)} onChange={() => toggle(g)} label={`Grade ${g}`} />)}
           </div>
-          {error && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span>}
+          {error && <span className="hint hint--error" role="alert">{error}</span>}
         </div>
       )}
       <AudienceCount audience={value} campusId={campusId} />
@@ -127,7 +127,7 @@ export function ParentPicker({ value, onChange, error }: { value: DirectoryRow |
     return (
       <div className="field">
         <span className="label">Parent</span>
-        <div className="row between card" style={{ padding: '8px 12px' }}>
+        <div className="card adm-picked">
           <Person name={value.fullName} meta={`${value.phone}${value.hasAppAccount ? ' · uses the app' : ' · no app account'}`} />
           <Button size="sm" variant="quiet" onClick={() => onChange(null)}>Change</Button>
         </div>
@@ -138,17 +138,17 @@ export function ParentPicker({ value, onChange, error }: { value: DirectoryRow |
     <div className="field">
       <span className="label">Parent<span className="req"> *</span></span>
       <SearchInput value={q} onSearch={setQ} placeholder="Search parents by name or phone" maxWidth={9999} />
-      {error && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span>}
+      {error && <span className="hint hint--error" role="alert">{error}</span>}
       {q && (
-        <div className="card mt-2" style={{ padding: 4, maxHeight: 220, overflow: 'auto' }}>
+        <div className="card adm-picklist">
           {list.isLoading ? <Skeleton height={36} /> : list.data?.rows.length ? list.data.rows.map((p) => (
-            <button key={p.id} type="button" className="alert-item" style={{ borderLeftWidth: 0 }} onClick={() => onChange(p)}>
-              <span className="grow" style={{ minWidth: 0 }}>
-                <span className="alert-item__title" style={{ display: 'block' }}>{p.fullName}</span>
-                <span className="alert-item__meta" style={{ display: 'block' }}>{p.phone} · {p.children.map(childLabel).join(', ') || 'No children linked'}</span>
+            <button key={p.id} type="button" className="alert-item" onClick={() => onChange(p)}>
+              <span className="pe-inbox__main">
+                <span className="alert-item__title pe-inbox__meta">{p.fullName}</span>
+                <span className="alert-item__meta pe-inbox__meta">{p.phone} · {p.children.map(childLabel).join(', ') || 'No children linked'}</span>
               </span>
             </button>
-          )) : <div className="t-sm t-muted" style={{ padding: 8 }}>No parents match “{q}”.</div>}
+          )) : <div className="t-sm t-muted card__body">No parents match “{q}”.</div>}
         </div>
       )}
     </div>
@@ -217,7 +217,7 @@ export function SendMessageModal({ open, onClose, parent, replyTo, defaultSubjec
       </>}>
       <div className="col g-3">
         {replyTo?.body && (
-          <div className="bubble bubble--in" style={{ maxWidth: '100%' }}>
+          <div className="bubble bubble--in pe-quote">
             {replyTo.body}
             <div className="bubble__meta">{replyTo.channel} · {fmt.dateTime(replyTo.occurredAt)}</div>
           </div>
@@ -226,7 +226,7 @@ export function SendMessageModal({ open, onClose, parent, replyTo, defaultSubjec
           picked ? <Person name={picked.fullName} meta={`${picked.phone}${picked.hasAppAccount ? ' · uses the app' : ' · no app account — nothing can be delivered until the family signs up'}`} />
             : <InlineError error={new Error('This message is not linked to a family, so a reply cannot be sent.')} />
         ) : <ParentPicker value={picked} onChange={(p) => { setPicked(p); setStudentId(p?.children[0]?.id ?? ''); }} error={errors.parentId} />}
-        <div className="grid g-2col g-3">
+        <div className="form-grid">
           <SelectField label="Channel" required value={channel} onChange={(v) => setChannel(v as Channel)} error={errors.channel}
             options={['WhatsApp', 'SMS', 'Email', 'In-app']} />
           <SelectField label="About" value={studentId} onChange={setStudentId} placeholder="The family in general"
@@ -300,7 +300,7 @@ export function LogInteractionModal({ open, onClose, parent }: { open: boolean; 
             options={picked.children.map((c) => ({ value: c.id, label: childLabel(c) }))} />
         )}
         {kind === 'Call' && (
-          <div className="grid g-2col g-3">
+          <div className="form-grid">
             <SelectField label="Direction" value={direction} onChange={(v) => setDirection(v as 'outbound' | 'inbound')}
               options={[{ value: 'outbound', label: 'We called the family' }, { value: 'inbound', label: 'The family called us' }]} />
             <SelectField label="Outcome" value={status} onChange={setStatus} options={['Connected', 'No answer', 'Left voicemail']} />
@@ -315,5 +315,5 @@ export function LogInteractionModal({ open, onClose, parent }: { open: boolean; 
 }
 
 export function EmptyHistory() {
-  return <Empty icon="message" title="No interactions yet" sub="Messages, calls and notes with this family will appear here." />;
+  return <Empty icon="message" title="No interactions yet" sub="Messages, calls and notes with this family will appear here. Use “Message” or “Log call” to record the first one." />;
 }

@@ -4,7 +4,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Banner, Button, Card, Chart, DataTable, Empty, ErrorState, Grid, Kpi, Page, PageHead,
+  Badge, Banner, Button, Card, Chart, DataTable, Empty, ErrorState, Kpi, Page, PageHead,
   PageSkeleton, Pagination, SearchInput, TextField, charts,
 } from '@/components/ui';
 import { useCsvDownload } from '@/pages/intelligence/shared';
@@ -86,6 +86,9 @@ export default function ReportViewerPage() {
 
   const p = q.data;
   const bars = chartRows(p);
+  // Row count + up to three summary figures lead; any more go in the compact grid.
+  const headline = p.summary.slice(0, 3);
+  const extra = p.summary.slice(3);
   const meta = {
     page: list.page,
     pageSize: list.pageSize,
@@ -97,7 +100,7 @@ export default function ReportViewerPage() {
     <Page>
       {head}
 
-      <div className="filterbar">
+      <div className="filterbar oi-filters oi-filters--fields" role="group" aria-label="Report filters">
         <Badge tone="neutral" icon="building">
           {scope === 'group' ? 'All campuses' : campus?.name ?? 'All campuses'}
         </Badge>
@@ -122,16 +125,22 @@ export default function ReportViewerPage() {
         <span className="t-xs t-muted">Generated {fmt.date(p.generatedAt)} · exports are audited</span>
       </div>
 
-      <Grid cols="g-4col" className="mt-4">
+      <div className={`grid mt-4 ${headline.length >= 4 ? 'g-4col' : headline.length === 3 ? 'g-3col' : 'g-2col'}`}>
         <Kpi
+          icon="list"
           label={list.q ? 'Matching rows' : 'Rows'}
           value={fmt.n(p.matchedRows)}
           foot={list.q && p.matchedRows !== p.totalRows ? `of ${fmt.n(p.totalRows)} total` : undefined}
         />
-        {p.summary.map((s) => (
+        {headline.map((s) => (
           <Kpi key={s.label} label={s.label} value={tileValue(s)} tone={s.tone} />
         ))}
-      </Grid>
+      </div>
+      {extra.length > 0 && (
+        <div className="statgrid statgrid--card mt-3">
+          {extra.map((s) => <Kpi key={s.label} size="compact" label={s.label} value={tileValue(s)} tone={s.tone} />)}
+        </div>
+      )}
 
       {p.truncated && (
         <div className="mt-4">
@@ -147,7 +156,7 @@ export default function ReportViewerPage() {
         </Card>
       )}
 
-      <Card className="mt-4" title="Report data" sub={`${fmt.n(p.matchedRows)} row${p.matchedRows === 1 ? '' : 's'} · ${p.columns.length} columns`} flush>
+      <Card icon="fileText" className="mt-4" title="Report data" sub={`${fmt.n(p.matchedRows)} row${p.matchedRows === 1 ? '' : 's'} · ${p.columns.length} columns`} flush>
         <DataTable
           rows={p.rows}
           loading={q.isFetching}

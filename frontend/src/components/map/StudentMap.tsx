@@ -10,6 +10,7 @@ import { api } from '@/api/client';
 import type { LocationPoint, LocationStatus } from '@/api/types';
 import { fmt } from '@/lib/format';
 import { iconPaths } from '@/lib/legacy-icons';
+import { BatteryLevel } from '@/components/tracking/devices';
 
 const DEFAULT_TILE = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
@@ -127,7 +128,7 @@ export function StudentMap({
         <FlyTo target={selected ? [Number(selected.latitude), Number(selected.longitude)] : null} />
         {campuses.map((c) => (
           <span key={c.id}>
-            {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ color: '#990033', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
+            {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ className: 'st-geofence', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
             <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
               <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
             </Marker>
@@ -137,7 +138,7 @@ export function StudentMap({
           const pos: [number, number] = [Number(s.latitude), Number(s.longitude)];
           return (
             <span key={s.studentId}>
-              {showAccuracy && s.accuracy ? <Circle center={pos} radius={Number(s.accuracy)} pathOptions={{ color: '#158055', weight: 1, fillOpacity: 0.1 }} /> : null}
+              {showAccuracy && s.accuracy ? <Circle center={pos} radius={Number(s.accuracy)} pathOptions={{ className: 'st-accuracy', weight: 1, fillOpacity: 0.1 }} /> : null}
               <Marker
                 position={pos}
                 icon={studentPin(fmt.initials(s.fullName), s.locationStatus, { stale: s.isStale, selected: s.studentId === selectedId })}
@@ -146,7 +147,7 @@ export function StudentMap({
               >
                 <Tooltip direction="right">{s.fullName}</Tooltip>
                 <Popup>
-                  <div style={{ minWidth: 200 }}>
+                  <div className="st-popup">
                     <strong>{s.fullName}</strong>
                     <div className="t-micro t-muted">{[s.admissionNo, s.grade ? `${s.grade}${s.section ?? ''}` : null].filter(Boolean).join(' · ')}</div>
                     <div className="mt-2">{s.placeLabel ?? s.locationStatusLabel ?? '—'}{s.isStale ? ' (last known)' : ''}</div>
@@ -157,7 +158,7 @@ export function StudentMap({
                         <tr><th>Longitude</th><td className="coord">{Number(s.longitude).toFixed(7)}</td></tr>
                         {s.accuracy != null && <tr><th>Accuracy</th><td>{Number(s.accuracy).toFixed(1)} m</td></tr>}
                         {s.recordedAt && <tr><th>Last updated</th><td>{fmt.time(s.recordedAt)} <span className="t-muted">{fmt.date(s.recordedAt)}</span></td></tr>}
-                        {s.batteryPct != null && <tr><th>Battery</th><td>{s.batteryPct}%</td></tr>}
+                        {s.batteryPct != null && <tr><th>Battery</th><td><BatteryLevel pct={s.batteryPct} /></td></tr>}
                         {s.gpsStatus && <tr><th>GPS status</th><td><strong className={`gps-${s.gpsStatus}`}>{s.gpsStatus === 'never' ? 'NO CONTACT' : s.gpsStatus.toUpperCase()}</strong></td></tr>}
                       </tbody>
                     </table>
@@ -179,12 +180,13 @@ export function StudentMap({
           </div>
         </div>
       )}
-      <div className="mapbox__overlay" aria-hidden="true">
-        <span className="row g-1"><span className="dot dot--success" />At school</span>
-        <span className="row g-1"><span className="dot dot--warning" />In transit</span>
-        <span className="row g-1"><span className="dot dot--info" />At home</span>
-        <span className="row g-1"><span className="dot" style={{ background: 'var(--viz-5)' }} />On trip</span>
-        <span className="row g-1"><span className="dot dot--neutral" />Last known</span>
+      <div className="mapbox__overlay" role="group" aria-label="Map legend">
+        <span className="st-key"><span className="dot dot--success" />At school</span>
+        <span className="st-key"><span className="dot dot--warning" />In transit</span>
+        <span className="st-key"><span className="dot dot--info" />At home</span>
+        <span className="st-key"><span className="dot st-key__dot--trip" />On trip</span>
+        <span className="st-key"><span className="dot dot--neutral" />Last known (stale)</span>
+        {campuses.some((c) => c.radiusM) && <span className="st-key"><span className="st-key__geofence" />Campus zone</span>}
       </div>
     </div>
   );
@@ -206,7 +208,7 @@ export function HistoryMap({ points, selectedId, onSelect, campuses = [] }: { po
             <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
           </Marker>
         ))}
-        {path.length > 1 && <Polyline positions={path} pathOptions={{ color: '#990033', weight: 4, opacity: 0.75 }} />}
+        {path.length > 1 && <Polyline positions={path} pathOptions={{ className: 'st-path-history', weight: 4, opacity: 0.75 }} />}
         {points.map((p, i) => {
           const kind = i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'mid';
           return (
@@ -229,10 +231,10 @@ export function HistoryMap({ points, selectedId, onSelect, campuses = [] }: { po
           </div>
         </div>
       )}
-      <div className="mapbox__overlay" aria-hidden="true">
-        <span className="row g-1"><span className="point-dot point-dot--start" />Start</span>
-        <span className="row g-1"><span className="point-dot point-dot--mid" />Recorded point</span>
-        <span className="row g-1"><span className="point-dot point-dot--end" style={{ width: 12, height: 12 }} />Last known</span>
+      <div className="mapbox__overlay" role="group" aria-label="Map legend">
+        <span className="st-key"><span className="point-dot point-dot--start" />Start</span>
+        <span className="st-key"><span className="point-dot point-dot--mid" />Recorded point</span>
+        <span className="st-key"><span className="point-dot point-dot--end st-key__dot--last" />Last known</span>
       </div>
     </div>
   );

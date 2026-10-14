@@ -6,7 +6,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   AlertItem, Badge, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Legend, Page, PageHead,
-  PageSkeleton, Pagination, Risk, SearchInput, StudentLink,
+  PageSkeleton, Pagination, Risk, SearchInput, StudentLink, Toolbar,
 } from '@/components/ui';
 import { SUBJECT_SHORT } from './shared';
 
@@ -61,14 +61,14 @@ export default function AcademicPerformancePage() {
       ) : (
         <>
           <Grid cols="g-4col">
-            <Kpi label="School average" value={k.average ?? '—'} tone="teal" delta={k.averageDelta} deltaUnit=" pts" foot={termNote} />
-            <Kpi label="Above expectation" value={`${k.abovePct}%`} delta={k.aboveDelta} deltaUnit=" pts" foot={`Average ${d.expectation.above}+`} onClick={() => list.setFilter('band', 'above')} />
-            <Kpi label="At expectation" value={`${k.atPct}%`} tone="info" delta={k.atDelta} deltaUnit=" pts" foot={`Average ${d.expectation.at}–${d.expectation.above - 1}`} onClick={() => list.setFilter('band', 'at')} />
-            <Kpi label="Below expectation" value={`${k.belowPct}%`} tone="critical" delta={k.belowDelta} deltaUnit=" pts" inverse foot={`Average under ${d.expectation.at}`} onClick={() => list.setFilter('band', 'below')} />
+            <Kpi icon="barChart" label="School average" value={k.average ?? '—'} tone="teal" delta={k.averageDelta} deltaUnit=" pts" foot={termNote} />
+            <Kpi icon="trending" label="Above expectation" value={`${k.abovePct}%`} delta={k.aboveDelta} deltaUnit=" pts" foot={`Average ${d.expectation.above}+`} onClick={() => list.setFilter('band', 'above')} />
+            <Kpi icon="target" label="At expectation" value={`${k.atPct}%`} tone="info" delta={k.atDelta} deltaUnit=" pts" foot={`Average ${d.expectation.at}–${d.expectation.above - 1}`} onClick={() => list.setFilter('band', 'at')} />
+            <Kpi icon="alert" label="Below expectation" value={`${k.belowPct}%`} tone="critical" delta={k.belowDelta} deltaUnit=" pts" inverse foot={`Average under ${d.expectation.at}`} onClick={() => list.setFilter('band', 'below')} />
           </Grid>
 
           <div className="grid g-main mt-4">
-            <Card title="Subject averages" sub={`${d.currentTerm ?? 'Current term'} against ${d.previousTerm ?? 'last term'}`}>
+            <Card icon="trending" title="Subject averages" sub={`${d.currentTerm ?? 'Current term'} against ${d.previousTerm ?? 'last term'}`}>
               <Chart svg={charts.bar({
                 labels: d.subjectAverages.map((s) => SUBJECT_SHORT[s.subject] ?? s.subject),
                 series: [
@@ -80,7 +80,7 @@ export default function AcademicPerformancePage() {
               })} />
               <div className="mt-3"><Legend items={[{ label: 'This term', color: 'var(--navy)' }, { label: 'Last term', color: 'var(--border-strong)' }]} /></div>
             </Card>
-            <Card title="Biggest movers" sub="Grade-level shifts worth a conversation" flush>
+            <Card icon="grid" title="Biggest movers" sub="Grade-level shifts worth a conversation" flush>
               {d.movers.length === 0 ? (
                 <Empty icon="activity" title="No term-on-term movement yet" />
               ) : (
@@ -102,14 +102,14 @@ export default function AcademicPerformancePage() {
       )}
 
       <div className="mt-4">
-        <Card title="Students by expectation" sub="Term average against target — lowest first" flush>
-          <div className="filterbar" style={{ padding: '12px 16px' }}>
+        <Card icon="users" title="Students by expectation" sub="Term average against target — lowest first" flush>
+          <Toolbar>
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search students" />
             <FilterSelect label="Band" value={list.filters.band} onChange={(v) => list.setFilter('band', v)}
               options={Object.entries(BAND).map(([value, b]) => ({ value, label: b.label }))} />
             <FilterSelect label="Subject" value={list.filters.subjectId} onChange={(v) => list.setFilter('subjectId', v)}
               options={(lookups?.subjects ?? []).map((s) => ({ value: s.id, label: s.name }))} />
-          </div>
+          </Toolbar>
           {students.error ? (
             <ErrorState error={students.error} onRetry={() => students.refetch()} />
           ) : (
@@ -119,12 +119,12 @@ export default function AcademicPerformancePage() {
               rowKey={(r) => r.id}
               sort={list.sort}
               onSort={list.setSort}
-              emptyText="No students match these filters."
+              emptyText={list.hasFilters ? 'No students match these filters.' : 'No student results recorded yet.'}
               columns={[
                 { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={`${r.grade}${r.section} · ${r.admissionNo}`} /> },
                 { key: 'average', label: 'Average', className: 'num', render: (r) => <span className="t-num t-bold">{r.average}</span> },
                 { key: 'target', label: 'Target', className: 'num', render: (r) => <span className="t-num">{r.target ?? '—'}</span> },
-                { key: 'trend', label: 'Trend', className: 'num', render: (r) => r.trend == null ? '—' : <span className="t-num" style={{ color: r.trend < 0 ? 'var(--critical)' : r.trend > 0 ? 'var(--success)' : undefined }}>{r.trend > 0 ? '+' : ''}{r.trend}</span> },
+                { key: 'trend', label: 'Trend', className: 'num', render: (r) => r.trend == null ? '—' : <span className={r.trend < 0 ? 't-num t-critical' : r.trend > 0 ? 't-num t-success' : 't-num'}>{r.trend > 0 ? '+' : ''}{r.trend}</span> },
                 { key: 'weakest', label: 'Focus subject', sortable: false, render: (r) => r.weakest ?? '—' },
                 { key: 'band', label: 'Expectation', sortable: false, render: (r) => <Badge tone={BAND[r.band].tone}>{BAND[r.band].label}</Badge> },
                 { key: 'risk', label: 'Risk', sortable: false, render: (r) => <Risk value={r.risk} /> },

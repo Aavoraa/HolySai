@@ -43,12 +43,12 @@ export default function VisitsPage() {
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setScheduling(true)}>Schedule visit</Button>} />
       {s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi label="Visits this week" value={d?.thisWeek ?? '—'} tone="amber" loading={s.isLoading}
+          <Kpi icon="calendar" label="Visits this week" value={d?.thisWeek ?? '—'} tone="amber" loading={s.isLoading}
             foot={d ? (d.needHost ? `${d.needHost} need a host` : 'Every visit has a host') : undefined}
             onClick={() => list.setFilter('unhosted', d?.needHost ? 'true' : '')} />
-          <Kpi label="Completed this year" value={d?.completed ?? '—'} tone="teal" loading={s.isLoading} onClick={() => { list.setFilter('range', 'past'); }} />
-          <Kpi label="Visit → application" value={d ? `${d.visitToApplication}%` : '—'} tone="teal" loading={s.isLoading} foot="Visited families who applied" />
-          <Kpi label="No-show rate" value={d ? `${d.noShowRate}%` : '—'} tone="critical" delta={d?.noShowDelta} deltaUnit=" pts" inverse loading={s.isLoading}
+          <Kpi icon="checkSquare" label="Completed this year" value={d?.completed ?? '—'} tone="teal" loading={s.isLoading} onClick={() => { list.setFilter('range', 'past'); }} />
+          <Kpi icon="fileText" label="Visit → application" value={d ? `${d.visitToApplication}%` : '—'} tone="teal" loading={s.isLoading} foot="Visited families who applied" />
+          <Kpi icon="alertCircle" label="No-show rate" value={d ? `${d.noShowRate}%` : '—'} tone="critical" delta={d?.noShowDelta} deltaUnit=" pts" inverse loading={s.isLoading}
             foot="Last 90 days vs the year" />
         </Grid>
       )}
@@ -71,7 +71,7 @@ export default function VisitsPage() {
               sort={list.sort}
               onSort={list.setSort}
               onRowClick={(r) => openLead(r.code)}
-              emptyText={range === 'week' ? 'No campus visits this week.' : 'No campus visits match.'}
+              emptyText={range === 'week' ? 'No campus visits this week. Schedule one from here or from a lead profile.' : 'No campus visits match the current filters.'}
               columns={[
                 {
                   key: 'when', label: 'When', render: (r) => (
@@ -84,11 +84,10 @@ export default function VisitsPage() {
                 { key: 'grade', label: 'Grade', render: (r) => `${r.grade} · ${r.campusName}` },
                 {
                   key: 'host', label: 'Host', render: (r) => manage && r.status === 'Scheduled' ? (
-                    <span onClick={(e) => e.stopPropagation()}>
+                    <span className={r.hostId ? undefined : 'adm-host--none'} onClick={(e) => e.stopPropagation()}>
                       <FilterSelect label="Host" allLabel={null} value={r.hostId ?? ''}
                         onChange={(x) => host.mutate({ id: r.id, assignedTo: x || null })}
-                        options={[{ value: '', label: 'Not assigned' }, ...(counsellors.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))]}
-                        style={r.hostId ? undefined : { borderColor: 'var(--critical)', color: 'var(--critical)' }} />
+                        options={[{ value: '', label: 'Not assigned' }, ...(counsellors.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))]} />
                     </span>
                   ) : r.host ?? <Badge tone="critical">Not assigned</Badge>,
                 },
@@ -99,7 +98,7 @@ export default function VisitsPage() {
                 },
                 ...(manage ? [{
                   key: 'act', label: '', sortable: false, className: 'num', render: (r: Visit) => r.status === 'Scheduled' ? (
-                    <span className="row g-1" style={{ justifyContent: 'flex-end' }} onClick={(e) => e.stopPropagation()}>
+                    <span className="adm-actions" onClick={(e) => e.stopPropagation()}>
                       <Button size="sm" icon="check" onClick={() => setClosing({ v: r, status: 'Completed' })}>Completed</Button>
                       {new Date(r.scheduledAt).getTime() < Date.now()
                         ? <Button size="sm" variant="quiet" onClick={() => setClosing({ v: r, status: 'Missed' })}>No-show</Button>

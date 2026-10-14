@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiQuery } from '@/hooks/useApi';
 import { todayKey } from '@/lib/format';
-import { Banner, Card, ErrorState, Icon, Page, PageHead, PageSkeleton, SectionHead, Spinner, TextField } from '@/components/ui';
+import { Banner, Card, Empty, ErrorState, Icon, Page, PageHead, PageSkeleton, SectionHead, Spinner, TextField } from '@/components/ui';
 import { useCsvDownload } from './shared';
 
 interface Report { key: string; group: string; title: string; description: string; available: boolean; requires: string[]; alsoRequires: string[] }
@@ -43,6 +43,9 @@ export default function ReportsPage() {
         <div className="spacer" />
         <span className="t-xs t-muted">Every export is recorded in the audit trail.</span>
       </div>
+      {!q.data.length && (
+        <Card><Empty icon="fileText" title="No reports available" sub="Reports appear here once your role has access to at least one module. Ask an administrator if you expected to see some." /></Card>
+      )}
       {GROUPS.map((g) => {
         const items = q.data!.filter((r) => r.group === g);
         if (!items.length) return null;

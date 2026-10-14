@@ -9,7 +9,7 @@ import {
   SearchInput, SelectField, Status, StudentLink, TextArea,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { FormModal, IncidentModal, severityTone, useFieldErrors } from './shared';
+import { FormModal, IncidentModal, incidentRowClass, SeverityBadge, useFieldErrors } from './shared';
 import { INCIDENT_STATUSES, INCIDENT_TYPES, SEVERITIES, type Incident, type IncidentSummary } from './types';
 
 export default function SafeguardingPage() {
@@ -37,15 +37,15 @@ export default function SafeguardingPage() {
 
       {summary.error ? <div className="mt-4"><ErrorState error={summary.error} onRetry={() => summary.refetch()} /></div> : (
         <Grid cols="g-4col" className="mt-4">
-          <Kpi loading={!s} label="Open concerns" value={fmt.n(s?.openConcerns ?? 0)} tone={s?.openConcerns ? 'amber' : 'teal'} foot={s ? `${s.underReview} under DSL review` : undefined} />
-          <Kpi loading={!s} label="Closed this year" value={fmt.n(s?.closedThisYear ?? 0)} foot={s ? `${s.closedWithin24h} within 24 h of being raised` : undefined} />
-          <Kpi loading={!s} label="Open incidents (all types)" value={fmt.n(s?.openAll ?? 0)} tone="info" foot={s ? `${s.last30Days} logged in the last 30 days` : undefined} />
-          <Kpi loading={!s} label="Escalated / referred" value={fmt.n(s?.escalated ?? 0)} tone={s?.escalated ? 'critical' : undefined} foot="Principal informed for every referral" />
+          <Kpi icon="alert" loading={!s} label="Open concerns" value={fmt.n(s?.openConcerns ?? 0)} tone={s?.openConcerns ? 'amber' : 'teal'} foot={s ? `${s.underReview} under DSL review` : undefined} />
+          <Kpi icon="activity" loading={!s} label="Closed this year" value={fmt.n(s?.closedThisYear ?? 0)} foot={s ? `${s.closedWithin24h} within 24 h of being raised` : undefined} />
+          <Kpi icon="alert" loading={!s} label="Open incidents (all types)" value={fmt.n(s?.openAll ?? 0)} tone="info" foot={s ? `${s.last30Days} logged in the last 30 days` : undefined} />
+          <Kpi icon="clock" loading={!s} label="Escalated / referred" value={fmt.n(s?.escalated ?? 0)} tone={s?.escalated ? 'critical' : undefined} foot="Principal informed for every referral" />
         </Grid>
       )}
 
       <div className="mt-4">
-        <Card title="Escalation path">
+        <Card icon="grid" title="Escalation path">
           <Flow steps={[
             { label: 'Concern observed', meta: 'Any staff member', state: 'done' },
             { label: 'Logged same day', meta: 'Within the system, not on paper', state: 'done' },
@@ -57,7 +57,7 @@ export default function SafeguardingPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Incident register" sub="Safeguarding, health, transport, facilities, security and emergency events" flush>
+        <Card icon="checkSquare" title="Incident register" sub="Safeguarding, health, transport, facilities, security and emergency events" flush>
           <div className="toolbar">
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference or summary" />
             <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={INCIDENT_TYPES} />
@@ -73,6 +73,7 @@ export default function SafeguardingPage() {
               sort={list.sort}
               onSort={list.setSort}
               onRowClick={setOpen}
+              rowClassName={incidentRowClass}
               emptyText="No incidents match these filters."
               columns={[
                 { key: 'code', label: 'Ref', render: (r) => <span className="t-num t-bold">{r.code}</span> },
@@ -80,7 +81,7 @@ export default function SafeguardingPage() {
                 { key: 'type', label: 'Type', render: (r) => r.incidentType },
                 { key: 'summary', label: 'Summary', sortable: false, render: (r) => <span className="row g-1">{r.isConfidential && <Icon name="lock" size={12} className="t-critical" />}{r.summary}</span> },
                 { key: 'student', label: 'Student', sortable: false, render: (r) => r.studentId && r.studentName ? <StudentLink id={r.studentId} name={r.studentName} meta={r.admissionNo ?? undefined} /> : <span className="t-faint">—</span> },
-                { key: 'severity', label: 'Severity', render: (r) => <Badge tone={severityTone(r.severity)}>{r.severity}</Badge> },
+                { key: 'severity', label: 'Severity', render: (r) => <SeverityBadge value={r.severity} /> },
                 { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
                 { key: 'owner', label: 'Owner', render: (r) => r.ownerName ?? '—' },
               ]}
@@ -91,7 +92,7 @@ export default function SafeguardingPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Training and compliance" sub="Child protection, background checks and fire safety" flush>
+        <Card icon="grid" title="Training and compliance" sub="Child protection, background checks and fire safety" flush>
           {!s ? null : !s.compliance.length ? <Empty icon="clipboard" title="No safeguarding compliance items" sub="Compliance items are managed in Operations." /> : (
             <DataTable
               rows={s.compliance}
@@ -136,7 +137,7 @@ function IncidentDetail({ incident, canManage, onClose }: { incident: Incident; 
       <Dl items={[
         ['Type', r.incidentType],
         ['Date', fmt.date(r.occurredOn)],
-        ['Severity', <Badge key="s" tone={severityTone(r.severity)}>{r.severity}</Badge>],
+        ['Severity', <SeverityBadge key="s" value={r.severity} />],
         ['Status', <Status key="st" value={r.status} />],
         ['Student', r.studentId && r.studentName ? <StudentLink key="stu" id={r.studentId} name={r.studentName} /> : '—'],
         ['Owner', r.ownerName ?? '—'],
@@ -144,9 +145,11 @@ function IncidentDetail({ incident, canManage, onClose }: { incident: Incident; 
       ]} />
       <div>
         <div className="label mb-2">Details</div>
-        <p className="t-sm" style={{ whiteSpace: 'pre-wrap' }}>{q.isLoading ? 'Loading…' : r.details ?? 'No details recorded.'}</p>
+        <p className="t-sm st-pre">{q.isLoading ? 'Loading…' : r.details ?? 'No details recorded.'}</p>
       </div>
       {canManage && (
+        <div className="formsection">
+        <div className="formsection__title">Update the record</div>
         <div className="form-grid">
           <SelectField label="Status" value={f.status} onChange={(v) => setF((x) => ({ ...x, status: v }))} options={INCIDENT_STATUSES} />
           <SelectField label="Severity" value={f.severity} onChange={(v) => setF((x) => ({ ...x, severity: v }))} options={SEVERITIES} />
@@ -154,6 +157,7 @@ function IncidentDetail({ incident, canManage, onClose }: { incident: Incident; 
             options={(lookups?.staff ?? []).map((s) => ({ value: s.id, label: `${s.fullName} — ${s.designation}` }))} />
           <TextArea className="span-2" label="Add a note" rows={3} maxLength={1000} value={f.note} error={fe.errors.note}
             onChange={(v) => { setF((x) => ({ ...x, note: v })); fe.clear('note'); }} placeholder="Action taken, decision, referral…" />
+        </div>
         </div>
       )}
     </div>

@@ -29,7 +29,7 @@ interface Props<T> {
   selectable?: boolean;
   selected?: Set<string>;
   onSelect?: (next: Set<string>) => void;
-  emptyText?: string;
+  emptyText?: ReactNode;
   compact?: boolean;
   /** Tables collapse into card lists below 768px (wireframe behaviour). */
   stack?: boolean;
@@ -130,7 +130,7 @@ export function DataTable<T>({
               })}
         </tbody>
       </table>
-      {!loading && !data.length && <div className="table__empty">{emptyText}</div>}
+      {!loading && !data.length && <div className="table__empty"><Icon name="search" size={20} />{emptyText}</div>}
     </div>
   );
 }
@@ -140,21 +140,21 @@ export function Pagination({ meta, onPage, onPageSize }: { meta?: PageMeta; onPa
   const from = (meta.page - 1) * meta.pageSize + 1;
   const to = Math.min(meta.total, meta.page * meta.pageSize);
   return (
-    <div className="row between wrap g-3" style={{ padding: 'var(--s-3) var(--s-4)', borderTop: '1px solid var(--border-soft)' }}>
+    <nav className="pager" aria-label="Pagination">
       <span className="t-xs t-muted">
-        Showing <strong className="t-num">{fmt.n(from)}–{fmt.n(to)}</strong> of <strong className="t-num">{fmt.n(meta.total)}</strong>
+        Showing <strong className="t-num t-strong">{fmt.n(from)}–{fmt.n(to)}</strong> of <strong className="t-num t-strong">{fmt.n(meta.total)}</strong>
       </span>
-      <div className="row g-2">
+      <div className="pager__nav">
         {onPageSize && (
-          <select className="select" aria-label="Rows per page" value={meta.pageSize} onChange={(e) => onPageSize(Number(e.target.value))} style={{ width: 'auto', height: 32 }}>
+          <select className="select" aria-label="Rows per page" value={meta.pageSize} onChange={(e) => onPageSize(Number(e.target.value))}>
             {[10, 25, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
           </select>
         )}
-        <Button size="sm" icon="chevronLeft" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)} aria-label="Previous page" />
-        <span className="t-xs t-num">Page {meta.page} of {meta.totalPages}</span>
-        <Button size="sm" icon="chevronRight" disabled={meta.page >= meta.totalPages} onClick={() => onPage(meta.page + 1)} aria-label="Next page" />
+        <Button size="sm" icon="chevronLeft" disabled={meta.page <= 1} onClick={() => onPage(meta.page - 1)} aria-label="Previous page" title="Previous page" />
+        <span className="t-xs t-num t-muted" aria-live="polite">Page <strong className="t-strong">{meta.page}</strong> of {meta.totalPages}</span>
+        <Button size="sm" icon="chevronRight" disabled={meta.page >= meta.totalPages} onClick={() => onPage(meta.page + 1)} aria-label="Next page" title="Next page" />
       </div>
-    </div>
+    </nav>
   );
 }
 
