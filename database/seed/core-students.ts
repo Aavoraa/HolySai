@@ -734,3 +734,89 @@ async function seedStaffAttendance(db: Db, ctx: SeedContext) {
   }
   await bulkInsert(db, 'staff_attendance', ['employee_id', 'attendance_date', 'status', 'check_in', 'check_out', 'source'], rows);
 }
+
+// ---------------------------------------------------------------------------
+// Top-up for an existing database: adds students to every section that has fewer
+// than `min`, without touching anything already there (npm run db:top-up).
+// New students get a guardian, an enrolment, attendance since the start of the year
+// and term results, like the seeded ones; transport and GPS are left out.
+// ---------------------------------------------------------------------------
+export async function topUpSections(db: Db, ctx: SeedContext, min = 5) {
+  const year = (await db.query('SELECT id, starts_on::text AS starts FROM academic_years WHERE is_current')).rows[0];
+  if (!year) throw new Error('No current academic year.');
+  ctx.yearId = year.id;
+  ctx.yearStart = year.starts;
+  for (const r of (await db.query('SELECT id, code FROM subjects')).rows) ctx.subjects[r.code] = r.id;
+  for (const r of (await db.query('SELECT id, employee_code FROM employees')).rows) ctx.employees[r.employee_code] = r.id;
+  const teacher = (await db.query("SELECT id FROM users WHERE email = 'priya.raghavan.demo@holysai.edu'")).rows[0]
+    ?? (await db.query("SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.key = 'teacher' LIMIT 1")).rows[0];
+  ctx.users.teacher = teacher?.id ?? null;
+
+  const sections = (await db.query(
+    `SELECT sec.id, sec.name, c.id AS class_id, c.grade_level, cp.id AS campus_id, cp.code, cp.latitude, cp.longitude,
+            (SELECT count(*)::int FROM students s WHERE s.section_id = sec.id AND s.deleted_at IS NULL AND s.status = 'active') AS n,
+            (SELECT COALESCE(max(roll_no), 0)::int FROM enrollments e WHERE e.section_id = sec.id) AS last_roll
+       FROM sections sec JOIN classes c ON c.id = sec.class_id JOIN campuses cp ON cp.id = c.campus_id
+      WHERE sec.academic_year_id = $1
+      ORDER BY cp.code, c.grade_level, sec.name`, [ctx.yearId])).rows;
+  const seen = new Set((await db.query("SELECT first_name || ' ' || last_name AS n FROM students")).rows.map((r) => r.n as string));
+  let nextNo = Number((await db.query(
+    String.raw`SELECT COALESCE(max(substring(admission_no from '\d+$')::int), 1093) AS n FROM students WHERE admission_no LIKE 'HS-2026-%'`)).rows[0].n) + 1;
+  let nextParent = Number((await db.query(
+    String.raw`SELECT COALESCE(max(substring(parent_code from '\d+$')::int), 0) AS n FROM parents`)).rows[0].n) + 1;
+
+  const firsts = [...FIRST, ...EXTRA_FIRST];
+  const lasts = [...LAST, ...EXTRA_LAST];
+  const added: SeedStudent[] = [];
+  for (const sec of sections) {
+    let roll = sec.last_roll as number;
+    for (let k = sec.n as number; k < min; k++) {
+      let first = ctx.pick(firsts), last = ctx.pick(lasts);
+      for (let j = 0; seen.has(`${first} ${last}`); j++) {
+        first = ctx.pick(firsts);
+        if (j % 20 === 19) last = ctx.pick(lasts);
+      }
+      seen.add(`${first} ${last}`);
+      const grade = sec.grade_level as number;
+      const att = ctx.int(80, 99), avg = ctx.int(50, 94), trend = ctx.int(-8, 8);
+      const risk = att < 82 || avg < 55 ? 'At Risk' : att < 86 || avg < 62 || trend < -6 ? 'Developing Risk' : 'On Track';
+      const gender: 'M' | 'F' = FEMALE.has(first) ? 'F' : 'M';
+      const no = `HS-2026-${nextNo++}`;
+      const place = CAMPUSES_PLACE[sec.code] ?? 'Campus';
+      const dob = `${new Date(ctx.today).getUTCFullYear() - (grade + 5)}-${String(ctx.int(1, 12)).padStart(2, '0')}-${String(ctx.int(1, 28)).padStart(2, '0')}`;
+      const s = await db.query(
+        `INSERT INTO students (admission_no, first_name, last_name, date_of_birth, gender, blood_group, campus_id, section_id,
+                               academic_year_id, house, address, city, pincode, admitted_on, risk_level)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+        [no, first, last, dob, gender, ctx.pick(['A+', 'B+', 'O+', 'AB+', 'O-', 'B-']), sec.campus_id, sec.id, ctx.yearId,
+          ctx.pick(HOUSES), `No. ${ctx.int(2, 140)}, ${ctx.pick(['Gandhi Street', 'Nehru Nagar', 'Temple View Road', 'Park Avenue', 'Bharathi Street', 'Lake Road'])}, ${place}`,
+          sec.code === 'gdv' ? 'Chengalpattu' : 'Coimbatore', sec.code === 'gdv' ? '603202' : sec.code === 'vdv' ? '641041' : '642001',
+          ctx.yearStart, risk],
+      );
+      const id = s.rows[0].id as string;
+      await db.query('INSERT INTO enrollments (student_id, section_id, academic_year_id, roll_no, enrolled_on) VALUES ($1,$2,$3,$4,$5)',
+        [id, sec.id, ctx.yearId, ++roll, ctx.yearStart]);
+      const guardian = `${ctx.pick(FATHER)} ${last}`;
+      const p = await db.query(
+        `INSERT INTO parents (parent_code, full_name, phone, email, preferred_channel, engagement_score)
+         VALUES ($1,$2,$3,$4,'whatsapp',$5) RETURNING id`,
+        [`PAR-${String(nextParent++).padStart(4, '0')}`, guardian, `+91 9${ctx.int(100000000, 999999999)}`,
+          `${guardian.toLowerCase().replace(/[^a-z]+/g, '.')}.${no.slice(-4)}@example.com`, ctx.int(38, 96)],
+      );
+      await db.query('INSERT INTO student_guardians (student_id, parent_id, relationship, is_primary, can_pickup, can_view_tracking) VALUES ($1,$2,$3,true,true,true)',
+        [id, p.rows[0].id, 'Father']);
+      added.push({
+        id, admissionNo: no, fullName: `${first} ${last}`, firstName: first, lastName: last, gender,
+        campusCode: sec.code, campusId: sec.campus_id, classId: sec.class_id, sectionId: sec.id, gradeLevel: grade, grade: `Grade ${grade}`,
+        section: sec.name, house: '', targetAttendance: att, targetAverage: avg, targetTrend: trend, risk, feeProfile: 'Paid',
+        routeCode: null, home: { lat: Number(sec.latitude), lng: Number(sec.longitude) }, parentId: p.rows[0].id,
+      });
+    }
+  }
+  ctx.students = added;
+  if (added.length) {
+    await seedAttendance(db, ctx);
+    await seedAcademicRecords(db, ctx);
+  }
+  return { added: added.length, sections: sections.length };
+}
