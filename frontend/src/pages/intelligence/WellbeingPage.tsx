@@ -8,7 +8,7 @@ import type { StudentRow } from '@/api/types';
 import { fmt, todayKey } from '@/lib/format';
 import {
   Badge, Banner, Button, Card, Chart, charts, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Legend, Modal, Page,
-  PageHead, PageSkeleton, Pagination, SearchInput, SelectField, Status, StudentLink, Switch, Tabs, TextArea, TextField,
+  Icon, PageHead, PageSkeleton, Pagination, SearchInput, SelectField, Status, StudentLink, Switch, Tabs, TextArea, TextField, Toolbar,
 } from '@/components/ui';
 import { StudentPicker } from './shared';
 
@@ -63,16 +63,16 @@ export default function WellbeingPage() {
     <Page>
       {head}
       <Grid cols="g-4col">
-        <Kpi label="Positive notes this term" value={fmt.n(d.positive.value)} tone="teal" delta={d.positive.delta} foot={`Since ${fmt.date(d.termStart)}`} />
-        <Kpi label="Concerns logged" value={fmt.n(d.concerns.value)} tone="amber" delta={d.concerns.delta} inverse foot="Concerns and incidents"
+        <Kpi label="Positive notes this term" icon="star" value={fmt.n(d.positive.value)} tone="teal" delta={d.positive.delta} foot={`Since ${fmt.date(d.termStart)}`} />
+        <Kpi label="Concerns logged" icon="flag" value={fmt.n(d.concerns.value)} tone="amber" delta={d.concerns.delta} inverse foot="Concerns and incidents"
           onClick={() => list.setFilter('type', 'Concern')} />
-        <Kpi label="Counselling sessions" value={d.counselling.sessions} tone="info" foot={`${d.counselling.students} students · ${d.counselling.upcoming} upcoming`} />
-        <Kpi label="Safeguarding concerns" value={d.safeguarding.total} tone="critical"
+        <Kpi label="Counselling sessions" icon="message" value={d.counselling.sessions} tone="info" foot={`${d.counselling.students} students · ${d.counselling.upcoming} upcoming`} />
+        <Kpi label="Safeguarding concerns" icon="shield" value={d.safeguarding.total} tone="critical"
           foot={d.safeguarding.total ? `${d.safeguarding.closed} closed · ${d.safeguarding.open} open` : 'None this term'} />
       </Grid>
 
       <div className="grid g-main mt-4">
-        <Card title="Positive notes against concerns" sub="By grade, this term">
+        <Card icon="grid" title="Positive notes against concerns" sub="By grade, this term">
           {d.byGrade.length ? <>
             <Chart svg={charts.stacked({
               labels: d.byGrade.map((g) => g.label),
@@ -83,11 +83,11 @@ export default function WellbeingPage() {
               height: 240,
             })} />
             <div className="mt-3"><Legend items={[{ label: 'Positive', color: 'var(--teal)' }, { label: 'Concern', color: 'var(--amber)' }]} /></div>
-          </> : <Empty icon="heart" title="No behaviour notes this term" />}
+          </> : <Empty icon="heart" title="No behaviour notes this term" sub="Positive notes and concerns appear here, grouped by grade, as staff record them." />}
         </Card>
         <div className="col g-4">
           {d.infirmary !== null && (
-            <Card title="Infirmary today" sub={`${d.infirmary.length} visit${d.infirmary.length === 1 ? '' : 's'}`} flush>
+            <Card icon="grid" title="Infirmary today" sub={`${d.infirmary.length} visit${d.infirmary.length === 1 ? '' : 's'}`} flush>
               <DataTable compact rows={d.infirmary} rowKey={(r) => r.id} emptyText="No infirmary visits today."
                 columns={[
                   { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.student} meta={`${r.grade} · ${fmt.time(r.visitedAt)}`} /> },
@@ -96,30 +96,30 @@ export default function WellbeingPage() {
                 ]} />
             </Card>
           )}
-          <Card title="Latest check-in mood" sub={`One per student · ${d.moodScope}`}>
+          <Card icon="grid" title="Latest check-in mood" sub={`One per student · ${d.moodScope}`}>
             {moodTotal ? <>
               <Chart svg={charts.donut({ size: 170, thickness: 24, center: String(moodTotal), centerSub: 'students', data: d.moods.map((m) => ({ ...m, color: MOOD_COLORS[m.label] ?? 'var(--viz-6)' })) })} />
               <div className="mt-3"><Legend items={d.moods.map((m) => ({ label: `${m.label} ${m.value}`, color: MOOD_COLORS[m.label] ?? 'var(--viz-6)' }))} /></div>
-            </> : <Empty icon="heart" title="No check-ins recorded" />}
+            </> : <Empty icon="heart" title="No check-ins recorded" sub="Each student’s latest mood appears here once a check-in is recorded." />}
           </Card>
         </div>
       </div>
 
       {!sensitive && <div className="mt-4"><Banner tone="neutral" icon="lock">Confidential check-ins and counselling notes are hidden for your role. They are visible to the counsellor and the Principal.</Banner></div>}
 
-      <div className="filterbar mt-4">
+      <div className="mt-4">
+      <Card icon="grid" flush title="Records" sub={tab === 'notes' ? 'Behaviour notes recorded by staff, newest first' : 'Wellbeing check-ins, newest first'}>
+        <Toolbar>
         <Tabs pills items={[{ id: 'notes', label: 'Behaviour notes' }, { id: 'checkins', label: 'Wellbeing check-ins' }]} active={tab}
           onChange={(t) => list.setFilter('tab', t === 'notes' ? '' : t)} />
         {tab === 'notes'
           ? <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={TYPES} />
           : <FilterSelect label="Mood" value={list.filters.mood} onChange={(v) => list.setFilter('mood', v)} options={MOODS} />}
         <SearchInput value={list.q} onSearch={list.setQ} placeholder={tab === 'notes' ? 'Search student or note' : 'Search student'} maxWidth={260} />
-        <div className="spacer" />
-      </div>
-      <Card flush>
+        </Toolbar>
         {tab === 'notes' ? (
           notes.error ? <ErrorState error={notes.error} onRetry={() => notes.refetch()} /> : <>
-            <DataTable<NoteRow> rows={notes.data?.rows} loading={notes.isLoading} rowKey={(r) => r.id} emptyText="No behaviour notes match."
+            <DataTable<NoteRow> rows={notes.data?.rows} loading={notes.isLoading} rowKey={(r) => r.id} emptyText={list.q || list.filters.type ? "No behaviour notes match these filters." : "No behaviour notes yet. Use “Record behaviour note” to add the first one."}
               columns={[
                 { key: 'date', label: 'Date', width: '110px', render: (r) => fmt.date(r.date) },
                 { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade} · ${r.admissionNo}`} /> },
@@ -131,7 +131,7 @@ export default function WellbeingPage() {
           </>
         ) : (
           checkins.error ? <ErrorState error={checkins.error} onRetry={() => checkins.refetch()} /> : <>
-            <DataTable<CheckinRow> rows={checkins.data?.rows} loading={checkins.isLoading} rowKey={(r) => r.id} emptyText="No check-ins match."
+            <DataTable<CheckinRow> rows={checkins.data?.rows} loading={checkins.isLoading} rowKey={(r) => r.id} emptyText={list.q || list.filters.mood ? "No check-ins match these filters." : "No check-ins yet. Use “Record check-in” to add the first one."}
               columns={[
                 { key: 'date', label: 'Date', width: '110px', render: (r) => fmt.date(r.date) },
                 { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade} · ${r.admissionNo}`} /> },
@@ -143,6 +143,7 @@ export default function WellbeingPage() {
           </>
         )}
       </Card>
+      </div>
 
       {modal === 'note' && <BehaviourModal onClose={() => setModal(null)} />}
       {modal === 'checkin' && <CheckinModal sensitive={sensitive} onClose={() => setModal(null)} />}
@@ -160,7 +161,7 @@ function PickedStudent({ student, onPick, error }: { student: StudentRow | null;
           <Button size="sm" variant="quiet" onClick={() => onPick(null)}>Change</Button>
         </div>
       ) : <StudentPicker onPick={onPick} />}
-      {error && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span>}
+      {error && <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{error}</span>}
     </div>
   );
 }
@@ -187,7 +188,7 @@ function BehaviourModal({ onClose }: { onClose: () => void }) {
         <PickedStudent student={student} onPick={setStudent} error={errors.studentId} />
         <div className="grid g-2col g-3">
           <SelectField label="Type" required value={form.recordType} onChange={(v) => setForm({ ...form, recordType: v })} options={TYPES} />
-          <TextField label="Date" type="date" max={todayKey()} value={form.recordedOn} onChange={(v) => setForm({ ...form, recordedOn: v })} error={errors.recordedOn} />
+          <TextField label="Date" required type="date" max={todayKey()} value={form.recordedOn} onChange={(v) => setForm({ ...form, recordedOn: v })} error={errors.recordedOn} />
         </div>
         <TextArea label="Note" required value={form.note} onChange={(v) => setForm({ ...form, note: v })} rows={4} maxLength={1000} error={errors.note}
           placeholder="What happened, factually and briefly." />
@@ -219,7 +220,7 @@ function CheckinModal({ sensitive, onClose }: { sensitive: boolean; onClose: () 
         <PickedStudent student={student} onPick={setStudent} error={errors.studentId} />
         <div className="grid g-2col g-3">
           <SelectField label="Mood" required value={form.mood} onChange={(v) => setForm({ ...form, mood: v })} options={MOODS} />
-          <TextField label="Date" type="date" max={todayKey()} value={form.checkedOn} onChange={(v) => setForm({ ...form, checkedOn: v })} error={errors.checkedOn} />
+          <TextField label="Date" required type="date" max={todayKey()} value={form.checkedOn} onChange={(v) => setForm({ ...form, checkedOn: v })} error={errors.checkedOn} />
         </div>
         <TextArea label="Notes" value={form.notes} onChange={(v) => setForm({ ...form, notes: v })} rows={3} maxLength={1000} error={errors.notes} />
         {sensitive

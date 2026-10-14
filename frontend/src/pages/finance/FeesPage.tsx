@@ -5,11 +5,10 @@ import { useSchool } from '@/layouts/SchoolContext';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { fmt } from '@/lib/format';
 import {
-  Banner, Button, Card, Chart, charts, DataTable, Empty, ErrorState, Grid, Kpi, Legend, Meter, Modal, Page, PageHead,
-  PageSkeleton, SelectField, Status, StudentLink, TextArea, useConfirm,
-} from '@/components/ui';
+  Badge, Banner, Button, Card, Chart, charts, DataTable, Empty, ErrorState, Grid, Kpi, Legend, Meter, Modal, Page, CampusBanner,
+  PageSkeleton, SelectField, Status, StudentLink, TextArea, useConfirm, DashLayout, DashRail, SchoolPulse } from '@/components/ui';
 import type { FeeDashboard, ReminderAudience } from './types';
-import { METHOD_COLORS, Money } from './shared';
+import { METHOD_COLORS, Money, TotalsBar } from './shared';
 
 const AGE_COLORS = ['var(--teal)', 'var(--viz-4)', 'var(--amber)', 'var(--critical)'];
 
@@ -26,7 +25,7 @@ export default function FeesPage() {
   });
 
   const head = (
-    <PageHead
+    <CampusBanner
       title="Fee Collection"
       sub="Billing, collection, ageing and expected cash flow — with automated reminders behind every overdue figure."
       actions={can('finance.manage') && <>
@@ -35,30 +34,48 @@ export default function FeesPage() {
       </>}
     />
   );
-  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={6} /></Page>;
+  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={4} /></Page>;
   if (q.error || !q.data) return <Page>{head}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const d = q.data;
   const k = d.kpis;
   const methodTotal = d.methods.reduce((a, m) => a + m.amount, 0);
   const upi = d.methods.find((m) => m.label === 'UPI');
+  const headBilled = d.byHead.reduce((a, h) => a + h.billed, 0);
+  const headCollected = d.byHead.reduce((a, h) => a + h.collected, 0);
 
   return (
     <Page>
       {head}
-      <Grid cols="g-3col">
-        <Kpi label="Total billed" value={fmt.money(k.billed, { compact: true })} foot="Academic year to date" />
-        <Kpi label="Collected" value={fmt.money(k.collected, { compact: true })} tone="teal" delta={k.collected30dDelta ?? undefined}
-          foot={`${fmt.pct(k.collectionPct, 1)} of billed`} />
-        <Kpi label="Outstanding" value={fmt.money(k.outstanding, { compact: true })} tone="amber" foot={`${k.outstandingAccounts} student accounts`}
+      <DashLayout rail={<DashRail events={false} actions={[
+        { label: 'Payments', icon: 'creditCard', to: '/payments' },
+        { label: 'Student Accounts', icon: 'users', to: '/student-accounts' },
+        { label: 'Receipts', icon: 'receipt', to: '/receipts' },
+        { label: 'Concessions', icon: 'percent', to: '/concessions' },
+        { label: 'Expenses', icon: 'fileText', to: '/expenses' },
+        { label: 'Financial Reports', icon: 'barChart', to: '/financial-reports' },
+      ]} />}>
+      <Grid cols="g-4col">
+        <Kpi size="hero" icon="wallet" label="Collected" value={fmt.money(k.collected, { compact: true })} tone="teal" delta={k.collected30dDelta ?? undefined}
+          foot={`${fmt.pct(k.collectionPct, 1)} of ${fmt.money(k.billed, { compact: true })} billed`} />
+        <Kpi size="hero" icon="clock" label="Outstanding" value={fmt.money(k.outstanding, { compact: true })} tone="amber" foot={`${k.outstandingAccounts} student accounts`}
           onClick={() => navigate('/student-accounts?sort=balance&dir=desc')} />
-        <Kpi label="Overdue 30+ days" value={fmt.money(k.overdue, { compact: true })} tone="critical" foot={`${k.overdueAccounts} accounts`}
+        <Kpi size="hero" icon="alert" label="Overdue 30+ days" value={fmt.money(k.overdue, { compact: true })} tone="critical"
+          foot={`${k.overdueAccounts} accounts · ${fmt.money(k.overdueAll, { compact: true })} past due in total`}
           onClick={() => navigate('/student-accounts?feeStatus=Overdue&sort=overdue&dir=desc')} />
-        <Kpi label="Collection rate" value={fmt.pct(k.collectionPct, 1)} tone="teal" foot={`${fmt.money(k.overdueAll, { compact: true })} past due in total`} />
-        <Kpi label="Expected this month" value={fmt.money(k.expected, { compact: true })} tone="info" foot="Instalments falling due" />
+        <Kpi size="hero" icon="calendar" label="Expected this month" value={fmt.money(k.expected, { compact: true })} tone="info" foot="Instalments falling due" />
       </Grid>
+      <div className="statgrid statgrid--card fw-fit mt-3" aria-label="Billing figures">
+        <Kpi size="compact" label="Total billed" value={fmt.money(k.billed, { compact: true })} foot="Academic year to date" />
+        <Kpi size="compact" label="Collection rate" value={fmt.pct(k.collectionPct, 1)} tone="teal" foot="Collected ÷ billed" />
+        <Kpi size="compact" label="Accounts outstanding" value={fmt.n(k.outstandingAccounts)} tone="amber" foot="With a balance due"
+          onClick={() => navigate('/student-accounts?sort=balance&dir=desc')} />
+        <Kpi size="compact" label="Accounts overdue 30+" value={fmt.n(k.overdueAccounts)} tone="critical" foot="Reminder candidates"
+          onClick={() => navigate('/student-accounts?feeStatus=Overdue&sort=overdue&dir=desc')} />
+      </div>
+      <SchoolPulse />
 
       <div className="grid g-main mt-5">
-        <Card title="Collection trend" sub="Billed (invoices raised) against collected, by month">
+        <Card icon="wallet" title="Collection trend" sub="Billed (invoices raised) against collected, by month">
           {d.trend.some((t) => t.billed || t.collected) ? <>
             <Chart svg={charts.bar({
               labels: d.trend.map((t) => t.label),
@@ -72,28 +89,28 @@ export default function FeesPage() {
           </> : <Empty icon="barChart" title="No billing yet" sub="Invoices and collections will appear here." />}
         </Card>
         <div className="col g-4">
-          <Card title="Overdue ageing">
+          <Card icon="wallet" title="Overdue ageing" sub="Outstanding by days past the due date">
             {d.ageing.some((a) => a.value > 0) ? (
               <Chart svg={charts.hbar({
                 rows: d.ageing.map((a, i) => ({ label: a.label, value: a.value, color: AGE_COLORS[i], display: fmt.money(a.value, { compact: true }) })),
                 labelW: 92, rowH: 32,
               })} />
-            ) : <Empty icon="check" title="Nothing overdue" />}
+            ) : <Empty icon="check" title="Nothing overdue" sub="Every instalment is within its due date." />}
           </Card>
-          <Card title="Payment method">
+          <Card icon="wallet" title="Payment method">
             {methodTotal ? <>
               <Chart svg={charts.donut({
                 size: 168, thickness: 24, center: `${upi?.pct ?? 0}%`, centerSub: 'by UPI',
                 data: d.methods.map((m) => ({ label: m.label, value: m.pct, color: METHOD_COLORS[m.label] })),
               })} />
               <div className="mt-4"><Legend items={d.methods.map((m) => ({ label: `${m.label} ${m.pct}%`, color: METHOD_COLORS[m.label] }))} /></div>
-            </> : <Empty icon="creditCard" title="No payments yet" />}
+            </> : <Empty icon="creditCard" title="No payments yet" sub="The method mix appears once the first payment is recorded." />}
           </Card>
         </div>
       </div>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Campus comparison" sub="Collected and outstanding, all campuses">
+        <Card icon="building" title="Campus comparison" sub="Collected and outstanding, all campuses">
           <Chart svg={charts.stacked({
             labels: d.byCampus.map((c) => c.label),
             series: [
@@ -104,7 +121,12 @@ export default function FeesPage() {
           })} />
           <div className="mt-3"><Legend items={[{ label: 'Collected', color: 'var(--teal)' }, { label: 'Outstanding', color: 'var(--amber)' }]} /></div>
         </Card>
-        <Card title="By fee head" flush>
+        <Card icon="wallet" title="By fee head" sub="Billed against collected, this academic year" flush
+          foot={d.byHead.length ? <TotalsBar items={[
+            { label: 'Billed', value: fmt.money(headBilled, { compact: true }) },
+            { label: 'Collected', value: fmt.money(headCollected, { compact: true }) },
+            { label: 'Rate', value: headBilled ? fmt.pct((headCollected / headBilled) * 100, 1) : '—' },
+          ]} /> : undefined}>
           <DataTable compact rows={d.byHead} rowKey={(r) => r.head} emptyText="No charges raised yet."
             columns={[
               { key: 'head', label: 'Head' },
@@ -121,7 +143,7 @@ export default function FeesPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Accounts needing attention" sub="Overdue beyond 30 days, ranked by amount" flush
+        <Card icon="alert" title="Accounts needing attention" sub="Overdue beyond 30 days, ranked by amount" flush
           actions={<Button size="sm" iconRight="arrowRight" to="/student-accounts?feeStatus=Overdue&sort=overdue&dir=desc">Open student accounts</Button>}>
           <DataTable rows={d.attention} rowKey={(r) => r.id} emptyText="No account is more than 30 days overdue."
             onRowClick={(r) => navigate(`/student-accounts?student=${r.id}`)}
@@ -129,7 +151,7 @@ export default function FeesPage() {
               { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={r.admissionNo} /> },
               { key: 'grade', label: 'Grade', render: (r) => `${r.grade ?? ''} ${r.section ?? ''}` },
               { key: 'due', label: 'Outstanding', className: 'num', render: (r) => <Money v={r.outstanding} strong /> },
-              { key: 'age', label: 'Ageing', render: (r) => <span className="badge badge--critical">{r.ageDays} days</span> },
+              { key: 'age', label: 'Ageing', className: 'num', render: (r) => <Badge tone={r.ageDays > 90 ? 'critical' : 'warning'}>{r.ageDays} days</Badge> },
               { key: 'feeStatus', label: 'Status', render: (r) => <Status value={r.feeStatus} /> },
               {
                 key: 'a', label: '', className: 'num', render: (r) => (
@@ -150,6 +172,7 @@ export default function FeesPage() {
         </Card>
       </div>
       <RemindersModal open={reminders} onClose={() => setReminders(false)} />
+      </DashLayout>
     </Page>
   );
 }

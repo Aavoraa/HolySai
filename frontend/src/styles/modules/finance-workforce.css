@@ -1,0 +1,104 @@
+/* Module styles: finance-workforce. Uses tokens from tokens.css only — no new colours. */
+
+/* ---- Toolbars inside flush cards --------------------------------------- */
+.fw-date { width: auto; min-width: 140px; max-width: 170px; height: var(--control-h-sm); }
+.fw-count { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fw-count strong { color: var(--text-strong); }
+
+/* ---- Totals / summary rows below money tables ------------------------- */
+.fw-totals { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-3); width: 100%; }
+.fw-totals__items { margin: 0; display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5); }
+.fw-totals__item { display: flex; flex-direction: column; min-width: 0; }
+.fw-totals__label { font-size: var(--fs-micro); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--text-faint); }
+.fw-totals__value { margin: 0; font-family: var(--font-display); font-size: var(--fs-h3); font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.fw-totals__value.t-critical { color: var(--critical); }
+.fw-totals__value.t-success { color: var(--success); }
+
+/* Grand total line inside dialogs (approve payroll, take payment) */
+.fw-grandtotal {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4); margin-top: var(--s-3);
+  background: var(--surface-alt); border: 1px solid var(--border-soft); border-radius: var(--r-md);
+}
+.fw-grandtotal__label { font-weight: 600; color: var(--text-strong); }
+.fw-grandtotal__value { font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--text-strong); font-variant-numeric: tabular-nums; }
+
+/* ---- Queue chip (pending approvals) ------------------------------------ */
+.fw-queue { display: inline-flex; align-items: center; gap: var(--s-2); }
+
+/* ---- Link-like inline buttons (cover arrangement, roster cells) ------- */
+.fw-linkbtn {
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left;
+  color: inherit; font: inherit; border-radius: var(--r-sm);
+}
+.fw-linkbtn:hover { color: var(--brand); }
+.fw-linkbtn:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+
+/* ---- Student picker & selection lists ---------------------------------- */
+.fw-picker { max-height: 260px; overflow: auto; }
+.fw-picker__msg { padding: var(--s-3); }
+.fw-picker .alert-item__title, .fw-picker .alert-item__meta { display: block; }
+.fw-picker .alert-item > .grow { min-width: 0; text-align: left; }
+.fw-picked { padding: var(--s-3); }
+.fw-checklist {
+  max-height: 240px; overflow: auto; padding: var(--s-3);
+  border: 1px solid var(--border-soft); border-radius: var(--r-md); background: var(--surface);
+}
+.fw-applylines { display: flex; flex-direction: column; gap: var(--s-2); }
+.fw-applylines > div { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+
+/* ---- Ledger header ------------------------------------------------------ */
+.fw-ledger-nav { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); margin-bottom: var(--s-4); }
+.fw-ledger-nav__search { flex: 1 1 260px; max-width: 420px; }
+
+/* ---- Financial report tiles -------------------------------------------- */
+.fw-report-tile { padding: var(--s-4) var(--s-5); text-align: left; width: 100%; font: inherit; color: inherit; }
+.fw-report-tile:disabled { cursor: progress; opacity: .7; }
+.fw-report-scroll { max-height: 60vh; overflow: auto; }
+
+/* ---- Receipt (screen + print) ------------------------------------------ */
+.fin-receipt { padding: var(--s-5); }
+.fin-receipt__school { font-size: 18px; font-weight: 600; }
+.fin-receipt__total { font-size: 18px; }
+
+/* ---- Roster grid -------------------------------------------------------- */
+.fw-roster { min-width: 760px; }
+.fw-roster th.is-today { color: var(--brand); }
+.fw-roster td { vertical-align: top; }
+
+/* ---- Employee profile (modal) ------------------------------------------ */
+.fw-profile { margin-bottom: var(--s-4); }
+.fw-profile .profilehead__name { font-size: var(--fs-h2); }
+.fw-tabs { padding: 0 var(--s-2); border-bottom: 1px solid var(--border-soft); }
+.fw-tabs .tabs { border-bottom: 0; }
+.fw-tabpad { padding: var(--s-3) var(--s-4); }
+
+/* ---- Payslip document --------------------------------------------------- */
+.payslip__line { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 7px 0; border-bottom: 1px solid var(--border-soft); }
+.payslip__subtotal { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-top: var(--s-3); padding-top: var(--s-2); border-top: 2px solid var(--border); }
+.payslip__net { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: var(--s-4) var(--s-5); }
+.payslip__net-value { font-family: var(--font-display); font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.payslip-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--s-3); padding-bottom: var(--s-4); margin-bottom: var(--s-5); border-bottom: 1px solid var(--border-soft); }
+.payslip-head__school { font-size: 20px; font-weight: 600; }
+.payslip-head__month { text-align: right; }
+
+@media (max-width: 640px) {
+  .fw-date { max-width: none; flex: 1 1 140px; }
+  .fw-totals__items { gap: var(--s-2) var(--s-4); }
+  .payslip-head__month { text-align: left; }
+  .payslip__net-value { font-size: 20px; }
+  .fw-ledger-nav__search { max-width: none; }
+}
+
+@media print {
+  .fin-receipt { padding: 0; border: 0; }
+  .payslip-print > .card { border: 0; box-shadow: none; }
+  .payslip-print > .card > .card__body { padding: 0; }
+  .payslip-print .payslip__net { border: 1px solid var(--border); }
+  .payslip-print .banner { border: 1px solid var(--border); }
+}
+
+/* Secondary figures: stretch to fill the card instead of leaving empty tracks */
+.statgrid.fw-fit { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.fw-note { max-width: 240px; }
+.fw-field-end { justify-content: flex-end; }

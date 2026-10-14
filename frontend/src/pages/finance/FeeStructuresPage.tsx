@@ -7,10 +7,10 @@ import { useLookups } from '@/hooks/useLookups';
 import { fmt } from '@/lib/format';
 import {
   Banner, Button, Card, Checkbox, DataTable, ErrorState, FilterSelect, Modal, Page, PageHead, Pagination, SearchInput,
-  SectionHead, SelectField, Status, Switch, TextField, useConfirm,
+  SectionHead, SelectField, Status, Switch, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import type { StructureRow, StructureSummaryRow } from './types';
-import { fieldErrors, Money, useFinanceLookups } from './shared';
+import { fieldErrors, ListCount, Money, useFinanceLookups } from './shared';
 
 export default function FeeStructuresPage() {
   const { can } = useAuth();
@@ -48,14 +48,16 @@ export default function FeeStructuresPage() {
 
       <div className="mt-5">
         <SectionHead title="Structure lines" sub="Every class, head and instalment. Applying a structure raises the charge on each enrolled student's account." />
-        <div className="filterbar">
-          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search class, stage or head" />
-          <FilterSelect label="Head" value={list.filters.feeHeadId} onChange={(v) => list.setFilter('feeHeadId', v)}
-            options={(lk.data?.feeHeads ?? []).map((h) => ({ value: h.id, label: h.name }))} />
-          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Active', 'Draft', 'Archived']} />
-          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        </div>
         <Card flush>
+          <Toolbar>
+            <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search class, stage or head" />
+            <FilterSelect label="Head" value={list.filters.feeHeadId} onChange={(v) => list.setFilter('feeHeadId', v)}
+              options={(lk.data?.feeHeads ?? []).map((h) => ({ value: h.id, label: h.name }))} />
+            <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Active', 'Draft', 'Archived']} />
+            {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+            <div className="spacer" />
+            <ListCount total={q.data?.meta.total} noun="lines" />
+          </Toolbar>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
             <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
               emptyText="No structure lines match the current filters."
@@ -70,7 +72,7 @@ export default function FeeStructuresPage() {
                 {
                   key: 'a', label: '', className: 'num', sortable: false, render: (r) => can('finance.manage') && (
                     <div className="row g-2 end">
-                      {r.status === 'Draft' && <Button size="sm" onClick={() => patch.mutate({ id: r.id, status: 'Active' })}>Activate</Button>}
+                      {r.status === 'Draft' && <Button size="sm" loading={patch.isPending && patch.variables?.id === r.id} onClick={() => patch.mutate({ id: r.id, status: 'Active' })}>Activate</Button>}
                       {r.status === 'Active' && (
                         <Button size="sm" variant="teal" loading={apply.isPending && apply.variables === r.id} onClick={async () => {
                           if (await confirm({ title: 'Apply to student accounts?', body: `${r.head} ${r.term} (${fmt.money(r.amount)}) will be raised for every enrolled student in ${r.class} who does not have it yet.`, confirmLabel: 'Apply' })) apply.mutate(r.id);
@@ -137,7 +139,7 @@ function StructureModal({ open, onClose }: { open: boolean; onClose: () => void 
           <TextField label="Amount per instalment (₹)" required type="number" min="0" step="0.01" value={f.amount} onChange={set('amount')} error={errs.amount} />
           <TextField label="Due date" required type="date" value={f.dueDate} onChange={set('dueDate')} error={errs.dueDate} />
           <SelectField label="Status" value={f.status} onChange={set('status')} options={['Active', 'Draft']} hint="Draft structures are not applied to accounts." />
-          <div className="field" style={{ justifyContent: 'end' }}>
+          <div className="field fw-field-end">
             <Switch checked={f.status === 'Active' && f.applyNow} disabled={f.status !== 'Active'} onChange={(v) => setF((x) => ({ ...x, applyNow: v }))} label="Raise on student accounts now" />
           </div>
         </div>
@@ -148,12 +150,12 @@ function StructureModal({ open, onClose }: { open: boolean; onClose: () => void 
               {classIds.size === classes.length ? 'Clear all' : 'Select all'}
             </Button>
           </div>
-          <div className="grid g-3col mt-2" style={{ maxHeight: 220, overflow: 'auto' }}>
+          <div className="grid g-3col mt-2 fw-checklist">
             {classes.map((c) => (
               <Checkbox key={c.id} checked={classIds.has(c.id)} onChange={() => toggle(c.id)} label={`${c.name} · ${campusName(c.campusId)}`} />
             ))}
           </div>
-          {errs.classIds && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{errs.classIds}</span>}
+          {errs.classIds && <span className="hint hint--error" role="alert">{errs.classIds}</span>}
         </div>
         <Banner tone="neutral" icon="info">Transport lines are raised only for students with a bus route. A duplicate class, head and instalment is rejected.</Banner>
       </div>

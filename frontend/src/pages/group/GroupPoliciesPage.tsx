@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  Badge, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Icon, Modal, Page, PageHead, PageSkeleton, Pagination, SearchInput, SelectField,
-  TextArea, TextField, Timeline, useConfirm,
+  Badge, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Icon, InlineError, Modal, Page, PageHead, PageSkeleton, Pagination, SearchInput, SelectField,
+  TextArea, TextField, Timeline, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -40,15 +40,16 @@ export default function GroupPoliciesPage() {
     <Page>
       <PageHead title="Group Policies" sub="Policies that apply across every campus, with version and review status."
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setCreate(true)}>Add policy</Button>} />
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search policies" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={STATUSES} />
-      </div>
       <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search policies" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={STATUSES} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Policy>
             rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort} onRowClick={(r) => setOpen(r.id)}
-            emptyText="No policies match."
+            emptyText={list.hasFilters ? 'No policies match these filters.' : 'No group policies yet. Add one to share it with every campus, with version history.'}
             columns={[
               { key: 'name', label: 'Policy', render: (r) => <span className="row g-3"><Icon name="shield" size={16} className="t-muted" /><span className="t-bold">{r.name}</span></span> },
               { key: 'scope', label: 'Scope', sortable: false, render: (r) => r.scope },
@@ -71,7 +72,9 @@ function PolicyModal({ id, manage, onClose }: { id: string; manage: boolean; onC
   const q = useApiQuery<PolicyDetail>(`/group/policies/${id}`);
   const [editing, setEditing] = useState(false);
   const confirm = useConfirm();
-  const del = useApiMutation<void, { result: string }>('delete', `/group/policies/${id}`, { invalidate: ['/group/policies'] });
+  const del = useApiMutation<void, { result: string }>('delete', `/group/policies/${id}`, {
+    invalidate: ['/group/policies'], success: q.data?.status === 'Draft' ? 'Draft deleted' : 'Policy retired',
+  });
   const p = q.data;
   if (editing && p) return <PolicyForm policy={p} onClose={() => setEditing(false)} />;
   return (
@@ -97,7 +100,11 @@ function PolicyModal({ id, manage, onClose }: { id: string; manage: boolean; onC
             ['Last updated', `${fmt.date(p.updatedAt)}${p.updatedBy ? ` by ${p.updatedBy}` : ''}`],
           ]} />
           <div className="eyebrow mt-4 mb-2">Policy text</div>
-          <div className="card card--tint" style={{ padding: 16, whiteSpace: 'pre-wrap' }}><span className="t-sm">{p.body || 'No text recorded yet.'}</span></div>
+          <div className="card card--tint">
+            <div className="card__body card__body--tight t-sm" style={{ whiteSpace: 'pre-wrap' }}>
+              {p.body || <span className="t-muted">No text recorded yet.{manage && p.status !== 'Retired' ? ' Use “Edit / new version” to add it.' : ''}</span>}
+            </div>
+          </div>
           <div className="eyebrow mt-4 mb-2">Version history</div>
           {!p.versions.length ? <p className="t-sm t-muted">This is the first version.</p> : (
             <Timeline items={[
@@ -135,19 +142,27 @@ function PolicyForm({ policy, onClose }: { policy?: PolicyDetail; onClose: () =>
   return (
     <Modal open onClose={onClose} size="wide" title={policy ? `Edit ${policy.name}` : 'Add policy'}
       sub={policy ? 'Changing the text or scope creates a new version; the previous one is kept in the history.' : undefined} busy={save.isPending}
-      foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={submit}>Save</Button></>}>
-      <FormGrid>
-        <TextField label="Policy name" required maxLength={160} value={v.name} onChange={(x) => f.set('name', x)} error={f.errors.name} />
-        <TextField label="Scope" required maxLength={80} value={v.scope} onChange={(x) => f.set('scope', x)} error={f.errors.scope} />
-        <div className="row-top g-2">
-          <TextField label="Version" required maxLength={12} value={v.version} onChange={(x) => f.set('version', x)} error={f.errors.version} style={{ flex: 1 }} />
-          {policy && <Button size="sm" style={{ marginTop: 24 }} onClick={() => f.set('version', bump(policy.version))}>Next version</Button>}
-        </div>
-        <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={STATUSES.filter((s) => s !== 'Retired')} />
-        <TextField label="Effective from" type="date" required={v.status === 'Active'} value={v.effectiveOn} onChange={(x) => f.set('effectiveOn', x)} error={f.errors.effectiveOn} />
-        {policy && <TextField label="Change note" maxLength={300} value={v.changeNote} onChange={(x) => f.set('changeNote', x)} placeholder="What changed in this version" />}
-      </FormGrid>
-      <div className="mt-3"><TextArea label="Policy text" rows={10} maxLength={20000} value={v.body} onChange={(x) => f.set('body', x)} /></div>
+      foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={submit}>{policy ? 'Save changes' : 'Add policy'}</Button></>}>
+      {save.error && <div className="mb-4"><InlineError error={save.error} /></div>}
+      <div className="formsection">
+        <div className="formsection__title">Details</div>
+        <FormGrid>
+          <TextField label="Policy name" required maxLength={160} value={v.name} onChange={(x) => f.set('name', x)} error={f.errors.name} />
+          <TextField label="Scope" required maxLength={80} value={v.scope} onChange={(x) => f.set('scope', x)} error={f.errors.scope} />
+          <div className="row-top g-2">
+            <TextField label="Version" required maxLength={12} value={v.version} onChange={(x) => f.set('version', x)} error={f.errors.version} style={{ flex: 1 }} />
+            {policy && <Button size="sm" style={{ marginTop: 24 }} onClick={() => f.set('version', bump(policy.version))}>Next version</Button>}
+          </div>
+          <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={STATUSES.filter((s) => s !== 'Retired')} />
+          <TextField label="Effective from" type="date" required={v.status === 'Active'} value={v.effectiveOn} onChange={(x) => f.set('effectiveOn', x)} error={f.errors.effectiveOn} />
+          {policy && <TextField label="Change note" maxLength={300} value={v.changeNote} onChange={(x) => f.set('changeNote', x)} placeholder="What changed in this version" />}
+        </FormGrid>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Policy text</div>
+        <TextArea label="Text" rows={10} maxLength={20000} value={v.body} onChange={(x) => f.set('body', x)}
+          hint={policy ? 'Changing the text requires a higher version number.' : undefined} />
+      </div>
     </Modal>
   );
 }

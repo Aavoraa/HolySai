@@ -20,6 +20,14 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  /** Sidebar caption the group is listed under. */
+  section?: string;
+  /** Name shown in the sidebar and breadcrumbs, when it differs from the group key. */
+  label?: string;
+  /** Subtle module hue (a --hue-* token suffix) for its menu icon and page-header tile. */
+  hue?: string;
+  /** Key pages shown as direct links under the group in the sidebar (route + optional short label). */
+  quick?: { to: string; label?: string }[];
   group: string;
   icon: string;
   items: NavItem[];
@@ -39,7 +47,7 @@ const DEVICES = ['tracking.read_all', 'tracking.manage'];
 
 export const NAV: NavGroup[] = [
   {
-    group: 'Overview', icon: 'grid', items: [
+    group: 'Overview', hue: 'brand', icon: 'grid', items: [
       { label: 'Dashboard', icon: 'home', to: '/command-center', dynamicHome: true },
       { label: 'Owner Overview', icon: 'shield', to: '/overview', perm: ['audit.read'], roles: ['super_admin', 'school_admin'] },
       { label: 'Command Center', icon: 'pulse', to: '/command-center', perm: ['dashboard.group'] },
@@ -52,7 +60,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Student Management', icon: 'users', items: [
+    section: 'Student Management', group: 'Student Management', hue: 'brand', label: 'Students', quick: [{ to: '/student-360' }, { to: '/attendance' }], icon: 'users', items: [
       { label: 'Students', icon: 'users', to: '/students', perm: STAFF_STUDENTS },
       { label: 'Student 360', icon: 'user', to: '/student-360', perm: STAFF_STUDENTS },
       { label: 'Student Tracking', icon: 'mapPin', to: '/student-tracking', perm: STAFF_TRACK },
@@ -66,7 +74,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Admissions & CRM', icon: 'target', items: [
+    section: 'Admissions', group: 'Admissions & CRM', hue: 'blue', label: 'Enquiries & Admissions', quick: [{ to: '/pipeline', label: 'Counselling' }, { to: '/applications' }], icon: 'target', items: [
       { label: 'Admissions Dashboard', icon: 'target', to: '/admissions', perm: ['admissions.read'] },
       { label: 'Leads', icon: 'list', to: '/leads', perm: ['admissions.read'] },
       { label: 'Enquiries', icon: 'message', to: '/enquiries', perm: ['admissions.read'] },
@@ -80,7 +88,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Academics', icon: 'book', items: [
+    section: 'Student Management', group: 'Academics', hue: 'plum', quick: [{ to: '/report-cards' }], icon: 'book', items: [
       { label: 'Curriculum', icon: 'bookOpen', to: '/curriculum', perm: ['academics.read'] },
       { label: 'Classes', icon: 'grid', to: '/classes', perm: ['academics.read'] },
       { label: 'Subjects', icon: 'book', to: '/subjects', perm: ['academics.read'] },
@@ -94,7 +102,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Parent Experience', icon: 'heart', items: [
+    section: 'Student Management', group: 'Parent Experience', hue: 'rose', label: 'Parent Experience', icon: 'heart', items: [
       { label: 'Parent Directory', icon: 'users', to: '/parent-directory', perm: ['parents.read'] },
       { label: 'Parent Communication', icon: 'message', to: '/parent-communication', perm: ['communication.read'] },
       { label: 'PTM', icon: 'calendar', to: '/ptm', perm: ['communication.read'] },
@@ -104,7 +112,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Safety & Transport', icon: 'shield', items: [
+    section: 'Transport & Safety', group: 'Safety & Transport', hue: 'terracotta', label: 'GPS & Safety', quick: [{ to: '/student-tracking', label: 'GPS Tracking' }, { to: '/bus-tracking', label: 'Transport' }], icon: 'mapPin', items: [
       { label: 'Smart Gate', icon: 'door', to: '/smart-gate', perm: ['safety.read'] },
       { label: 'Gate Entry/Exit', icon: 'scan', to: '/gate-log', perm: ['safety.read'] },
       { label: 'Pickup Authorisation', icon: 'key', to: '/pickup', perm: ['safety.read'] },
@@ -122,7 +130,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Finance', icon: 'wallet', items: [
+    section: 'Finance', group: 'Finance', hue: 'sage', label: 'Fee Management', quick: [{ to: '/payments' }, { to: '/expenses' }, { to: '/financial-reports', label: 'Reports' }], icon: 'wallet', items: [
       { label: 'Fee Structures', icon: 'layers', to: '/fee-structures', perm: ['finance.read'] },
       { label: 'Fee Collection', icon: 'wallet', to: '/fees', perm: ['finance.read'] },
       { label: 'Student Accounts', icon: 'user', to: '/student-accounts', perm: ['finance.read'] },
@@ -139,7 +147,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Workforce', icon: 'briefcase', items: [
+    section: 'HR & Workforce', group: 'Workforce', hue: 'amber', label: 'Staff', quick: [{ to: '/staff-attendance', label: 'Attendance' }, { to: '/leave' }, { to: '/payroll' }], icon: 'users', items: [
       { label: 'Employee Directory', icon: 'users', to: '/workforce', perm: ['hr.read'] },
       { label: 'Teaching Staff', icon: 'graduation', to: '/teaching-staff', perm: ['hr.read'] },
       { label: 'Non-Teaching Staff', icon: 'tool', to: '/non-teaching-staff', perm: ['hr.read'] },
@@ -155,7 +163,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Operations', icon: 'box', items: [
+    section: 'Operations', group: 'Operations', hue: 'steel', label: 'Facilities & Assets', icon: 'box', items: [
       { label: 'Assets', icon: 'box', to: '/assets', perm: ['operations.read'] },
       { label: 'Facilities', icon: 'building', to: '/facilities', perm: ['operations.read'] },
       { label: 'Maintenance', icon: 'wrench', to: '/maintenance', perm: ['operations.read'] },
@@ -168,7 +176,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Innovation', icon: 'rocket', items: [
+    section: 'Insights & Innovation', group: 'Innovation', hue: 'amber', icon: 'rocket', items: [
       // The student portal's own entry — submit an idea and follow its review.
       { label: 'My Ideas', icon: 'lightbulb', to: '/my-ideas', perm: ['student_portal.use'] },
       { label: 'Innovation Lab', icon: 'rocket', to: '/innovation', perm: ['innovation.read'] },
@@ -181,7 +189,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Intelligence', icon: 'brain', items: [
+    section: 'Insights & Innovation', group: 'Intelligence', hue: 'teal', icon: 'brain', items: [
       { label: 'AI Teacher Co-Pilot', icon: 'sparkle', to: '/copilot', perm: ['ai.use'] },
       { label: 'School Knowledge AI', icon: 'brain', to: '/knowledge-ai', perm: ['ai.use'] },
       { label: 'Talent Discovery', icon: 'star', to: '/talent', perm: [...STAFF_STUDENTS, 'ai.use'] },
@@ -191,7 +199,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Group Management', icon: 'building', items: [
+    section: 'Administration', group: 'Group Management', hue: 'indigo', icon: 'building', items: [
       { label: 'Campuses', icon: 'building', to: '/campuses', perm: ['group.read'] },
       { label: 'Group Dashboard', icon: 'globe', to: '/group-dashboard', perm: ['dashboard.group'] },
       { label: 'Campus Comparison', icon: 'barChart', to: '/campus-comparison', perm: ['group.read'] },
@@ -200,7 +208,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    group: 'Administration', icon: 'settings', items: [
+    section: 'Administration', group: 'Administration', hue: 'steel', label: 'Users & Settings', icon: 'settings', items: [
       { label: 'Report Centre', icon: 'barChart', to: '/admin/reports', perm: ['users.manage'] },
       { label: 'Users & Roles', icon: 'users', to: '/admin/users', perm: ['users.manage'] },
       { label: 'System Settings', icon: 'settings', to: '/admin/settings', perm: ['settings.manage'] },
@@ -208,7 +216,7 @@ export const NAV: NavGroup[] = [
   },
   {
     // Demo and hand-off tools; Management only in the wireframe.
-    group: 'Prototype', icon: 'play', items: [
+    section: 'Administration', group: 'Prototype', hue: 'steel', icon: 'play', items: [
       { label: 'Day in the Life', icon: 'clock', to: '/day-in-life', perm: ['prototype.view'] },
       { label: 'Automation Flows', icon: 'zap', to: '/automations', perm: ['prototype.view'] },
       { label: 'WhatsApp AI', icon: 'message', to: '/whatsapp-ai', perm: ['prototype.view'] },

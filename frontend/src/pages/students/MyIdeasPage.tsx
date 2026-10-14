@@ -62,7 +62,7 @@ export default function MyIdeasPage() {
     return (
       <Page>
         {head}
-        <Empty icon="user" title="No student record is linked to this account" sub="Please contact the school office." />
+        <Card><Empty icon="user" title="No student record is linked to this account" sub="Please contact the school office." /></Card>
       </Page>
     );
   }
@@ -80,22 +80,22 @@ export default function MyIdeasPage() {
 
       {ideas.length > 0 && (
         <Grid cols="g-4col">
-          <Kpi label="Ideas submitted" value={fmt.n(ideas.length)} />
-          <Kpi label="Waiting for review" value={fmt.n(waiting)} tone={waiting ? 'amber' : undefined} />
-          <Kpi label="Accepted" value={fmt.n(accepted)} tone={accepted ? 'teal' : undefined} />
-          <Kpi label="Became projects" value={fmt.n(projects)} tone={projects ? 'teal' : undefined} />
+          <Kpi icon="lightbulb" label="Ideas submitted" value={fmt.n(ideas.length)} />
+          <Kpi icon="checkSquare" label="Waiting for review" value={fmt.n(waiting)} tone={waiting ? 'amber' : undefined} />
+          <Kpi icon="activity" label="Accepted" value={fmt.n(accepted)} tone={accepted ? 'teal' : undefined} />
+          <Kpi icon="lightbulb" label="Became projects" value={fmt.n(projects)} tone={projects ? 'teal' : undefined} />
         </Grid>
       )}
 
       {!ideas.length ? (
-        <div className="mt-4">
+        <Card className="mt-4">
           <Empty
             icon="lightbulb"
             title="You have not submitted an idea yet"
             sub="It does not have to be finished or perfect — describe the problem and a teacher will help you shape it."
             action={<Button variant="primary" icon="lightbulb" onClick={() => setOpen(true)}>Submit your first idea</Button>}
           />
-        </div>
+        </Card>
       ) : (
         <div className="col g-3 mt-4">
           {ideas.map((i) => (
@@ -104,7 +104,7 @@ export default function MyIdeasPage() {
               foot={i.projectId
                 ? <Button size="sm" variant="primary" icon="rocket" onClick={() => navigate(`/projects/${i.projectId}`)}>Open {i.projectCode}</Button>
                 : <span className="t-xs t-muted">{nextStep(i)}</span>}>
-              {i.problem && <p className="t-sm" style={{ whiteSpace: 'pre-wrap' }}>{i.problem}</p>}
+              {i.problem && <p className="t-sm pre-wrap">{i.problem}</p>}
               {i.reviewedBy && !i.projectId && <p className="t-micro t-muted mt-2">Reviewed by {i.reviewedBy}</p>}
               <div className="mt-3">
                 <Flow steps={[

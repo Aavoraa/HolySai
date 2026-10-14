@@ -9,7 +9,7 @@ import { fmt, todayKey } from '@/lib/format';
 import {
   AiNotice, Badge, Banner, Button, Card, DataTable, Dl, Empty, ErrorState, FilterSelect, Flow, Grid, Kpi, Meter, Modal,
   Page, PageHead, Pagination, Risk, SearchInput, Segment, SelectField, Skeleton, Stepper, StudentLink, Tabs, TextArea,
-  TextField, Timeline, useConfirm,
+  TextField, Timeline, Toolbar, useConfirm,
 } from '@/components/ui';
 import {
   RISK_LEVELS, STAGES, STAGE_SHORT, TrendCell, useCsvDownload,
@@ -63,7 +63,6 @@ export default function EarlyWarningPage() {
         title="Early Warning"
         sub="Early support, not automated labelling. A signal only becomes an intervention after a teacher reviews it."
         actions={<>
-          <Button icon="download" loading={busy === 'ew'} onClick={() => download('ew', '/early-warning/export', { ...list.query, page: undefined, pageSize: undefined, ...campusParam }, 'early-warning-review.csv')}>Export review list</Button>
           <Button icon="helpCircle" onClick={() => setExplain(true)}>How this works</Button>
           {canManage && <Button variant="primary" icon="zap" onClick={() => setCheck(true)}>Run signal check</Button>}
         </>}
@@ -71,13 +70,16 @@ export default function EarlyWarningPage() {
 
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <>
-          <Grid cols="g-3col">
-            <Kpi label="At Risk" value={s?.bands.atRisk ?? '—'} tone="critical" loading={summary.isLoading} foot="Two or more indicators declining" onClick={() => list.setFilter('risk', 'At Risk')} />
-            <Kpi label="Developing Risk" value={s?.bands.developing ?? '—'} tone="amber" loading={summary.isLoading} foot="One indicator slipping" onClick={() => list.setFilter('risk', 'Developing Risk')} />
-            <Kpi label="On Track" value={s ? fmt.n(s.bands.onTrack + s.bands.watch) : '—'} tone="teal" loading={summary.isLoading} foot={s?.bands.watch ? `No action needed · ${s.bands.watch} on watch` : 'No action needed'} onClick={() => list.setFilter('risk', 'On Track')} />
+          <Grid cols="g-4col">
+            <Kpi label="At Risk" icon="alert" value={s?.bands.atRisk ?? '—'} tone="critical" loading={summary.isLoading} foot="Two or more indicators declining" onClick={() => list.setFilter('risk', 'At Risk')} />
+            <Kpi label="Developing Risk" icon="trending" value={s?.bands.developing ?? '—'} tone="amber" loading={summary.isLoading} foot="One indicator slipping" onClick={() => list.setFilter('risk', 'Developing Risk')} />
+            <Kpi label="On Track" icon="check" value={s ? fmt.n(s.bands.onTrack + s.bands.watch) : '—'} tone="teal" loading={summary.isLoading} foot={s?.bands.watch ? `No action needed · ${s.bands.watch} on watch` : 'No action needed'} onClick={() => list.setFilter('risk', 'On Track')} />
+            <Kpi label="Awaiting review" icon="clock" value={s?.awaitingReview ?? '—'} tone="info" loading={summary.isLoading}
+              foot={s?.overdueReviews ? `${s.overdueReviews} reviews overdue` : 'Signals waiting for a teacher'}
+              onClick={() => { setTab('awaiting'); setSigPage(1); document.getElementById('ew-signals')?.scrollIntoView({ behavior: 'smooth' }); }} />
           </Grid>
           <div className="mt-4">
-            <Card title="Signal to closure" sub={s ? `${s.openInterventions} interventions open · ${s.closedThisTerm} closed this term · ${s.reviewed} signals reviewed${s.overdueReviews ? ` · ${s.overdueReviews} reviews overdue` : ''}` : 'Loading…'}>
+            <Card icon="alert" title="Signal to closure" sub={s ? `${s.openInterventions} interventions open · ${s.closedThisTerm} closed this term · ${s.reviewed} signals reviewed${s.overdueReviews ? ` · ${s.overdueReviews} reviews overdue` : ''}` : 'Loading…'}>
               {s ? (
                 <Flow steps={s.stages.map((st, i) => ({
                   label: st.label,
@@ -90,17 +92,20 @@ export default function EarlyWarningPage() {
         </>
       )}
 
-      <div className="filterbar mt-4">
-        <span className="t-sm t-muted"><strong className="t-strong">Campus:</strong> {scope === 'group' ? 'All campuses' : campus?.name ?? 'All campuses'}</span>
-        <FilterSelect label="Grade" value={list.filters.grade} onChange={(v) => list.setFilter('grade', v)} options={gradeNames} />
-        <FilterSelect label="Risk level" value={list.filters.risk} onChange={(v) => list.setFilter('risk', v)} options={RISK_LEVELS} allLabel="Needs attention" />
-        <FilterSelect label="Intervention" value={list.filters.intervention} onChange={(v) => list.setFilter('intervention', v)} options={INTERVENTIONS} />
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search students" maxWidth={240} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear</Button>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{students.data ? `${fmt.n(students.data.meta.total)} students listed` : ''}</span>
-      </div>
-      <Card flush>
+      <div className="mt-4">
+      <Card
+        flush
+        title="Students needing attention"
+        sub={`${scope === 'group' ? 'All campuses' : campus?.name ?? 'All campuses'}${students.data ? ` · ${fmt.n(students.data.meta.total)} students listed` : ''}`}
+        actions={<Button size="sm" icon="download" title="Download this review list as a CSV file" loading={busy === 'ew'} onClick={() => download('ew', '/early-warning/export', { ...list.query, page: undefined, pageSize: undefined, ...campusParam }, 'early-warning-review.csv')}>Export</Button>}
+      >
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search students" maxWidth={240} />
+          <FilterSelect label="Grade" value={list.filters.grade} onChange={(v) => list.setFilter('grade', v)} options={gradeNames} />
+          <FilterSelect label="Risk level" value={list.filters.risk} onChange={(v) => list.setFilter('risk', v)} options={RISK_LEVELS} allLabel="Needs attention" />
+          <FilterSelect label="Intervention" value={list.filters.intervention} onChange={(v) => list.setFilter('intervention', v)} options={INTERVENTIONS} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {students.error ? <ErrorState error={students.error} onRetry={() => students.refetch()} /> : (
           <DataTable<EwStudent>
             rows={students.data?.rows}
@@ -131,20 +136,24 @@ export default function EarlyWarningPage() {
         )}
         <Pagination meta={students.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>
+      </div>
 
       <div className="mt-4">
-        <Card
+        <Card icon="alert"
+          id="ew-signals"
           title="Signals"
           sub={tab === 'awaiting' ? 'Raised by the system, not yet accepted by a teacher' : tab === 'open' ? 'Every signal that is not yet closed' : tab === 'closed' ? 'Interventions closed with a recorded outcome' : 'Dismissed after teacher review — the reason is in the audit trail'}
           flush
-          actions={<Tabs pills items={SIGNAL_TABS.map((t) => ({ id: t.id, label: t.label, count: t.id === 'awaiting' ? s?.awaitingReview : undefined }))} active={tab} onChange={(t) => { setTab(t); setSigPage(1); }} />}
         >
+          <Toolbar>
+            <Tabs pills items={SIGNAL_TABS.map((t) => ({ id: t.id, label: t.label, count: t.id === 'awaiting' ? s?.awaitingReview : undefined }))} active={tab} onChange={(t) => { setTab(t); setSigPage(1); }} />
+          </Toolbar>
           {signals.error ? <ErrorState error={signals.error} onRetry={() => signals.refetch()} /> : (
             <DataTable<Signal>
               rows={signals.data?.rows}
               loading={signals.isLoading}
               rowKey={(r) => r.id}
-              emptyText={tab === 'awaiting' ? 'No signals are waiting for review.' : 'Nothing to show here.'}
+              emptyText={tab === 'awaiting' ? 'No signals are waiting for review.' : tab === 'open' ? 'No open signals. New ones appear here after a signal check.' : tab === 'closed' ? 'No interventions have been closed yet.' : 'No signals have been dismissed.'}
               columns={[
                 { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade ?? ''}${r.section ?? ''} · ${r.code}`} /> },
                 { key: 'signal', label: 'Signal', render: (r) => <><div className="t-sm">{r.signal}</div>{r.actionPlan && <div className="t-micro t-muted">{r.actionPlan}</div>}</> },
@@ -184,7 +193,7 @@ export default function EarlyWarningPage() {
 function Evidence({ d }: { d: SignalDetail }) {
   const att = d.student?.attendance;
   return (
-    <Card title="What the signal is" tight>
+    <Card icon="alert" title="What the signal is" tight>
       <Dl items={[
         ['Signal', <>{d.signal} <span className="t-micro t-muted">({d.code} · {d.signalType})</span></>],
         ['Attendance', att == null ? '—' : <span className={att < d.thresholds.attendance ? 't-critical t-bold' : undefined}>{att}% (threshold {d.thresholds.attendance}%)</span>],
@@ -261,7 +270,7 @@ function ReviewModal({ id, initial, canManage, onClose }: { id: string; initial:
           <div className="grid g-2col g-4">
             <div><Evidence d={d} /></div>
             <div>
-              <Card title="What the teacher knows" tight>
+              <Card icon="grid" title="What the teacher knows" tight>
                 <p className="t-sm t-muted">The system cannot see context. Record what you know before deciding.</p>
                 <div className="mt-3">
                   <TextArea label="Context" value={form.context} onChange={set('context')} rows={4} maxLength={2000} disabled={!reviewable || !canManage}
@@ -360,7 +369,7 @@ function InterventionModal({ id, canManage, onClose }: { id: string; canManage: 
           <div className="grid g-2col g-4 mt-4">
             <div><Evidence d={d} /></div>
             <div className="col g-4">
-              <Card title="Intervention" tight>
+              <Card icon="grid" title="Intervention" tight>
                 <Dl items={[
                   ['Decision', d.decision === 'dismissed' ? <Badge tone="neutral">Dismissed</Badge> : <Badge tone="success">Accepted</Badge>],
                   ['Action plan', d.actionPlan ?? '—'],
@@ -369,7 +378,7 @@ function InterventionModal({ id, canManage, onClose }: { id: string; canManage: 
                   ['Reviewed', d.reviewedAt ? `${fmt.dateTime(d.reviewedAt)} · ${d.reviewedBy ?? ''}` : '—'],
                 ]} />
               </Card>
-              <Card title="History" tight>
+              <Card icon="activity" title="History" tight>
                 {d.history.length ? (
                   <Timeline items={d.history.slice(0, 6).map((h) => ({ time: `${fmt.dateTime(h.at)} · ${h.by}`, title: h.description, tone: h.action === 'approve' ? 'teal' : h.action === 'dismiss' ? 'amber' : undefined }))} />
                 ) : <Empty icon="clock" title="No actions recorded yet" />}
@@ -466,9 +475,9 @@ function RunCheckModal({ thresholds, campusId, onClose }: { thresholds?: { atten
       ) : (
         <>
           <Grid cols="g-3col">
-            <Kpi label="Students checked" value={result.checked} />
-            <Kpi label="New signals" value={result.created.length} tone={result.created.length ? 'amber' : 'teal'} />
-            <Kpi label="Skipped" value={result.skipped} foot="Already open or recently dismissed" />
+            <Kpi icon="users" label="Students checked" value={result.checked} />
+            <Kpi icon="alert" label="New signals" value={result.created.length} tone={result.created.length ? 'amber' : 'teal'} />
+            <Kpi icon="activity" label="Skipped" value={result.skipped} foot="Already open or recently dismissed" />
           </Grid>
           <div className="mt-4">
             {result.created.length ? (

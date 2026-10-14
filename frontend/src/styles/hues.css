@@ -1,0 +1,128 @@
+/* ==========================================================================
+   HUES — a subtle, muted secondary palette for icons only.
+   Large surfaces stay neutral; colour appears as a soft tint behind an icon
+   in a matching, desaturated tone. Semantic status colours are unchanged
+   and always win (critical, warning, success). Loaded after system.css.
+   ========================================================================== */
+
+:root {
+  --hue-brand: var(--brand);  --hue-brand-tint: var(--brand-tint);
+  --hue-blue: #3E6E9E;        --hue-blue-tint: #EAF1F8;
+  --hue-plum: #7A4E8C;        --hue-plum-tint: #F3EDF6;
+  --hue-sage: #3F7F5E;        --hue-sage-tint: #EAF4EE;
+  --hue-amber: #9C6B12;       --hue-amber-tint: #FAF2E1;
+  --hue-teal: #2A7A7C;        --hue-teal-tint: #E6F2F2;
+  --hue-indigo: #50559E;      --hue-indigo-tint: #EDEEF7;
+  --hue-rose: #A8456B;        --hue-rose-tint: #F8ECF1;
+  --hue-terracotta: #A3533D;  --hue-terracotta-tint: #F8EDE9;
+  --hue-steel: #56657A;       --hue-steel-tint: #EEF1F4;
+}
+:root[data-theme="dark"] {
+  --hue-blue: #8DB4DC;        --hue-blue-tint: rgba(141, 180, 220, .12);
+  --hue-plum: #C3A2D2;        --hue-plum-tint: rgba(195, 162, 210, .12);
+  --hue-sage: #8CC7A8;        --hue-sage-tint: rgba(140, 199, 168, .12);
+  --hue-amber: #E3B867;       --hue-amber-tint: rgba(227, 184, 103, .12);
+  --hue-teal: #7CC3C4;        --hue-teal-tint: rgba(124, 195, 196, .12);
+  --hue-indigo: #A5A9E6;      --hue-indigo-tint: rgba(165, 169, 230, .12);
+  --hue-rose: #E596B6;        --hue-rose-tint: rgba(229, 150, 182, .12);
+  --hue-terracotta: #E2A08D;  --hue-terracotta-tint: rgba(226, 160, 141, .12);
+  --hue-steel: #A9B4C4;       --hue-steel-tint: rgba(169, 180, 196, .12);
+}
+
+/* One mapping: any element with data-hue exposes --h / --h-tint to its icons */
+[data-hue] { --h: var(--hue-brand); --h-tint: var(--hue-brand-tint); }
+[data-hue="blue"]       { --h: var(--hue-blue);       --h-tint: var(--hue-blue-tint); }
+[data-hue="plum"]       { --h: var(--hue-plum);       --h-tint: var(--hue-plum-tint); }
+[data-hue="sage"]       { --h: var(--hue-sage);       --h-tint: var(--hue-sage-tint); }
+[data-hue="amber"]      { --h: var(--hue-amber);      --h-tint: var(--hue-amber-tint); }
+[data-hue="teal"]       { --h: var(--hue-teal);       --h-tint: var(--hue-teal-tint); }
+[data-hue="indigo"]     { --h: var(--hue-indigo);     --h-tint: var(--hue-indigo-tint); }
+[data-hue="rose"]       { --h: var(--hue-rose);       --h-tint: var(--hue-rose-tint); }
+[data-hue="terracotta"] { --h: var(--hue-terracotta); --h-tint: var(--hue-terracotta-tint); }
+[data-hue="steel"]      { --h: var(--hue-steel);      --h-tint: var(--hue-steel-tint); }
+
+/* ---- Sidebar: each module's icon in a small tinted chip ------------------------ */
+.sidebar .navgroup[data-hue] .navhead__ico,
+.sidebar .navgroup[data-hue] .navquick .navitem__ico,
+.sidebar .navgroup--pinned[data-hue] .navitem__ico,
+.sidebar .sidebar__foot .navitem__ico {
+  width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center;
+  background: var(--h-tint, var(--bg-sunken)); color: var(--h, var(--text-muted));
+}
+.sidebar .sidebar__foot .navitem__ico { --h: var(--hue-steel); --h-tint: var(--hue-steel-tint); }
+.sidebar .navgroup[data-hue] .navhead__ico svg,
+.sidebar .navgroup[data-hue] .navquick .navitem__ico svg,
+.sidebar .navgroup--pinned[data-hue] .navitem__ico svg,
+.sidebar .sidebar__foot .navitem__ico svg { width: 16px; height: 16px; }
+/* Pinned items (Dashboard, Notifications, Tasks) get their own quiet hues */
+.sidebar .navgroup--pinned .navitem:nth-child(2) .navitem__ico { --h: var(--hue-amber); --h-tint: var(--hue-amber-tint); }
+.sidebar .navgroup--pinned .navitem:nth-child(3) .navitem__ico { --h: var(--hue-sage); --h-tint: var(--hue-sage-tint); }
+.sidebar .navgroup--pinned .navitem:nth-child(n+4) .navitem__ico { --h: var(--hue-blue); --h-tint: var(--hue-blue-tint); }
+/* Hover and active keep the chip; the row itself stays brand for the active page */
+.sidebar .navgroup[data-hue] .navitem:hover .navitem__ico,
+.sidebar .navgroup[data-hue] .navhead:hover .navhead__ico,
+.sidebar .navgroup[data-hue] .navitem[aria-current="page"] .navitem__ico { color: var(--h); }
+.sidebar .navgroup[data-current="true"] > .navhead .navhead__ico { color: var(--h); }
+/* Nested items: plain icons in the module hue */
+.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navgroup__items .navitem__ico { color: var(--h); opacity: .8; }
+.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navgroup__items .navitem[aria-current="page"] .navitem__ico { opacity: 1; }
+.app[data-rail="true"] .sidebar .navgroup[data-hue] .navhead__ico { width: 32px; height: 32px; }
+
+/* ---- Page header: a small tinted tile in the module hue ------------------------- */
+.pagehead { align-items: flex-end; }
+.pagehead__ico {
+  width: 40px; height: 40px; border-radius: 10px; flex: none; display: grid; place-items: center;
+  background: var(--h-tint); color: var(--h); align-self: flex-end; margin-bottom: 1px;
+}
+@media (max-width: 767px) { .pagehead__ico { width: 34px; height: 34px; } }
+
+/* ---- KPI tiles: untoned KPIs rotate through the muted hues ---------------------- */
+.kpi:not([class*="kpi--teal"]):not([class*="kpi--amber"]):not([class*="kpi--critical"]):not([class*="kpi--info"]):nth-child(5n+1) { --kpi-tone: var(--hue-brand); --kpi-tint: var(--hue-brand-tint); }
+.kpi:not([class*="kpi--teal"]):not([class*="kpi--amber"]):not([class*="kpi--critical"]):not([class*="kpi--info"]):nth-child(5n+2) { --kpi-tone: var(--hue-blue); --kpi-tint: var(--hue-blue-tint); }
+.kpi:not([class*="kpi--teal"]):not([class*="kpi--amber"]):not([class*="kpi--critical"]):not([class*="kpi--info"]):nth-child(5n+3) { --kpi-tone: var(--hue-plum); --kpi-tint: var(--hue-plum-tint); }
+.kpi:not([class*="kpi--teal"]):not([class*="kpi--amber"]):not([class*="kpi--critical"]):not([class*="kpi--info"]):nth-child(5n+4) { --kpi-tone: var(--hue-teal); --kpi-tint: var(--hue-teal-tint); }
+.kpi:not([class*="kpi--teal"]):not([class*="kpi--amber"]):not([class*="kpi--critical"]):not([class*="kpi--info"]):nth-child(5n+5) { --kpi-tone: var(--hue-indigo); --kpi-tint: var(--hue-indigo-tint); }
+.kpi--info, .kpi--violet { --kpi-tone: var(--hue-blue); --kpi-tint: var(--hue-blue-tint); }
+/* Compact figures: a small dot in the same tone before every label */
+.kpi--compact .kpi__label::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--kpi-tone); margin-right: 7px; vertical-align: 1px; }
+/* Classic KPI cards (no icon) carry the hue on their short top bar */
+.kpi:not(:has(.kpi__tile)):not(.kpi--compact)::before { display: block; background: var(--kpi-tone); }
+
+/* ---- Card header icons: a small tinted chip, rotating through the hues ---------- */
+.card__ico { --h: var(--hue-brand); --h-tint: var(--hue-brand-tint); width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--h-tint); color: var(--h); }
+.card__ico svg { width: 16px; height: 16px; }
+.grid > .card:nth-child(5n+2) .card__ico, .dash__rail > .card:nth-child(4n+2) .card__ico { --h: var(--hue-blue); --h-tint: var(--hue-blue-tint); }
+.grid > .card:nth-child(5n+3) .card__ico, .dash__rail > .card:nth-child(4n+3) .card__ico { --h: var(--hue-teal); --h-tint: var(--hue-teal-tint); }
+.grid > .card:nth-child(5n+4) .card__ico, .dash__rail > .card:nth-child(4n+4) .card__ico { --h: var(--hue-plum); --h-tint: var(--hue-plum-tint); }
+.grid > .card:nth-child(5n+5) .card__ico { --h: var(--hue-amber); --h-tint: var(--hue-amber-tint); }
+
+/* ---- Quick actions, activity, events, overview tiles ----------------------------- */
+.qa__ico[data-hue] { background: var(--h-tint); color: var(--h); }
+.actstrip__item:nth-child(4n+1) .actstrip__ico { background: var(--hue-blue-tint); color: var(--hue-blue); }
+.actstrip__item:nth-child(4n+2) .actstrip__ico { background: var(--hue-sage-tint); color: var(--hue-sage); }
+.actstrip__item:nth-child(4n+3) .actstrip__ico { background: var(--hue-plum-tint); color: var(--hue-plum); }
+.actstrip__item:nth-child(4n+4) .actstrip__ico { background: var(--hue-amber-tint); color: var(--hue-amber); }
+.evtag { box-shadow: none; }
+.evtag--academic { background: var(--hue-plum-tint); color: var(--hue-plum); }
+.evtag--sports   { background: var(--hue-sage-tint); color: var(--hue-sage); }
+.evtag--event    { background: var(--hue-blue-tint); color: var(--hue-blue); }
+.evtag--finance  { background: var(--hue-amber-tint); color: var(--hue-amber); }
+.evtag--other    { background: var(--hue-brand-tint); color: var(--hue-brand); }
+.ov-panel .grid > .ov-tile--kpi:nth-child(2) .ov-tile__ico { background: var(--hue-blue-tint); color: var(--hue-blue); }
+.ov-panel .grid > .ov-tile--kpi:nth-child(3) .ov-tile__ico { background: var(--hue-plum-tint); color: var(--hue-plum); }
+.ov-panel .grid > .ov-tile--kpi:nth-child(1) .ov-tile__ico { background: var(--hue-sage-tint); color: var(--hue-sage); }
+
+/* ---- Avatars: soft tints with readable initials ---------------------------------- */
+.avatar--blue       { background: var(--hue-blue-tint);  color: var(--hue-blue); }
+.avatar--plum       { background: var(--hue-plum-tint);  color: var(--hue-plum); }
+.avatar--sage       { background: var(--hue-sage-tint);  color: var(--hue-sage); }
+.avatar--amber-soft { background: var(--hue-amber-tint); color: var(--hue-amber); }
+.avatar--slate      { background: var(--hue-steel-tint); color: var(--hue-steel); }
+
+/* ---- Empty states and section heads pick up the brand tint ------------------------ */
+.empty__ico { background: var(--hue-brand-tint); color: var(--hue-brand); }
+
+/* Direct links get the same chip as group rows (beats the size rule in system.css) */
+.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navquick > .navitem .navitem__ico { width: 28px; height: 28px; }
+.sidebar .navgroup[data-hue]:not(.navgroup--pinned) .navquick > .navitem .navitem__ico svg { width: 16px; height: 16px; }
+:root { --sidebar-w: 280px; }

@@ -5,11 +5,11 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { fmt } from '@/lib/format';
 import {
-  Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination, SectionHead,
-  Status, StudentLink, TextArea, TextField, useConfirm,
+  Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination, SectionHead, Status,
+  StudentLink, TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import type { ConcessionRow, ConcessionSummary, Scholarship } from './types';
-import { fieldErrors, isMoney, Money } from './shared';
+import { fieldErrors, isMoney, ListCount, Money } from './shared';
 import { ConcessionModal, useConcessionDecisions } from './ConcessionsPage';
 
 const AWARD_TYPES = ['Merit scholarship', 'Need-based support', 'Sports quota'];
@@ -38,19 +38,21 @@ export default function ScholarshipsPage() {
           <Button variant="primary" icon="award" onClick={() => setOpening(true)}>Open a scholarship round</Button>
         </>} />
       <Grid cols="g-3col">
-        <Kpi label="Awards this year" value={k?.awards ?? '—'} tone="teal" loading={s.isLoading} onClick={() => list.setFilter('status', 'Approved')} />
-        <Kpi label="Total value" value={fmt.money(k?.value, { compact: true })} tone="amber" loading={s.isLoading} />
-        <Kpi label="Applications under review" value={k?.underReview ?? '—'} tone="info" loading={s.isLoading} onClick={() => list.setFilter('status', 'Under Review')} />
+        <Kpi icon="award" label="Awards this year" value={k?.awards ?? '—'} tone="teal" loading={s.isLoading} onClick={() => list.setFilter('status', 'Approved')} />
+        <Kpi icon="wallet" label="Total value" value={fmt.money(k?.value, { compact: true })} tone="amber" loading={s.isLoading} />
+        <Kpi icon="clipboard" label="Applications under review" value={k?.underReview ?? '—'} tone="info" loading={s.isLoading} onClick={() => list.setFilter('status', 'Under Review')} />
       </Grid>
 
-      <div className="filterbar mt-4">
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected']} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected']} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="awards and applications" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
-            emptyText="No scholarship awards or applications yet."
+            emptyText={list.hasFilters ? 'No awards match this status.' : 'No scholarship awards or applications yet. Nominate a student to start one.'}
             columns={[
               { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade ?? ''}${r.section ?? ''}`} /> },
               { key: 'type', label: 'Award' },
@@ -75,8 +77,8 @@ export default function ScholarshipsPage() {
                 { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
                 {
                   key: 'a', label: '', className: 'num', render: (r) => can('finance.manage') && r.status === 'Open' && (
-                    <Button size="sm" onClick={async () => {
-                      if (await confirm({ title: `Close "${r.name}"?`, body: 'No further nominations will be taken for this round.', confirmLabel: 'Close round' })) close.mutate({ id: r.id, status: 'Closed' });
+                    <Button size="sm" loading={close.isPending && close.variables?.id === r.id} onClick={async () => {
+                      if (await confirm({ title: `Close "${r.name}"?`, body: 'No further nominations will be taken for this round.', confirmLabel: 'Close round', danger: true })) close.mutate({ id: r.id, status: 'Closed' });
                     }}>Close round</Button>
                   ),
                 },

@@ -1,7 +1,7 @@
 /** Shared types and helpers for the academics screens. */
 import { useApiQuery } from '@/hooks/useApi';
 import { ApiError } from '@/api/client';
-import { todayKey } from '@/lib/format';
+import { fmt, todayKey } from '@/lib/format';
 
 export interface SectionOption {
   id: string;
@@ -53,3 +53,34 @@ export function plural(n: number, one: string, many = `${one}s`) {
 export const SUBJECT_SHORT: Record<string, string> = {
   Mathematics: 'Maths', 'Social Studies': 'Social', 'Art and Design': 'Art',
 };
+
+/** Whole days from today to a YYYY-MM-DD key (negative = in the past). */
+export function daysFromToday(key: string) {
+  const [y, m, d] = key.slice(0, 10).split('-').map(Number);
+  const [ty, tm, td] = todayKey().split('-').map(Number);
+  return Math.round((Date.UTC(y, m - 1, d) - Date.UTC(ty, tm - 1, td)) / 86_400_000);
+}
+
+/**
+ * Due-date cell: the date plus a relative hint ("Today", "In 3 days", "2 days overdue").
+ * Pass `done` when the item is closed/released so it is never flagged as overdue.
+ */
+export function DueDate({ date, done, doneLabel }: { date: string | null | undefined; done?: boolean; doneLabel?: string }) {
+  if (!date) return <span className="t-faint">—</span>;
+  const n = daysFromToday(date);
+  const state = done ? '' : n < 0 ? 'due--overdue' : n === 0 ? 'due--today' : '';
+  const rel = done
+    ? doneLabel ?? ''
+    : n < 0 ? `${plural(-n, 'day')} overdue` : n === 0 ? 'Due today' : n === 1 ? 'Tomorrow' : n <= 14 ? `In ${n} days` : '';
+  return (
+    <span className={`due ${state}`}>
+      <span className="due__date">{fmt.dateShort(date)}</span>
+      {rel && <span className="due__rel">{rel}</span>}
+    </span>
+  );
+}
+
+/** Current time as HH:MM on the school clock (IST), for "now" highlights. */
+export function schoolClock() {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+}

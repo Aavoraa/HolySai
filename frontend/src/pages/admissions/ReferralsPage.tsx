@@ -6,7 +6,7 @@ import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
 import {
   Badge, Button, Card, Checkbox, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Page, PageHead, Pagination, SearchInput, SelectField,
-  Skeleton, Status, TextField, useConfirm,
+  Skeleton, Status, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { FormModal, useFieldErrors } from './LeadForms';
@@ -53,14 +53,14 @@ export default function ReferralsPage() {
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Record referral</Button>} />
       {s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi label="Referrals this year" value={k?.total ?? '—'} tone="teal" delta={k?.delta} loading={s.isLoading} foot="Last 90 days vs the 90 before" />
-          <Kpi label="Converted" value={k?.converted ?? '—'} tone="teal" loading={s.isLoading} foot={k ? `${k.conversion}% conversion` : undefined} />
-          <Kpi label="Referring families" value={k?.families ?? '—'} loading={s.isLoading} foot={k ? `${k.familiesPct}% of parent base` : undefined} />
-          <Kpi label="Cost per admission" value={k?.cpa != null ? fmt.money(k.cpa) : '—'} tone="teal" loading={s.isLoading} foot="Referral channel" />
+          <Kpi icon="link" label="Referrals this year" value={k?.total ?? '—'} tone="teal" delta={k?.delta} loading={s.isLoading} foot="Last 90 days vs the 90 before" />
+          <Kpi icon="userCheck" label="Converted" value={k?.converted ?? '—'} tone="teal" loading={s.isLoading} foot={k ? `${k.conversion}% conversion` : undefined} />
+          <Kpi icon="users" label="Referring families" value={k?.families ?? '—'} loading={s.isLoading} foot={k ? `${k.familiesPct}% of parent base` : undefined} />
+          <Kpi icon="rupee" label="Cost per admission" value={k?.cpa != null ? fmt.money(k.cpa) : '—'} tone="teal" loading={s.isLoading} foot="Referral channel" />
         </Grid>
       )}
       <div className="mt-4">
-        <Card title="Referring families" flush sub={k ? `${fmt.money(k.rewardsCredited)} recognition credited · ${k.rewardsPending} pending` : undefined}>
+        <Card icon="grid" title="Referring families" flush sub={k ? `${fmt.money(k.rewardsCredited)} recognition credited · ${k.rewardsPending} pending` : undefined}>
           {s.isLoading ? <div className="card__body"><Skeleton height={120} /></div> : s.data?.families.length ? (
             <DataTable rows={s.data.families} rowKey={(r) => r.parentId}
               onRowClick={(r) => list.setQ(r.parent)}
@@ -71,20 +71,20 @@ export default function ReferralsPage() {
                 { key: 'converted', label: 'Enrolled', className: 'num' },
                 { key: 'recognition', label: 'Recognition', render: (r) => <Badge tone={r.recognition === 'Acknowledged' ? 'success' : r.recognition === 'Pending' ? 'warning' : 'neutral'}>{r.recognition}</Badge> },
               ]} />
-          ) : <Empty icon="link" title="No referrals yet" sub="Referrals recorded from parents appear here." />}
+          ) : <Empty icon="link" title="No referrals yet" sub="Families who refer others appear here once a referral is recorded." />}
         </Card>
       </div>
       <div className="mt-4">
-        <Card title="All referrals" flush>
-          <div className="toolbar">
+        <Card icon="grid" title="All referrals" flush>
+          <Toolbar>
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search parent, child or reference" />
             <FilterSelect label="Status" value={list.filters.status} onChange={(x) => list.setFilter('status', x)} options={['Submitted', 'Contacted', 'Enrolled', 'Lost']} />
             <FilterSelect label="Recognition" value={list.filters.rewardStatus} onChange={(x) => list.setFilter('rewardStatus', x)} options={['Pending', 'Credited', 'Not eligible']} />
-          </div>
+          </Toolbar>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
             <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
               onRowClick={(r) => r.leadCode && openLead(r.leadCode)}
-              emptyText="No referrals match."
+              emptyText={list.hasFilters ? 'No referrals match the current filters.' : 'No referrals yet. Use “Record referral” when a parent recommends a family.'}
               columns={[
                 { key: 'created', label: 'Received', render: (r) => fmt.date(r.createdAt) },
                 { key: 'parent', label: 'Referred by', render: (r) => r.parentName },
@@ -146,7 +146,7 @@ function ReferralModal({ onClose, onLead }: { onClose: () => void; onLead: (code
       busy={save.isPending} error={save.error} fieldErrors={fe.errors} submitLabel="Record referral" formId="ref-form" size="wide">
       <form id="ref-form" onSubmit={submit} noValidate className="col g-4">
         {v.referrerParentId ? (
-          <div className="row between card card--tint" style={{ padding: 10 }}>
+          <div className="card card--tint adm-picked">
             <span className="t-sm">Referred by <strong>{v.referrerName}</strong></span>
             <Button size="sm" variant="quiet" onClick={() => setV((s) => ({ ...s, referrerParentId: '', referrerName: '' }))}>Change</Button>
           </div>
@@ -154,13 +154,13 @@ function ReferralModal({ onClose, onLead }: { onClose: () => void; onLead: (code
           <div className="field">
             <span className="label">Referring parent <span className="req">*</span></span>
             <SearchInput value={term} onSearch={setTerm} placeholder="Search parent name or PAR- code" maxWidth={9999} />
-            {fe.errors.referrerParentId && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{fe.errors.referrerParentId}</span>}
+            {fe.errors.referrerParentId && <span className="hint hint--error" role="alert">{fe.errors.referrerParentId}</span>}
             {term.length >= 2 && (
-              <div className="col g-1 mt-2">
+              <div className="adm-picklist">
                 {parents.isLoading && <span className="t-xs t-muted">Searching…</span>}
                 {parents.data && !parents.data.length && <span className="t-xs t-muted">No parents match.</span>}
                 {parents.data?.map((p) => (
-                  <button key={p.id} type="button" className="btn btn--quiet" style={{ justifyContent: 'flex-start' }}
+                  <button key={p.id} type="button" className="btn btn--quiet"
                     onClick={() => { setV((s) => ({ ...s, referrerParentId: p.id, referrerName: p.fullName })); fe.clear('referrerParentId'); }}>
                     <strong>{p.fullName}</strong>&nbsp;<span className="t-muted">{p.parentCode}{p.children ? ` · ${p.children}` : ''}</span>
                   </button>

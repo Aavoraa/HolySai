@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
@@ -8,7 +8,7 @@ import { useLookups } from '@/hooks/useLookups';
 import { api } from '@/api/client';
 import {
   Badge, BulkBar, Button, Card, DataTable, ErrorState, FilterSelect, Icon, Kpi, Grid, Page, PageHead, Pagination, Risk,
-  SearchInput, Status, StudentLink, useToast,
+  SearchInput, Status, StudentLink, Toolbar, useToast,
 } from '@/components/ui';
 import type { StudentRow } from '@/api/types';
 import { StudentFormModal } from './StudentFormModal';
@@ -36,7 +36,9 @@ export default function StudentsPage() {
   const q = usePagedQuery<StudentRow>('/students', params);
   const summary = useApiQuery<{ total: number; atRisk: number; developing: number; onTrack: number }>('/students/summary', campusParam);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState(false);
+  // ?new=1 (dashboard quick action) opens the Add student form directly.
+  const [sp] = useSearchParams();
+  const [adding, setAdding] = useState(() => sp.get('new') === '1' && can('students.create'));
   const [exporting, setExporting] = useState(false);
 
   // Export the current filtered view (all pages) as CSV, built client-side from the API.
@@ -85,26 +87,26 @@ export default function StudentsPage() {
         }
       />
       <Grid cols="g-4col" className="mb-4">
-        <Kpi label="Students" value={s?.total ?? '—'} loading={summary.isLoading} onClick={() => list.clear()} />
-        <Kpi label="On Track" value={s?.onTrack ?? '—'} tone="teal" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'On Track')} />
-        <Kpi label="Developing Risk" value={s?.developing ?? '—'} tone="amber" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'Developing Risk')} />
-        <Kpi label="At Risk" value={s?.atRisk ?? '—'} tone="critical" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'At Risk')} />
+        <Kpi icon="users" label="Students" value={s?.total ?? '—'} loading={summary.isLoading} onClick={() => list.clear()} />
+        <Kpi icon="activity" label="On Track" value={s?.onTrack ?? '—'} tone="teal" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'On Track')} />
+        <Kpi icon="alert" label="Developing Risk" value={s?.developing ?? '—'} tone="amber" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'Developing Risk')} />
+        <Kpi icon="alert" label="At Risk" value={s?.atRisk ?? '—'} tone="critical" loading={summary.isLoading} onClick={() => list.setFilter('risk', 'At Risk')} />
       </Grid>
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search name or admission ID" />
-        <FilterSelect label="Grade" value={list.filters.grade} onChange={(v) => list.setFilter('grade', v)} options={gradeNames} />
-        <FilterSelect label="Risk band" value={list.filters.risk} onChange={(v) => list.setFilter('risk', v)} options={['On Track', 'Developing Risk', 'At Risk']} />
-        <FilterSelect label="Today" value={list.filters.today} onChange={(v) => list.setFilter('today', v)}
-          options={Object.entries(TODAY_LABEL).map(([value, label]) => ({ value, label }))} />
-        {can('finance.read') && (
-          <FilterSelect label="Fees" value={list.filters.feeStatus} onChange={(v) => list.setFilter('feeStatus', v)} options={['Paid', 'Partial', 'Pending', 'Overdue']} />
-        )}
-        <FilterSelect label="House" value={list.filters.house} onChange={(v) => list.setFilter('house', v)} options={lookups?.houses ?? []} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} students` : ''}</span>
-      </div>
       <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search name or admission ID" />
+          <FilterSelect label="Grade" value={list.filters.grade} onChange={(v) => list.setFilter('grade', v)} options={gradeNames} />
+          <FilterSelect label="Risk band" value={list.filters.risk} onChange={(v) => list.setFilter('risk', v)} options={['On Track', 'Developing Risk', 'At Risk']} />
+          <FilterSelect label="Today" value={list.filters.today} onChange={(v) => list.setFilter('today', v)}
+            options={Object.entries(TODAY_LABEL).map(([value, label]) => ({ value, label }))} />
+          {can('finance.read') && (
+            <FilterSelect label="Fees" value={list.filters.feeStatus} onChange={(v) => list.setFilter('feeStatus', v)} options={['Paid', 'Partial', 'Pending', 'Overdue']} />
+          )}
+          <FilterSelect label="House" value={list.filters.house} onChange={(v) => list.setFilter('house', v)} options={lookups?.houses ?? []} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <span className="t-sm t-muted t-num" aria-live="polite">{q.data ? `${q.data.meta.total} students` : ''}</span>
+        </Toolbar>
         <BulkBar count={selected.size} onClear={() => setSelected(new Set())}>
           {can('communication.send') && (
             <Button size="sm" icon="message" onClick={() => navigate(`/parent-communication?students=${[...selected].join(',')}`)}>Message parents</Button>
@@ -126,9 +128,9 @@ export default function StudentsPage() {
             selected={selected}
             onSelect={setSelected}
             onRowClick={(r) => navigate(`/student-360/${r.id}`)}
-            emptyText={list.hasFilters ? 'No students match the current filters.' : 'No students yet.'}
+            emptyText={list.hasFilters ? 'No students match these filters. Try clearing a filter or searching by admission ID.' : 'No students yet. Use Add student to create the first record.'}
             columns={[
-              { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={`${r.grade ?? ''}${r.section ?? ''} · ${r.admissionNo}`} /> },
+              { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={r.admissionNo} /> },
               { key: 'grade', label: 'Grade', render: (r) => `${r.grade ?? '—'} ${r.section ?? ''}` },
               { key: 'house', label: 'House', sortable: false, render: (r) => r.house ?? '—' },
               { key: 'today', label: 'Today', sortable: false, render: (r) => <Badge tone={toneForToday(r.today)} dot>{TODAY_LABEL[r.today] ?? r.today}</Badge> },

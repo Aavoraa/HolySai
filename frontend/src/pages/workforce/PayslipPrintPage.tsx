@@ -14,7 +14,7 @@ export default function PayslipPrintPage({ self }: { self?: boolean }) {
   const s = q.data;
 
   return (
-    <Page>
+    <Page className="payslip-print">
       <div className="pagehead">
         <div className="grow">
           <h1 className="pagehead__title">Payslip{s ? ` — ${s.monthLabel}` : ''}</h1>
@@ -29,15 +29,15 @@ export default function PayslipPrintPage({ self }: { self?: boolean }) {
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : s ? (
         <Card>
-          <div className="row between wrap g-3 mb-5" style={{ borderBottom: '1px solid var(--border-soft)', paddingBottom: 16 }}>
+          <div className="payslip-head">
             <div className="row g-3">
               <Lotus size={40} />
               <div>
-                <div className="serif" style={{ fontSize: 20, fontWeight: 600 }}>{s.campusName ?? 'Holy Sai'}</div>
+                <div className="serif payslip-head__school">{s.campusName ?? 'Holy Sai'}</div>
                 <div className="t-xs t-muted">{s.campusAddress}</div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
+            <div className="payslip-head__month">
               <div className="eyebrow">Payslip</div>
               <div className="t-bold">{s.monthLabel}</div>
             </div>

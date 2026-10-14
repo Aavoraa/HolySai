@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import {
-  Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Meter, Modal, Page, PageHead,
+  Banner, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Meter, Modal, Page, PageHead,
   PageSkeleton, Segment, Skeleton, StudentLink, Timeline, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
@@ -28,11 +28,12 @@ interface Register {
 interface SaveResult { date: string; section: string; saved: number; changed: number; counts: Record<Status, number>; absenceAlerts: number; lateNotices: number; notificationsQueued: number; signalsRaised: { code: string; reason: string }[] }
 interface Summary { sections: number; sectionsMarked: number; students: number; marked: number; present: number; late: number; absent: number; leave: number }
 
-const STATUS_BTN: { id: Status; label: string; color: string }[] = [
-  { id: 'present', label: 'Present', color: 'var(--teal)' },
-  { id: 'late', label: 'Late', color: 'var(--amber)' },
-  { id: 'absent', label: 'Absent', color: 'var(--critical)' },
-  { id: 'leave', label: 'Leave', color: 'var(--info)' },
+/** Status toggles; `key` is the keyboard shortcut while a student's toggle has focus. */
+const STATUS_BTN: { id: Status; label: string; key: string; tone: string }[] = [
+  { id: 'present', label: 'Present', key: 'P', tone: 'success' },
+  { id: 'late', label: 'Late', key: 'L', tone: 'warning' },
+  { id: 'absent', label: 'Absent', key: 'A', tone: 'critical' },
+  { id: 'leave', label: 'Leave', key: 'V', tone: 'info' },
 ];
 const AUTOMATION_STEPS = ['Teacher marks attendance', 'Attendance saved', 'Absent student identified', 'WhatsApp parent alert', 'Pattern analysed', 'Early Warning if required', 'Teacher intervention', 'Action recorded in Student 360'];
 
@@ -66,10 +67,10 @@ export default function AttendancePage() {
       )}
       <Modal open={automation} onClose={() => setAutomation(false)} title="Attendance automation" size="wide"
         foot={<>{can('dashboard.group') && <Button to="/automations">See all automations</Button>}<Button variant="primary" onClick={() => setAutomation(false)}>Close</Button></>}>
-        <div className="col g-2">
+        <div className="att-steps">
           {AUTOMATION_STEPS.map((s, i) => (
-            <div key={s} className="row g-3">
-              <span className="stepper__num" style={{ background: 'var(--navy)', color: '#fff' }}>{i + 1}</span>
+            <div key={s} className="att-step">
+              <span className="att-step__num">{i + 1}</span>
               <span className="t-sm t-bold grow">{s}</span>
               <Icon name={i < AUTOMATION_STEPS.length - 1 ? 'arrowDown' : 'check'} size={14} className="t-faint" />
             </div>
@@ -124,11 +125,27 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
     for (const v of Object.values(marks)) c[v ?? 'unmarked']++;
     return c;
   }, [marks]);
-  const dirty = !!r && r.students.some((s) => (marks[s.id] ?? null) !== s.status);
+  const changedCount = r ? r.students.filter((s) => (marks[s.id] ?? null) !== s.status).length : 0;
+  const dirty = changedCount > 0;
+  const mark = (id: string, st: Status) => { setMarks((x) => ({ ...x, [id]: st })); setResult(null); };
+
+  // Warn before leaving the page with an unsaved register.
+  useEffect(() => {
+    if (!dirty) return;
+    const onLeave = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', onLeave);
+    return () => window.removeEventListener('beforeunload', onLeave);
+  }, [dirty]);
   const newlyAlerted = r ? r.students.filter((s) => {
     const m = marks[s.id];
     return (m === 'absent' || m === 'late') && m !== s.status;
   }) : [];
+
+  /** Switching section or date drops unsaved marks, so ask first. */
+  const leaveRegister = async (go: () => void) => {
+    if (dirty && !(await confirm({ title: 'Discard unsaved attendance?', body: `${plural(changedCount, 'change')} to this register will be lost.`, confirmLabel: 'Discard changes', danger: true }))) return;
+    go();
+  };
 
   const setAll = (st: Status | 'reset') => {
     if (!r) return;
@@ -199,14 +216,16 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
           flush
           actions={
             <div className="row g-2 wrap">
+              {sectionId && can('academics.read') && <Button size="sm" icon="calendar" to={`/timetable?section=${sectionId}`}>Timetable</Button>}
+              {sectionId && can('academics.read') && <Button size="sm" icon="edit" to={`/homework?sectionId=${sectionId}`}>Homework</Button>}
               <select className="select" aria-label="Section" value={sectionId ?? ''} style={{ width: 'auto', minWidth: 150 }}
-                onChange={(e) => setParam('section', e.target.value)}>
+                onChange={(e) => { const v = e.target.value; void leaveRegister(() => setParam('section', v)); }}>
                 {list.map((x) => (
                   <option key={x.id} value={x.id}>{x.label}{campusParam.campusId ? '' : ` · ${x.campusName}`} — {x.status}</option>
                 ))}
               </select>
               <input className="input" type="date" aria-label="Register date" value={date} max={todayStr} style={{ width: 150 }}
-                onChange={(e) => setParam('date', e.target.value && e.target.value !== todayStr ? e.target.value : null)} />
+                onChange={(e) => { const v = e.target.value; void leaveRegister(() => setParam('date', v && v !== todayStr ? v : null)); }} />
             </div>
           }
         >
@@ -217,44 +236,48 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
           ) : (
             <>
               {!editable && (
-                <div style={{ padding: '12px 16px' }}>
+                <div className="card__body card__body--tight">
                   <Banner tone="neutral" icon="lock">{r.readOnlyReason ?? 'This register is read-only for your role.'}</Banner>
                 </div>
               )}
               <div className="toolbar">
-                {editable && <Button size="sm" variant="teal" icon="check" onClick={() => setAll('present')}>Mark all present</Button>}
-                {editable && <Button size="sm" onClick={() => setAll('reset')} disabled={!dirty}>Reset</Button>}
+                {editable && <Button size="sm" variant="teal" icon="check" onClick={() => setAll('present')} disabled={r.students.length === 0}>Mark all present</Button>}
+                {editable && <Button size="sm" icon="refresh" onClick={() => setAll('reset')} disabled={!dirty}>Undo changes</Button>}
                 <div className="spacer" />
-                <span className="row g-3 t-xs t-num" aria-label="Live summary">
-                  <span className="row g-1" title="Present"><span className="dot dot--success" />{counts.present}</span>
-                  <span className="row g-1" title="Late"><span className="dot dot--warning" />{counts.late}</span>
-                  <span className="row g-1" title="Absent"><span className="dot dot--critical" />{counts.absent}</span>
-                  <span className="row g-1" title="Leave"><span className="dot dot--info" />{counts.leave}</span>
-                  {counts.unmarked > 0 && <Badge tone="neutral">{counts.unmarked} unmarked</Badge>}
-                </span>
+                <div className="reg-counts" aria-live="polite" aria-label="Register summary">
+                  {STATUS_BTN.map((b) => (
+                    <span key={b.id} className="reg-count"><span className={`dot dot--${b.tone}`} />{b.label}<strong>{counts[b.id]}</strong></span>
+                  ))}
+                  {counts.unmarked > 0 && <span className="reg-count reg-count--unmarked">Unmarked<strong>{counts.unmarked}</strong></span>}
+                </div>
               </div>
               {r.students.length === 0 ? (
-                <Empty icon="users" title="No students in this section" />
+                <Empty icon="users" title="No students in this section" sub="Students appear here once they are enrolled in this section." />
               ) : (
-                <div>
+                <div className="reg-list">
                   {r.students.map((st) => {
                     const m = marks[st.id] ?? null;
+                    const changed = m !== st.status;
                     return (
-                      <div key={st.id} className="row g-3 wrap" style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-soft)' }}>
-                        <span className="t-micro t-muted t-num none" style={{ width: 22 }}>{st.roll ?? '—'}</span>
-                        <span className="grow" style={{ minWidth: 160 }}>
+                      <div key={st.id} className={['reg-row', changed && 'reg-row--changed', !m && 'reg-row--unmarked'].filter(Boolean).join(' ')}>
+                        <span className="reg-roll">{st.roll ?? '—'}</span>
+                        <span className="reg-name">
                           <StudentLink id={st.id} name={st.fullName} meta={[
                             st.admissionNo,
                             st.parentNotifiedAt && (st.status === 'absent' || st.status === 'late') ? `parent notified ${fmt.time(st.parentNotifiedAt)}` : null,
                             st.arrivalTime && st.status === 'late' ? `arrived ${st.arrivalTime}` : null,
                           ].filter(Boolean).join(' · ')} />
                         </span>
-                        <div className="btn-group none" role="group" aria-label={`Attendance for ${st.fullName}`}>
+                        <div className="att-toggle" role="group" aria-label={`Attendance for ${st.fullName}`}
+                          onKeyDown={(e) => {
+                            if (!editable || e.altKey || e.ctrlKey || e.metaKey) return;
+                            const hit = STATUS_BTN.find((b) => b.key === e.key.toUpperCase());
+                            if (hit) { e.preventDefault(); mark(st.id, hit.id); }
+                          }}>
                           {STATUS_BTN.map((b) => (
-                            <button key={b.id} type="button" aria-pressed={m === b.id} disabled={!editable}
-                              style={m === b.id ? { background: b.color, color: '#fff' } : undefined}
-                              onClick={() => { setMarks((x) => ({ ...x, [st.id]: b.id })); setResult(null); }}>
-                              {b.label}
+                            <button key={b.id} type="button" className={`att-toggle__btn att-toggle__btn--${b.id}`} aria-pressed={m === b.id} disabled={!editable}
+                              title={`${b.label} (${b.key})`} onClick={() => mark(st.id, b.id)}>
+                              {b.label}<span className="att-toggle__key" aria-hidden="true">{b.key}</span>
                             </button>
                           ))}
                         </div>
@@ -263,17 +286,21 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
                   })}
                 </div>
               )}
-              <div className="card__foot row between wrap g-3">
-                <span className="row g-2 t-xs t-muted">
-                  <Icon name="clock" size={14} />
-                  {r.lastMarkedBy ? `Last saved by ${r.lastMarkedBy.name} · ${fmt.dateTime(r.lastMarkedBy.at)}` : 'Not marked yet for this date.'}
-                  {dirty && <Badge tone="warning">Unsaved changes</Badge>}
+              <div className={dirty ? 'reg-savebar reg-savebar--dirty' : 'reg-savebar'}>
+                <span className="reg-savebar__state">
+                  {dirty ? (
+                    <><Icon name="alertCircle" size={14} /><strong className="t-strong">{plural(changedCount, 'unsaved change')}</strong></>
+                  ) : r.lastMarkedBy ? (
+                    <><Icon name="check" size={14} className="t-success" />Saved by {r.lastMarkedBy.name} · {fmt.dateTime(r.lastMarkedBy.at)}</>
+                  ) : (
+                    <><Icon name="clock" size={14} />Not marked yet for this date.</>
+                  )}
+                  {editable && counts.unmarked > 0 && <span className="t-warning">· mark {plural(counts.unmarked, 'more student')} to save</span>}
                 </span>
                 {editable && (
-                  <span className="row g-2">
-                    {counts.unmarked > 0 && <span className="t-xs" style={{ color: 'var(--critical)' }}>Mark every student to save</span>}
+                  <span className="reg-savebar__actions">
                     <Button variant="primary" icon="check" onClick={submit} loading={save.isPending} disabled={counts.unmarked > 0 || r.students.length === 0}>
-                      Mark Attendance ({r.students.length})
+                      Save attendance ({r.students.length})
                     </Button>
                   </span>
                 )}
@@ -283,17 +310,7 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
         </Card>
 
         <div className="col g-4">
-          <Card title="What happens on submit">
-            <Timeline items={[
-              { time: 'Immediately', title: 'Attendance saved', body: 'Recorded against the date, the section and each student profile.', tone: 'teal' },
-              { time: '+ seconds', title: 'Absent students identified', body: `${plural(counts.absent, 'student')} marked absent, ${counts.late} late.`, tone: 'critical' },
-              { time: '+ 1 minute', title: 'WhatsApp parent alert', body: `${plural(newlyAlerted.length, 'new alert')} will be queued in the parent's preferred channel. Delivery is tracked.`, tone: 'amber' },
-              { time: '+ 5 minutes', title: 'Pattern analysed', body: 'Consecutive absences and the attendance threshold are checked.', tone: 'info' },
-              { time: 'If threshold met', title: 'Early Warning signal raised', body: 'Sent to the class teacher for review. Never applied to the student automatically.', tone: 'critical' },
-              { time: 'After your action', title: 'Recorded in Student 360', body: 'The intervention and its outcome live on the student profile.', tone: 'muted' },
-            ]} />
-          </Card>
-          <Card title="Today across the school" sub="Live figures">
+          <Card icon="building" title="Today across the school" sub="Live figures">
             {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : !s ? (
               <div className="col g-3">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={28} />)}</div>
             ) : (
@@ -308,6 +325,16 @@ function MarkAttendance({ sectionParam, dateParam, setParam, onAnalytics }: {
             {can('students.read') && (
               <div className="mt-4"><Button block iconRight="arrowRight" onClick={onAnalytics}>Open attendance analytics</Button></div>
             )}
+          </Card>
+          <Card icon="grid" title="What happens on submit">
+            <Timeline items={[
+              { time: 'Immediately', title: 'Attendance saved', body: 'Recorded against the date, the section and each student profile.', tone: 'teal' },
+              { time: '+ seconds', title: 'Absent students identified', body: `${plural(counts.absent, 'student')} marked absent, ${counts.late} late.`, tone: 'critical' },
+              { time: '+ 1 minute', title: 'WhatsApp parent alert', body: `${plural(newlyAlerted.length, 'new alert')} will be queued in the parent's preferred channel. Delivery is tracked.`, tone: 'amber' },
+              { time: '+ 5 minutes', title: 'Pattern analysed', body: 'Consecutive absences and the attendance threshold are checked.', tone: 'info' },
+              { time: 'If threshold met', title: 'Early Warning signal raised', body: 'Sent to the class teacher for review. Never applied to the student automatically.', tone: 'critical' },
+              { time: 'After your action', title: 'Recorded in Student 360', body: 'The intervention and its outcome live on the student profile.', tone: 'muted' },
+            ]} />
           </Card>
         </div>
       </div>
@@ -338,29 +365,29 @@ function AttendanceAnalytics() {
   return (
     <>
       <Grid cols="g-4col">
-        <Kpi label="Campus attendance" value={k.attendancePct != null ? `${k.attendancePct}%` : '—'} tone="teal" delta={k.delta}
+        <Kpi icon="checkSquare" label="Campus attendance" value={k.attendancePct != null ? `${k.attendancePct}%` : '—'} tone="teal" delta={k.delta}
           foot={k.tenDayAverage != null ? `Against ${k.tenDayAverage}% ten-day average` : 'No earlier days yet'} />
-        <Kpi label="Absent today" value={k.absent} tone="critical" foot="Parents alerted when marked" />
-        <Kpi label="Late today" value={k.late} tone="amber" foot={k.lateTopRoute ? `${k.lateTopRoute.route} has the most late arrivals` : 'No transport pattern'} />
-        <Kpi label="Repeat absentees" value={k.repeatAbsentees} tone="critical" foot="3+ consecutive days" to={can('earlywarning.read') ? '/early-warning' : undefined} />
+        <Kpi icon="userCheck" label="Absent today" value={k.absent} tone="critical" foot="Parents alerted when marked" />
+        <Kpi icon="clock" label="Late today" value={k.late} tone="amber" foot={k.lateTopRoute ? `${k.lateTopRoute.route} has the most late arrivals` : 'No transport pattern'} />
+        <Kpi icon="alert" label="Repeat absentees" value={k.repeatAbsentees} tone="critical" foot="3+ consecutive days" to={can('earlywarning.read') ? '/early-warning' : undefined} />
       </Grid>
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Attendance trend" sub="Last ten school days">
+        <Card icon="checkSquare" title="Attendance trend" sub="Last ten school days">
           {a.trend.values.length
             ? <Chart svg={charts.line({ labels: a.trend.labels, series: [{ name: 'Attendance', values: a.trend.values, color: 'var(--teal)' }], yMin: minTrend, yMax: 100, unit: '%', height: 220 })} />
             : <Empty icon="activity" title="No attendance recorded yet" />}
         </Card>
-        <Card title="Class-wise attendance" sub="Today · below 90% needs a conversation">
+        <Card icon="checkSquare" title="Class-wise attendance" sub="Today · below 90% needs a conversation">
           {a.byGrade.labels.length
             ? <Chart svg={charts.bar({ labels: a.byGrade.labels, series: [{ name: 'Present %', values: a.byGrade.present, colors: a.byGrade.present.map((p) => (p < 90 ? 'var(--critical)' : p < TARGET ? 'var(--amber)' : 'var(--teal)')) }], yMax: 100, target: TARGET, targetLabel: 'Target', height: 220 })} />
             : <Empty icon="checkSquare" title="No registers marked today" />}
         </Card>
-        <Card title="Late arrivals by time" sub="Recorded arrival times, last seven days">
+        <Card icon="grid" title="Late arrivals by time" sub="Recorded arrival times, last seven days">
           {a.lateByTime.labels.length
             ? <Chart svg={charts.bar({ labels: a.lateByTime.labels, series: [{ name: 'Students', values: a.lateByTime.values, color: 'var(--navy)' }], height: 220 })} />
             : <Empty icon="clock" title="No late arrivals this week" />}
         </Card>
-        <Card title="Absence patterns" sub="What the pattern check found">
+        <Card icon="checkSquare" title="Absence patterns" sub="What the pattern check found">
           <Chart svg={charts.hbar({ rows: a.patterns.map((p) => ({ label: p.label, value: p.value, display: `${p.value} · ${p.note}` })), labelW: 180, rowH: 36 })} />
         </Card>
       </div>

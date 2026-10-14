@@ -4,9 +4,8 @@ import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  AlertItem, Button, Card, Chart, charts, Empty, ErrorState, Funnel, Grid, Icon, Kpi, Legend, Page, PageHead, PageSkeleton, Segment,
-} from '@/components/ui';
-import { fmt } from '@/lib/format';
+  AlertItem, Button, Card, Chart, charts, Empty, ErrorState, Funnel, Grid, Icon, Kpi, Legend, Page, CampusBanner, PageSkeleton, Segment, DashLayout, DashRail, SchoolPulse } from '@/components/ui';
+import { cx, fmt } from '@/lib/format';
 import { LeadFormModal } from './LeadForms';
 import { LeadProfileHost } from './LeadProfile';
 import { LeadsTable, SOURCE_COLOR, useLeadParam } from './shared';
@@ -42,7 +41,7 @@ export default function AdmissionsDashboardPage() {
   const leads = usePagedQuery<Lead>('/enquiries', { ...campusParam, open: true, sort: 'created', dir: 'desc', pageSize: 8 });
 
   const head = (
-    <PageHead
+    <CampusBanner
       title="Admissions"
       sub="Omnichannel capture through to enrolment, with the cost of each admission visible throughout."
       actions={
@@ -54,7 +53,7 @@ export default function AdmissionsDashboardPage() {
     />
   );
 
-  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={8} /></Page>;
+  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={4} /></Page>;
   if (q.error || !q.data) return <Page>{head}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const { kpis: k, insights: ins } = q.data;
   const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
@@ -62,35 +61,47 @@ export default function AdmissionsDashboardPage() {
   return (
     <Page>
       {head}
+      <DashLayout rail={<DashRail events={false} actions={[
+        { label: 'Leads', icon: 'list', to: '/leads' },
+        { label: 'Enquiries', icon: 'message', to: '/enquiries' },
+        { label: 'Counselling Pipeline', icon: 'layers', to: '/pipeline' },
+        { label: 'Applications', icon: 'fileText', to: '/applications' },
+        { label: 'Campus Visits', icon: 'mapPin', to: '/visits' },
+        { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
+      ]} />}>
       <Grid cols="g-4col">
-        <Kpi label="New enquiries" value={fmt.n(k.enquiries)} delta={k.enquiriesDelta} foot="This academic year" onClick={() => navigate('/enquiries')} />
-        <Kpi label="Qualified leads" value={fmt.n(k.qualified)} tone="info" foot={`${k.qualifiedPct}% of enquiries`} onClick={() => navigate('/leads')} />
-        <Kpi label="Campus visits" value={fmt.n(k.visits)} tone="amber" foot={`${k.visitsThisWeek} scheduled this week`} onClick={() => navigate('/visits')} />
-        <Kpi label="Applications" value={fmt.n(k.applications)} foot={`${k.awaitingDocuments} awaiting documents`} onClick={() => navigate('/applications')} />
-        <Kpi label="Offers" value={fmt.n(k.offers)} tone="info" foot={`${k.offersExpiring} expiring within 7 days`} onClick={() => navigate('/applications?status=Offer+Made')} />
-        <Kpi label="Admissions" value={fmt.n(k.admitted)} tone="teal" delta={k.admittedDelta} foot={k.target ? `Target ${k.target} · ${pct(k.admitted, k.target)}%` : 'No target set'} />
-        <Kpi label="Conversion" value={`${k.conversion}%`} tone="teal" foot="Enquiry to admission" onClick={() => navigate('/conversion')} />
-        <Kpi label="Cost per admission" value={k.cpa != null ? fmt.money(k.cpa) : '—'} tone="amber" foot="Marketing spend ÷ admissions" onClick={() => navigate('/conversion')} />
+        <Kpi size="hero" icon="message" label="New enquiries" value={fmt.n(k.enquiries)} delta={k.enquiriesDelta} foot="This academic year" onClick={() => navigate('/enquiries')} />
+        <Kpi size="hero" icon="fileText" label="Applications" value={fmt.n(k.applications)} tone="info" foot={`${k.awaitingDocuments} awaiting documents`} onClick={() => navigate('/applications')} />
+        <Kpi size="hero" icon="userCheck" label="Admissions" value={fmt.n(k.admitted)} tone="teal" delta={k.admittedDelta} foot={k.target ? `Target ${k.target} · ${pct(k.admitted, k.target)}%` : 'No target set'} />
+        <Kpi size="hero" icon="target" label="Conversion" value={`${k.conversion}%`} tone="amber" foot="Enquiry to admission" onClick={() => navigate('/conversion')} />
       </Grid>
+      <div className="statgrid statgrid--card mt-4">
+        <Kpi size="compact" label="Qualified leads" value={fmt.n(k.qualified)} foot={`${k.qualifiedPct}% of enquiries`} onClick={() => navigate('/leads')} />
+        <Kpi size="compact" label="Campus visits" value={fmt.n(k.visits)} foot={`${k.visitsThisWeek} scheduled this week`} onClick={() => navigate('/visits')} />
+        <Kpi size="compact" label="Offers" value={fmt.n(k.offers)} tone={k.offersExpiring ? 'critical' : undefined}
+          foot={`${k.offersExpiring} expiring within 7 days`} onClick={() => navigate('/applications?status=Offer+Made')} />
+        <Kpi size="compact" label="Cost per admission" value={k.cpa != null ? fmt.money(k.cpa) : '—'} foot="Marketing spend ÷ admissions" onClick={() => navigate('/conversion')} />
+      </div>
+      <SchoolPulse />
       <p className="t-micro t-muted mt-2">Deltas compare the last 30 days with the 30 days before.</p>
 
       <div className="grid g-main mt-5">
-        <Card title="Conversion funnel" sub="Enquiry → Qualified → Visit → Application → Assessment → Offer → Admission"
+        <Card icon="target" title="Conversion funnel" sub="Enquiry → Qualified → Visit → Application → Assessment → Offer → Admission"
           actions={<Button size="sm" iconRight="arrowRight" onClick={() => navigate('/pipeline')}>Open pipeline</Button>}>
           {k.enquiries ? <Funnel rows={q.data.funnel} onSelect={() => navigate('/pipeline')} /> : <Empty icon="target" title="No enquiries yet" />}
           <div className="divider" />
           <div className="grid g-3col g-4">
-            <div className="card card--tint" style={{ padding: 14 }}>
+            <div className="card card--tint adm-insight">
               <div className="eyebrow">Biggest drop</div>
               <div className="t-sm t-bold mt-1">{ins.biggestDrop ? `${ins.biggestDrop.from} → ${ins.biggestDrop.to}` : '—'}</div>
               <div className="t-micro t-muted">{ins.biggestDrop ? `${100 - ins.biggestDrop.pct}% of ${ins.biggestDrop.from.toLowerCase()} leads do not reach ${ins.biggestDrop.to.toLowerCase()}` : 'Not enough data yet'}</div>
             </div>
-            <div className="card card--tint" style={{ padding: 14 }}>
+            <div className="card card--tint adm-insight">
               <div className="eyebrow">Strongest step</div>
               <div className="t-sm t-bold mt-1">{ins.strongest ? `${ins.strongest.from} → ${ins.strongest.to}` : '—'}</div>
               <div className="t-micro t-muted">{ins.strongest ? `${ins.strongest.pct}% move on to ${ins.strongest.to.toLowerCase()}` : 'Not enough data yet'}</div>
             </div>
-            <div className="card card--tint" style={{ padding: 14 }}>
+            <div className="card card--tint adm-insight">
               <div className="eyebrow">Time to admit</div>
               <div className="t-sm t-bold mt-1">{ins.medianDaysToAdmit != null ? `${ins.medianDaysToAdmit} days median` : '—'}</div>
               <div className="t-micro t-muted">From first enquiry to enrolment</div>
@@ -98,12 +109,12 @@ export default function AdmissionsDashboardPage() {
           </div>
         </Card>
         <div className="col g-4">
-          <Card title="Enquiries by source" sub={q.data.sources[0] ? `${q.data.sources[0].label} is the largest single channel` : undefined}>
+          <Card icon="target" title="Enquiries by source" sub={q.data.sources[0] ? `${q.data.sources[0].label} is the largest single channel` : undefined}>
             {q.data.sources.length
               ? <Chart svg={charts.hbar({ rows: q.data.sources.map((s) => ({ label: s.label, value: s.value, color: SOURCE_COLOR[s.label] })), labelW: 100, rowH: 30, label: 'Enquiries by source' })} />
               : <Empty icon="chart" title="No enquiries yet" />}
           </Card>
-          <Card title="Follow-ups needing attention" flush>
+          <Card icon="alert" title="Follow-ups needing attention" flush>
             {q.data.attention.length ? (
               <div>
                 {q.data.attention.map((a) => (
@@ -117,7 +128,7 @@ export default function AdmissionsDashboardPage() {
       </div>
 
       <div className="grid g-2col g-4 mt-5">
-        <Card title="Enquiries and admissions by month">
+        <Card icon="target" title="Enquiries and admissions by month">
           <Chart svg={charts.bar({
             labels: q.data.monthly.labels,
             series: [{ name: 'Enquiries', values: q.data.monthly.enquiries, color: 'var(--navy)' }, { name: 'Admissions', values: q.data.monthly.admissions, color: 'var(--teal)' }],
@@ -125,11 +136,11 @@ export default function AdmissionsDashboardPage() {
           })} />
           <div className="mt-3"><Legend items={[{ label: 'Enquiries', color: 'var(--navy)' }, { label: 'Admissions', color: 'var(--teal)' }]} /></div>
         </Card>
-        <Card title="Admission automation" sub="What happens without anyone touching it">
+        <Card icon="target" title="Admission automation" sub="What happens without anyone touching it">
           <div className="col g-2">
             {AUTOMATION.map((s, i) => (
               <div className="row g-3" key={s}>
-                <span className="stepper__num" style={{ background: i < 4 ? 'var(--teal)' : 'var(--navy)', color: '#fff' }}>{i + 1}</span>
+                <span className={cx('stepper__num adm-auto__num', i < 4 && 'adm-auto__num--auto')}>{i + 1}</span>
                 <span className="t-sm grow">{s}</span>
                 {i < AUTOMATION.length - 1 ? <Icon name="arrowDown" size={13} className="t-faint" /> : <Icon name="check" size={14} className="t-success" />}
               </div>
@@ -142,7 +153,7 @@ export default function AdmissionsDashboardPage() {
       </div>
 
       <div className="mt-5">
-        <Card title="Leads" sub={leads.data ? `${leads.data.meta.total} active` : undefined} flush
+        <Card icon="target" title="Leads" sub={leads.data ? `${leads.data.meta.total} active` : undefined} flush
           actions={<Button size="sm" iconRight="arrowRight" onClick={() => navigate('/leads')}>Open full list</Button>}>
           {leads.error ? <ErrorState error={leads.error} onRetry={() => leads.refetch()} /> : (
             <LeadsTable rows={leads.data?.rows} loading={leads.isLoading} onOpen={openLead} emptyText="No open leads." />
@@ -151,6 +162,7 @@ export default function AdmissionsDashboardPage() {
       </div>
       {adding && <LeadFormModal onClose={() => setAdding(false)} onCreated={(code) => { setAdding(false); openLead(code); }} />}
       <LeadProfileHost />
+      </DashLayout>
     </Page>
   );
 }

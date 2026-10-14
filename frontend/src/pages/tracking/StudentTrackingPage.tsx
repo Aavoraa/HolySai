@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
@@ -7,11 +7,11 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   Badge, Banner, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Icon, Kpi, Page, PageHead, Pagination, SearchInput,
-  Segment, Skeleton, StudentLink,
+  Empty, Segment, Skeleton, StudentLink,
 } from '@/components/ui';
 import { StudentMap } from '@/components/map/StudentMap';
 import { TrackingPanel, TrackingStatusPill } from '@/components/tracking/TrackingPanel';
-import { GpsStatusBadge } from '@/components/tracking/devices';
+import { BatteryLevel, GpsStatusBadge, LastSeen } from '@/components/tracking/devices';
 import type { CurrentLocation, TrackingMapData } from '@/api/types';
 import { fmt } from '@/lib/format';
 
@@ -20,6 +20,12 @@ const STATUS_OPTIONS = [
   { value: 'offline', label: 'Offline / no update' },
   { value: 'paused', label: 'Paused' },
   { value: 'disabled', label: 'Disabled' },
+];
+const SORT_OPTIONS: { value: string; label: string; dir: 'asc' | 'desc' }[] = [
+  { value: 'name', label: 'Name', dir: 'asc' },
+  { value: 'updated', label: 'Last updated', dir: 'desc' },
+  { value: 'status', label: 'Tracking status', dir: 'asc' },
+  { value: 'grade', label: 'Class', dir: 'asc' },
 ];
 const LOCATION_OPTIONS = [
   { value: 'at_school', label: 'At school' },
@@ -79,11 +85,11 @@ function TrackingOverview() {
       </div>
 
       <Grid cols="g-4col" className="mb-4">
-        <Kpi label="Students tracked" value={s ? `${s.active} / ${s.total}` : '—'} unit="live" tone="teal" loading={map.isLoading}
+        <Kpi icon="users" label="Students tracked" value={s ? `${s.active} / ${s.total}` : '—'} unit="live" tone="teal" loading={map.isLoading}
           foot={s ? `${s.paused} paused · ${s.disabled} disabled` : undefined} onClick={() => list.setFilter('status', 'active')} />
-        <Kpi label="On campus" value={s?.atSchool ?? '—'} tone="info" loading={map.isLoading} onClick={() => list.setFilter('locationStatus', 'at_school')} />
-        <Kpi label="In transit" value={s?.inTransit ?? '—'} tone="amber" loading={map.isLoading} foot={s ? `${s.atHome} at home` : undefined} onClick={() => list.setFilter('locationStatus', 'in_transit')} />
-        <Kpi label="Offline / no update" value={s?.offline ?? '—'} tone="critical" loading={map.isLoading} foot={map.data ? `No update for ${map.data.staleAfterMinutes}+ min` : undefined} onClick={() => list.setFilter('status', 'offline')} />
+        <Kpi icon="building" label="On campus" value={s?.atSchool ?? '—'} tone="info" loading={map.isLoading} onClick={() => list.setFilter('locationStatus', 'at_school')} />
+        <Kpi icon="activity" label="In transit" value={s?.inTransit ?? '—'} tone="amber" loading={map.isLoading} foot={s ? `${s.atHome} at home` : undefined} onClick={() => list.setFilter('locationStatus', 'in_transit')} />
+        <Kpi icon="alert" label="Offline / no update" value={s?.offline ?? '—'} tone="critical" loading={map.isLoading} foot={map.data ? `No update for ${map.data.staleAfterMinutes}+ min` : undefined} onClick={() => list.setFilter('status', 'offline')} />
       </Grid>
 
       <div className="filterbar">
@@ -96,9 +102,33 @@ function TrackingOverview() {
         {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
       </div>
 
-      <div className={view === 'split' ? 'grid g-main' : 'col g-4'} style={{ alignItems: 'start' }}>
+      <div className={view === 'split' ? 'st-split st-split--wide-list' : 'col g-4'}>
+        {view === 'split' && (
+          <Card icon="users"
+            title="Students"
+            sub={rows.data ? `${fmt.n(rows.data.meta.total)} students · select one to find it on the map` : 'Loading…'}
+            flush
+            actions={
+              <select className="select st-sort" aria-label="Sort students" value={list.sort.key}
+                onChange={(e) => { const o = SORT_OPTIONS.find((x) => x.value === e.target.value)!; list.setSort({ key: o.value, dir: o.dir }); }}>
+                {SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>Sort: {o.label}</option>)}
+              </select>
+            }
+          >
+            {rows.error ? <ErrorState error={rows.error} onRetry={() => rows.refetch()} /> : (
+              <TrackingList
+                rows={rows.data?.rows}
+                loading={rows.isLoading}
+                selected={selected}
+                onPick={(r) => (r.latitude != null ? setSelected(r.studentId) : navigate(`/student-tracking/${r.studentId}`))}
+              />
+            )}
+            <Pagination meta={rows.data?.meta} onPage={list.setPage} />
+          </Card>
+        )}
         {view !== 'list' && (
-          <Card
+          <div className="st-split__map">
+          <Card icon="bus"
             title="Map"
             sub={map.data ? `${map.data.markers.length} students with a recorded location` : 'Loading…'}
             actions={selected ? <Button size="sm" iconRight="arrowRight" to={`/student-tracking/${selected}`}>Open tracking detail</Button> : undefined}
@@ -115,9 +145,10 @@ function TrackingOverview() {
               />
             )}
           </Card>
+          </div>
         )}
-        {view !== 'map' && (
-          <Card title="Student list" sub={rows.data ? `${rows.data.meta.total} students` : undefined} flush>
+        {view === 'list' && (
+          <Card icon="users" title="Student list" sub={rows.data ? `${rows.data.meta.total} students` : undefined} flush>
             {rows.error ? <ErrorState error={rows.error} onRetry={() => rows.refetch()} /> : (
               <DataTable
                 rows={rows.data?.rows}
@@ -125,31 +156,29 @@ function TrackingOverview() {
                 rowKey={(r) => r.studentId}
                 sort={list.sort}
                 onSort={list.setSort}
-                compact={view === 'split'}
-                onRowClick={(r) => (view === 'split' && r.latitude != null ? setSelected(r.studentId) : navigate(`/student-tracking/${r.studentId}`))}
+                onRowClick={(r) => navigate(`/student-tracking/${r.studentId}`)}
                 rowClassName={(r) => (r.studentId === selected ? 'is-selected' : undefined)}
                 emptyText="No students match the current filters."
                 columns={[
                   { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.fullName} meta={r.admissionNo} /> },
                   { key: 'grade', label: 'Class', render: (r) => `${r.grade ?? '—'}${r.section ?? ''}` },
                   { key: 'status', label: 'Status', render: (r) => <TrackingStatusPill status={r.displayStatus} /> },
-                  ...(view === 'list' ? [
-                    { key: 'device', label: 'Device', sortable: false, render: (r: CurrentLocation) => (r.deviceCode ? <span className="col g-1"><span className="coord t-xs t-bold">{r.deviceCode}</span><GpsStatusBadge status={r.gpsStatus} seenAt={r.deviceLastSeenAt} /></span> : <span className="t-faint">No device</span>) },
-                    { key: 'location', label: 'Location', sortable: false, render: (r: CurrentLocation) => (r.latitude != null ? <span>{r.placeLabel ?? r.locationStatusLabel}<div className="coord t-micro">{fmt.coord(r.latitude)}, {fmt.coord(r.longitude)}</div></span> : '—') },
-                  ] : []),
-                  { key: 'updated', label: 'Last Updated', render: (r) => (r.recordedAt ? <span title={fmt.dateTime(r.recordedAt)}>{fmt.relative(r.recordedAt)}</span> : '—') },
+                  { key: 'device', label: 'Device', sortable: false, render: (r: CurrentLocation) => (r.deviceCode ? <span className="col g-1"><span className="coord t-xs t-bold">{r.deviceCode}</span><GpsStatusBadge status={r.gpsStatus} seenAt={r.deviceLastSeenAt} /></span> : <span className="t-faint">No device</span>) },
+                  { key: 'battery', label: 'Battery', sortable: false, className: 'num', render: (r: CurrentLocation) => <BatteryLevel pct={r.batteryPct} /> },
+                  { key: 'location', label: 'Location', sortable: false, render: (r: CurrentLocation) => (r.latitude != null ? <span className="row-top g-2 st-loccell"><span className={`st-locdot st-locdot--${r.isStale ? 'stale' : r.locationStatus ?? 'unknown'}`} /><span>{r.placeLabel ?? r.locationStatusLabel}{r.isStale ? <span className="t-muted"> · last known</span> : null}<div className="coord t-micro">{fmt.coord(r.latitude)}, {fmt.coord(r.longitude)}</div></span></span> : '—') },
+                  { key: 'updated', label: 'Last Updated', render: (r) => <LastSeen at={r.recordedAt} empty="No location yet" /> },
                   {
                     key: 'action', label: 'Action', sortable: false, className: 'num', render: (r) => (
-                      <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                      <div className="row g-2 end">
                         <Button size="sm" icon="mapPin" to={`/student-tracking/${r.studentId}`} onClick={(e) => e.stopPropagation()}>Track</Button>
-                        {view === 'list' && <Button size="sm" to={`/student-360/${r.studentId}`} onClick={(e) => e.stopPropagation()}>Student 360</Button>}
+                        <Button size="sm" to={`/student-360/${r.studentId}`} onClick={(e) => e.stopPropagation()}>Student 360</Button>
                       </div>
                     ),
                   },
                 ]}
               />
             )}
-            <Pagination meta={rows.data?.meta} onPage={list.setPage} onPageSize={view === 'list' ? list.setPageSize : undefined} />
+            <Pagination meta={rows.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
           </Card>
         )}
       </div>
@@ -159,6 +188,55 @@ function TrackingOverview() {
     </Page>
   );
 }
+
+/** Selectable student list for the split view: name, tracking state, place, device and last update. */
+function TrackingList({ rows, loading, selected, onPick }: {
+  rows: CurrentLocation[] | undefined; loading: boolean; selected: string | null; onPick: (r: CurrentLocation) => void;
+}) {
+  const refs = useRef(new Map<string, HTMLLIElement>());
+  // When a marker is chosen on the map, bring the matching row into view.
+  useEffect(() => {
+    if (selected) refs.current.get(selected)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [selected]);
+
+  if (loading) return <div className="card__body col g-3">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={44} />)}</div>;
+  if (!rows?.length) return <Empty icon="mapPin" title="No students match" sub="Change or clear the filters to see more students." />;
+  return (
+    <ul className="st-list" aria-label="Students">
+      {rows.map((r) => {
+        const place = r.latitude != null ? r.placeLabel ?? r.locationStatusLabel : null;
+        return (
+          <li key={r.studentId} className="st-item" aria-current={r.studentId === selected || undefined}
+            ref={(el) => { if (el) refs.current.set(r.studentId, el); else refs.current.delete(r.studentId); }}>
+            <button type="button" className="st-item__main" onClick={() => onPick(r)}
+              title={r.latitude != null ? 'Show on the map' : 'No location yet — open tracking detail'}>
+              <span className="st-item__top">
+                <span className="st-item__name">{r.fullName}<span className="st-item__sub">{[r.admissionNo, gradeLabel(r)].filter(Boolean).join(' · ')}</span></span>
+                <LastSeen at={r.recordedAt} empty="No location" />
+              </span>
+              <span className="st-item__meta">
+                <TrackingStatusPill status={r.displayStatus} />
+                {place && (
+                  <span className="row g-1">
+                    <span className={`st-locdot st-locdot--${r.isStale ? 'stale' : r.locationStatus ?? 'unknown'}`} aria-hidden="true" />
+                    {place}{r.isStale ? ' (last known)' : ''}
+                  </span>
+                )}
+                {r.deviceCode ? <GpsStatusBadge status={r.gpsStatus} seenAt={r.deviceLastSeenAt} /> : <span className="t-faint">No device</span>}
+                {r.batteryPct != null && <BatteryLevel pct={r.batteryPct} />}
+              </span>
+            </button>
+            <span className="st-item__actions">
+              <Button size="sm" variant="quiet" icon="arrowRight" to={`/student-tracking/${r.studentId}`} aria-label={`Open tracking detail for ${r.fullName}`} title="Tracking detail and history" />
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const gradeLabel = (r: Pick<CurrentLocation, 'grade' | 'section'>) => (r.grade ? `${r.grade}${r.section ?? ''}` : '');
 
 function TrackingDetail({ id }: { id: string }) {
   const { can } = useAuth();

@@ -106,54 +106,70 @@ export function Student360({ id }: { id: string }) {
   return (
     <Page>
       {staff && (
-        <div className="breadcrumb">
+        <nav className="breadcrumb" aria-label="Breadcrumb">
           <button type="button" onClick={() => navigate('/students')}>Students</button>
           <Icon name="chevronRight" size={12} />
-          <span>Student 360</span>
-        </div>
+          <span aria-current="page">{s.fullName}</span>
+        </nav>
       )}
-      <section className="card card--pad">
-        <div className="row-top g-5 wrap">
-          <div className="row-top g-4 grow" style={{ minWidth: 300 }}>
-            <Avatar name={s.fullName} size="xl" src={s.photoUrl} />
-            <div className="grow">
-              <div className="row g-3 wrap">
-                <h1 className="h1">{s.fullName}</h1>
-                <Badge tone={s.risk === 'At Risk' ? 'critical' : s.risk === 'Developing Risk' ? 'warning' : 'success'} dot lg>{s.risk}</Badge>
-                <Badge tone={toneForToday(s.today)} lg>{TODAY_LABEL[s.today] ?? s.today}</Badge>
-                {s.status !== 'active' && <Status value={s.status} lg />}
-              </div>
-              <p className="t-sm t-muted mt-2">
-                {s.admissionNo} · {s.grade} {s.section}{s.rollNo ? ` · Roll ${s.rollNo}` : ''} · {s.house ? `${s.house} House · ` : ''}{s.campusName}
-              </p>
-              <div className="row g-2 wrap mt-3">
-                {can('communication.send') && primary && (
-                  <Button size="sm" icon="message" to={`/parent-communication?parent=${primary.id}`}>Message parent</Button>
-                )}
-                {can('earlywarning.read') && d.interventions && (
-                  <Button size="sm" icon="flag" onClick={() => setTab('interventions')}>Interventions</Button>
-                )}
-                {canTrack && <Button size="sm" icon="mapPin" onClick={() => setTab('tracking')}>Track student</Button>}
-                {can('students.update') && <Button size="sm" icon="edit" onClick={() => setEditing(true)}>Edit profile</Button>}
-                <Button size="sm" icon="printer" onClick={() => window.print()}>Print profile</Button>
-              </div>
+      <section className="card profilehead">
+        <div className="profilehead__main">
+          <Avatar name={s.fullName} size="xl" src={s.photoUrl} />
+          <div className="profilehead__id">
+            <div className="row g-2 wrap">
+              <h1 className="profilehead__name">{s.fullName}</h1>
+              <Badge tone={s.risk === 'At Risk' ? 'critical' : s.risk === 'Developing Risk' ? 'warning' : 'success'} dot>{s.risk}</Badge>
+              <Badge tone={toneForToday(s.today)}>{TODAY_LABEL[s.today] ?? s.today}</Badge>
+              {s.status !== 'active' && <Status value={s.status} />}
+            </div>
+            <p className="profilehead__meta">
+              <span className="t-strong t-semi">{s.admissionNo}</span> ·{s.grade} {s.section}{s.rollNo ? ` · Roll ${s.rollNo}` : ''} · {s.house ? `${s.house} House · ` : ''}{s.campusName}
+            </p>
+            <div className="profilehead__facts">
+              <span title="Primary parent"><Icon name="user" size={14} />{primary ? <>{primary.fullName}{primary.phone ? <span className="t-muted"> · {primary.phone}</span> : null}</> : 'No parent linked'}</span>
+              <span title="Class teacher"><Icon name="graduation" size={14} />{s.classTeacher ?? 'No class teacher'}</span>
+              <span title="Date of birth and blood group"><Icon name="calendar" size={14} />{fmt.date(s.dateOfBirth)} · {s.bloodGroup ?? 'Blood group not recorded'}</span>
             </div>
           </div>
-          <div className="none" style={{ minWidth: 300, flex: 1 }}>
-            <Dl items={[
-              ['Parent', primary ? `${primary.fullName}${primary.phone ? ` · ${primary.phone}` : ''}` : '—'],
-              ['Class teacher', s.classTeacher],
-              ['Date of birth', `${fmt.date(s.dateOfBirth)} · ${s.bloodGroup ?? 'Blood group not recorded'}`],
-              ['Transport', d.transport ? `${d.transport.routeName} · ${d.transport.stopName ?? d.transport.area}` : 'Own transport'],
-              ['Attendance', s.attendance != null ? `${s.attendance}% this year` : '—'],
-              ['Academic standing', s.average != null ? `${s.average} average · ${s.trend >= 0 ? '+' : ''}${s.trend} trend` : '—'],
-              ...(d.fees ? [['Fees', d.fees.outstanding > 0 ? `${fmt.money(d.fees.outstanding)} outstanding${d.fees.nextDue ? ` · next due ${fmt.date(d.fees.nextDue)}` : ''}` : 'Cleared for this year'] as [string, string]] : []),
-            ]} />
+          <div className="profilehead__actions">
+            {can('communication.send') && primary && (
+              <Button size="sm" variant="primary" icon="message" to={`/parent-communication?parent=${primary.id}`}>Message parent</Button>
+            )}
+            {canTrack && <Button size="sm" icon="mapPin" onClick={() => setTab('tracking')}>Track</Button>}
+            {can('earlywarning.read') && d.interventions && (
+              <Button size="sm" icon="flag" onClick={() => setTab('interventions')}>Interventions</Button>
+            )}
+            {can('students.update') && <Button size="sm" variant="quiet" icon="edit" onClick={() => setEditing(true)}>Edit</Button>}
+            <Button size="sm" variant="quiet" icon="printer" onClick={() => window.print()} title="Print profile">Print</Button>
           </div>
         </div>
+        <dl className="profilehead__stats">
+          <div>
+            <dt>Attendance</dt>
+            <dd className={s.attendance != null && s.attendance < 85 ? 't-critical' : undefined}>{s.attendance != null ? `${s.attendance}%` : '—'}</dd>
+            <span>this academic year</span>
+          </div>
+          <div>
+            <dt>Academic average</dt>
+            <dd>{s.average ?? '—'}</dd>
+            <span className={s.trend > 0 ? 't-success' : s.trend < 0 ? 't-critical' : undefined}>{s.average != null ? `${s.trend >= 0 ? '+' : ''}${s.trend} trend` : 'No results yet'}</span>
+          </div>
+          {d.fees && (
+            <div>
+              <dt>Fees</dt>
+              <dd className={d.fees.outstanding > 0 ? 't-critical' : 't-success'}>{d.fees.outstanding > 0 ? fmt.money(d.fees.outstanding, { compact: true }) : 'Cleared'}</dd>
+              <span>{d.fees.outstanding > 0 ? (d.fees.nextDue ? `outstanding · next due ${fmt.date(d.fees.nextDue)}` : 'outstanding') : 'for this year'}</span>
+            </div>
+          )}
+          <div>
+            <dt>Transport</dt>
+            <dd className="t-clip">{d.transport ? d.transport.routeCode : 'Own'}</dd>
+            <span className="t-clip">{d.transport ? `${d.transport.routeName} · ${d.transport.stopName ?? d.transport.area}` : 'Own transport'}</span>
+          </div>
+        </dl>
       </section>
 
-      <div className="card mt-4" style={{ padding: '0 var(--s-2)' }}>
+      <div className="tabsbar">
         <Tabs items={tabs} active={tab} onChange={setTab} />
       </div>
 
@@ -209,18 +225,18 @@ function Overview({ d, onTab }: { d: Profile; onTab: (t: Tab) => void }) {
     <Grid cols="g-main">
       <div className="col g-4">
         <Grid cols="g-4col">
-          <Kpi label="Academic average" value={s.average ?? '—'} unit="/100" tone="teal" delta={s.trend} deltaUnit="" foot={`Across ${d.academics.subjects.length} subjects`} onClick={() => onTab('academics')} />
-          <Kpi label="Attendance" value={s.attendance != null ? `${s.attendance}%` : '—'} foot={totals ? `${totals.absent} absences · ${totals.late} late` : undefined} onClick={() => onTab('attendance')} />
-          <Kpi label="Skills index" value={si ?? '—'} unit="/100" tone="amber" foot={strongest ? `${strongest.name} strongest` : undefined} onClick={() => onTab('skills')} />
-          <Kpi label="Achievements" value={d.achievements.length} tone="info" foot={`${d.achievements.filter((a) => a.level && a.level !== 'School').length} beyond school level`} onClick={() => onTab('achievements')} />
+          <Kpi icon="trending" label="Academic average" value={s.average ?? '—'} unit="/100" tone="teal" delta={s.trend} deltaUnit="" foot={`Across ${d.academics.subjects.length} subjects`} onClick={() => onTab('academics')} />
+          <Kpi icon="checkSquare" label="Attendance" value={s.attendance != null ? `${s.attendance}%` : '—'} foot={totals ? `${totals.absent} absences · ${totals.late} late` : undefined} onClick={() => onTab('attendance')} />
+          <Kpi icon="activity" label="Skills index" value={si ?? '—'} unit="/100" tone="amber" foot={strongest ? `${strongest.name} strongest` : undefined} onClick={() => onTab('skills')} />
+          <Kpi icon="award" label="Achievements" value={d.achievements.length} tone="info" foot={`${d.achievements.filter((a) => a.level && a.level !== 'School').length} beyond school level`} onClick={() => onTab('achievements')} />
         </Grid>
-        <Card title="Growth timeline" sub="Admission → assessments → activities → achievements → interventions → certifications → competitions">
+        <Card icon="activity" title="Growth timeline" sub="Admission → assessments → activities → achievements → interventions → certifications → competitions">
           {d.timeline.length ? (
             <Timeline items={d.timeline.map((t) => ({ time: fmt.date(t.date), title: t.title, body: t.body ?? undefined, tone: t.tone }))} />
           ) : <Empty icon="clock" title="No timeline entries yet" />}
         </Card>
         {d.observations && (
-          <Card title="Teacher observations" sub="Qualitative evidence recorded alongside the numbers">
+          <Card icon="grid" title="Teacher observations" sub="Qualitative evidence recorded alongside the numbers">
             {d.observations.length ? d.observations.map((o) => (
               <div className="row-top g-3 mb-4" key={o.id}>
                 <Avatar name={o.by} size="sm" />
@@ -239,7 +255,7 @@ function Overview({ d, onTab }: { d: Profile; onTab: (t: Tab) => void }) {
       </div>
       <div className="col g-4">
         <TalentCard d={d} />
-        <Card title="At a glance">
+        <Card icon="grid" title="At a glance">
           <div className="col g-4">
             <Meter label="Academic performance" value={s.average ?? 0} right={s.average != null ? `${s.average}/100` : '—'} tone="teal" />
             <Meter label="Attendance" value={s.attendance ?? 0} right={s.attendance != null ? `${s.attendance}%` : '—'} />
@@ -251,7 +267,7 @@ function Overview({ d, onTab }: { d: Profile; onTab: (t: Tab) => void }) {
           </div>
         </Card>
         {d.interventions && (
-          <Card title="Open intervention" actions={<Badge tone={openInterventions.length ? 'warning' : 'success'}>{openInterventions.length} active</Badge>}>
+          <Card icon="grid" title="Open intervention" actions={<Badge tone={openInterventions.length ? 'warning' : 'success'}>{openInterventions.length} active</Badge>}>
             {openInterventions.length ? openInterventions.slice(0, 2).map((i) => (
               <div key={i.id} className="mb-4">
                 <div className="t-sm t-bold">{i.signal}</div>
@@ -264,7 +280,7 @@ function Overview({ d, onTab }: { d: Profile; onTab: (t: Tab) => void }) {
           </Card>
         )}
         {d.tracking && (
-          <Card title="Location" actions={<Button size="sm" iconRight="arrowRight" onClick={() => onTab('tracking')}>Track</Button>}>
+          <Card icon="bus" title="Location" actions={<Button size="sm" iconRight="arrowRight" onClick={() => onTab('tracking')}>Track</Button>}>
             {d.tracking.enabled && d.tracking.recordedAt ? (
               <Dl items={[
                 ['Status', d.tracking.locationStatus ? ({ at_school: 'At school', in_transit: 'In transit', at_home: 'At home', on_trip: 'On a school trip' } as Record<string, string>)[d.tracking.locationStatus] ?? '—' : '—'],
@@ -353,7 +369,7 @@ function AcademicsTab({ d }: { d: Profile }) {
   return (
     <Grid cols="g-main">
       <div className="col g-4">
-        <Card title="Subject performance" sub="Current scores against personal targets" flush>
+        <Card icon="trending" title="Subject performance" sub="Current scores against personal targets" flush>
           <DataTable
             rows={d.academics.subjects}
             rowKey={(r) => r.name}
@@ -371,12 +387,12 @@ function AcademicsTab({ d }: { d: Profile }) {
             ]}
           />
         </Card>
-        <Card title="Performance trend" sub="Average across terms">
+        <Card icon="trending" title="Performance trend" sub="Average across terms">
           {d.academics.termTrend.length > 1 ? (
             <Chart svg={charts.line({ labels: d.academics.termTrend.map((t) => t.label), series: [{ name: 'Average', values: d.academics.termTrend.map((t) => t.value), color: 'var(--navy)' }], yMin: 30, yMax: 100, height: 210, label: 'Average across terms' })} />
           ) : <Empty icon="trending" title="Not enough terms yet" />}
         </Card>
-        <Card title="Recent assessments" flush>
+        <Card icon="grid" title="Recent assessments" flush>
           <DataTable
             compact
             rows={d.academics.assessments}
@@ -392,13 +408,13 @@ function AcademicsTab({ d }: { d: Profile }) {
         </Card>
       </div>
       <div className="col g-4">
-        <Card title="Predicted grade" sub="Model output — advisory">
+        <Card icon="trending" title="Predicted grade" sub="Model output — advisory">
           <div className="row center"><Chart svg={charts.gauge({ percent: latest, value: predicted, sub: 'Predicted end of year', color: 'var(--teal)' })} /></div>
           <div className="mt-3">
             <AiNotice><strong>Prediction, not a decision.</strong> Based on {d.academics.termTrend.length} data points this year. The class teacher confirms predicted grades before they are shared with parents.</AiNotice>
           </div>
         </Card>
-        <Card title="Learning gaps" sub="Subjects currently below the personal target">
+        <Card icon="grid" title="Learning gaps" sub="Subjects currently below the personal target">
           {gaps.length ? gaps.map((g) => (
             <div className="mb-4" key={g.name}>
               <div className="row between"><span className="t-sm t-bold">{g.name}</span><Badge tone="warning">{g.score} of {g.target}</Badge></div>
@@ -419,12 +435,12 @@ function AttendanceTab({ d }: { d: Profile }) {
   return (
     <Grid cols="g-main">
       <div className="col g-4">
-        <Card title="Monthly attendance" sub="Percentage present per month this academic year">
+        <Card icon="checkSquare" title="Monthly attendance" sub="Percentage present per month this academic year">
           {d.attendance.months.length ? (
             <Chart svg={charts.bar({ labels: d.attendance.months.map((m) => m.label), series: [{ name: 'Attendance %', values: d.attendance.months.map((m) => m.value), color: 'var(--teal)' }], yMax: 100, target: 93, targetLabel: 'Expected 93%', height: 210 })} />
           ) : <Empty icon="calendar" title="No attendance marked yet" />}
         </Card>
-        <Card title="Recent days" sub="Last 20 marked school days">
+        <Card icon="grid" title="Recent days" sub="Last 20 marked school days">
           <div className="heat" style={{ gridTemplateColumns: 'repeat(10, 1fr)', maxWidth: 520 }}>
             {[...recent].reverse().map((r) => (
               <div key={r.date} className="heat__cell" style={{ background: col[r.status] ?? 'var(--border)' }} title={`${fmt.date(r.date)} — ${TODAY_LABEL[r.status] ?? r.status}`}>
@@ -438,13 +454,13 @@ function AttendanceTab({ d }: { d: Profile }) {
       <div className="col g-4">
         {totals && (
           <Grid cols="g-2col">
-            <Kpi label="Days marked" value={totals.marked} />
-            <Kpi label="Present" value={totals.present} tone="teal" />
-            <Kpi label="Late" value={totals.late} tone="amber" />
-            <Kpi label="Absent / leave" value={`${totals.absent} / ${totals.leave}`} tone="critical" />
+            <Kpi icon="checkSquare" label="Days marked" value={totals.marked} />
+            <Kpi icon="checkSquare" label="Present" value={totals.present} tone="teal" />
+            <Kpi icon="clock" label="Late" value={totals.late} tone="amber" />
+            <Kpi icon="alert" label="Absent / leave" value={`${totals.absent} / ${totals.leave}`} tone="critical" />
           </Grid>
         )}
-        <Card title="Absence record" flush>
+        <Card icon="checkSquare" title="Absence record" flush>
           <DataTable
             compact
             rows={exceptions}
@@ -465,7 +481,7 @@ function AttendanceTab({ d }: { d: Profile }) {
 function SkillsTab({ d }: { d: Profile }) {
   return (
     <Grid cols="g-main">
-      <Card title="Skills profile" sub="Built from assessments, activities, teacher observation and peer feedback">
+      <Card icon="user" title="Skills profile" sub="Built from assessments, activities, teacher observation and peer feedback">
         {d.skills.length >= 3 ? (
           <div className="row g-5 wrap center">
             <div className="none">
@@ -490,7 +506,7 @@ function SkillsTab({ d }: { d: Profile }) {
 
 function ActivitiesTab({ d }: { d: Profile }) {
   return (
-    <Card title="Activities and participation" sub="Clubs, sport and elective engagement" flush>
+    <Card icon="grid" title="Activities and participation" sub="Clubs, sport and elective engagement" flush>
       <DataTable
         rows={d.activities}
         rowKey={(r) => r.name}
@@ -516,13 +532,13 @@ function BehaviourTab({ d, studentId, canWrite }: { d: Profile; studentId: strin
   const tone = (t: string) => (t === 'Positive' ? 'teal' : t === 'Note' ? 'amber' : 'critical');
   return (
     <Grid cols="g-main">
-      <Card title="Behaviour record" sub="Positive notes and concerns, logged by staff">
+      <Card icon="grid" title="Behaviour record" sub="Positive notes and concerns, logged by staff">
         {d.behaviour.length ? (
           <Timeline items={d.behaviour.map((b) => ({ time: `${fmt.date(b.date)}${b.by ? ` · ${b.by}` : ''}`, title: b.note, body: b.type, tone: tone(b.type) }))} />
         ) : <Empty icon="heart" title="No behaviour notes recorded" />}
       </Card>
       <div className="col g-4">
-        <Card title="Balance">
+        <Card icon="grid" title="Balance">
           {d.behaviour.length ? (
             <div className="row center">
               <Chart svg={charts.donut({
@@ -534,7 +550,7 @@ function BehaviourTab({ d, studentId, canWrite }: { d: Profile; studentId: strin
           <p className="t-xs t-muted mt-3">Behaviour is recorded as evidence, not as a score. No automatic labelling is applied.</p>
         </Card>
         {canWrite && (
-          <Card title="Record a note">
+          <Card icon="grid" title="Record a note">
             <TextArea label="Observation" value={note} onChange={setNote} placeholder="What did you observe, and in what context?" maxLength={1000} />
             <div className="row g-2 mt-3 wrap">
               <Button variant="teal" size="sm" disabled={note.trim().length < 3} loading={save.isPending} onClick={() => save.mutate({ recordType: 'Positive', note: note.trim() })}>Save as positive</Button>
@@ -552,7 +568,7 @@ function WellbeingTab({ d }: { d: Profile }) {
   const w = d.wellbeing;
   if (!w.checkins) {
     return (
-      <Card title="Wellbeing">
+      <Card icon="heart" title="Wellbeing">
         {w.lastCheckin ? <p className="t-sm">Last check-in on {fmt.date(w.lastCheckin.date)}: <strong>{w.lastCheckin.mood}</strong>.</p> : <p className="t-sm t-muted">No check-ins recorded.</p>}
         <div className="mt-4"><Banner tone="neutral" icon="lock">Wellbeing records are restricted. Only the counsellor, the Principal and authorised staff can open the full record.</Banner></div>
       </Card>
@@ -563,11 +579,11 @@ function WellbeingTab({ d }: { d: Profile }) {
     <Grid cols="g-main">
       <div className="col g-4">
         <Grid cols="g-3col">
-          <Kpi label="Current state" value={last?.mood ?? '—'} tone="teal" foot={last ? `Last check-in ${fmt.date(last.date)}` : undefined} />
-          <Kpi label="Infirmary visits" value={w.infirmaryVisits ?? 0} tone="info" foot="All recorded visits" />
-          <Kpi label="Counselling sessions" value={w.counsellingSessions ?? 0} foot="Scheduled and completed" />
+          <Kpi icon="activity" label="Current state" value={last?.mood ?? '—'} tone="teal" foot={last ? `Last check-in ${fmt.date(last.date)}` : undefined} />
+          <Kpi icon="target" label="Infirmary visits" value={w.infirmaryVisits ?? 0} tone="info" foot="All recorded visits" />
+          <Kpi icon="shield" label="Counselling sessions" value={w.counsellingSessions ?? 0} foot="Scheduled and completed" />
         </Grid>
-        <Card title="Check-ins">
+        <Card icon="grid" title="Check-ins">
           {w.checkins.length ? (
             <Timeline items={w.checkins.map((c) => ({ time: `${fmt.date(c.date)}${c.by ? ` · ${c.by}` : ''}`, title: c.mood, body: c.notes ?? undefined, tone: ['Settled', 'Positive'].includes(c.mood) ? 'teal' : 'amber' }))} />
           ) : <Empty icon="heart" title="No check-ins recorded" />}
@@ -575,8 +591,8 @@ function WellbeingTab({ d }: { d: Profile }) {
         </Card>
       </div>
       <div className="col g-4">
-        <Card title="Medical notes"><p className="t-sm">{w.medicalNotes || 'No medical notes recorded.'}</p></Card>
-        <Card title="Request support">
+        <Card icon="grid" title="Medical notes"><p className="t-sm">{w.medicalNotes || 'No medical notes recorded.'}</p></Card>
+        <Card icon="grid" title="Request support">
           <p className="t-sm t-muted">Staff can request a counsellor check-in without creating a formal record.</p>
           <div className="mt-3"><Button block icon="heart" to="/counselling">Open counselling</Button></div>
         </Card>
@@ -631,7 +647,7 @@ function PortfolioTab({ d }: { d: Profile }) {
   return (
     <Grid cols="g-main">
       <div className="col g-4">
-        <Card title="Innovation projects" sub="Projects this student leads or contributes to" flush>
+        <Card icon="rocket" title="Innovation projects" sub="Projects this student leads or contributes to" flush>
           <DataTable
             rows={d.innovationProjects}
             rowKey={(r) => r.id}
@@ -643,19 +659,19 @@ function PortfolioTab({ d }: { d: Profile }) {
             ]}
           />
         </Card>
-        <Card title="Recognition">
+        <Card icon="grid" title="Recognition">
           {d.achievements.filter((a) => a.verified).length ? (
             <Timeline items={d.achievements.filter((a) => a.verified).map((a) => ({ time: fmt.date(a.date), title: a.title, body: `${a.type}${a.level ? ` · ${a.level}` : ''}`, tone: 'teal' }))} />
           ) : <Empty icon="award" title="No verified achievements yet" />}
         </Card>
       </div>
       <div className="col g-4">
-        <Card title="Activities">
+        <Card icon="grid" title="Activities">
           {d.activities.length ? d.activities.map((a) => (
             <div key={a.name} className="row between mb-2"><span className="t-sm">{a.name} <span className="t-muted">· {a.role}</span></span><span className="t-xs t-num">{a.hours} h</span></div>
           )) : <Empty icon="star" title="No activities" />}
         </Card>
-        <Card title="Share">
+        <Card icon="grid" title="Share">
           <p className="t-sm t-muted">The portfolio is compiled from verified records only. Print it or save it as PDF from the browser.</p>
           <div className="mt-3"><Button block icon="printer" onClick={() => window.print()}>Print portfolio</Button></div>
         </Card>
@@ -668,7 +684,7 @@ function InterventionsTab({ d }: { d: Profile }) {
   const { can } = useAuth();
   const list = d.interventions ?? [];
   return (
-    <Card title="Early Warning and interventions" sub="Signal → Teacher Review → Intervention → Action → Follow-up → Closed"
+    <Card icon="alert" title="Early Warning and interventions" sub="Signal → Teacher Review → Intervention → Action → Follow-up → Closed"
       actions={can('earlywarning.read') ? <Button size="sm" iconRight="arrowRight" to="/early-warning">Open Early Warning</Button> : undefined}>
       {list.length ? (
         <div className="col g-4">

@@ -5,11 +5,11 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { fmt } from '@/lib/format';
 import {
-  Banner, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination,
-  SearchInput, Segment, SelectField, Status, StudentLink, TextArea, TextField, useConfirm,
+  Banner, Button, Card, DataTable, ErrorState, FilterSelect, Kpi, Meter, Modal, Page, PageHead, Pagination, SearchInput,
+  Segment, SelectField, Status, StudentLink, TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import type { AccountRow, ConcessionRow, ConcessionSummary } from './types';
-import { fieldErrors, Money, ReasonModal, StudentPicker } from './shared';
+import { fieldErrors, ListCount, Money, ReasonModal, StudentPicker, TotalsBar } from './shared';
 
 export const CONCESSION_TYPES = ['Sibling concession', 'Staff ward concession', 'Merit scholarship', 'Need-based support', 'Sports quota'];
 
@@ -26,14 +26,14 @@ export function useConcessionDecisions() {
   const actions = (r: ConcessionRow) => (['Submitted', 'Under Review'].includes(r.status) ? (
     <div className="row g-2 end">
       {r.status === 'Submitted' && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
-      <Button size="sm" variant="teal" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
+      <Button size="sm" variant="teal" icon="check" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
         if (await confirm({
           title: `Approve ${r.type.toLowerCase()}?`,
           body: `${fmt.money(r.amount)} will be deducted from ${r.studentName}'s outstanding charges (tuition first). This cannot be undone from this screen.`,
           confirmLabel: 'Approve and apply', icon: 'check',
         })) approve.mutate(r.id);
       }}>Approve</Button>
-      <Button size="sm" onClick={() => setRejecting(r)}>Reject</Button>
+      <Button size="sm" icon="x" onClick={() => setRejecting(r)}>Reject</Button>
     </div>
   ) : null);
   const modal = (
@@ -60,16 +60,22 @@ export default function ConcessionsPage() {
       <PageHead title="Concessions" sub="Approved reductions, their value and who authorised them."
         actions={can('finance.manage') && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>New concession</Button>} />
       {s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : (
-        <Grid cols="g-4col">
+        <div className="statgrid statgrid--card fw-fit" aria-label="Concessions by type">
           {(s.isLoading ? CONCESSION_TYPES.slice(0, 4).map((type) => ({ type, students: 0, value: 0, pending: 0 })) : types.filter((t) => t.type !== 'Sports quota' || t.students || t.pending)).map((c) => (
-            <Kpi key={c.type} label={c.type} value={c.students} unit="students" tone="info" loading={s.isLoading}
+            <Kpi key={c.type} size="compact" label={c.type} value={c.students} unit="students" tone={c.pending ? 'amber' : 'info'} loading={s.isLoading}
               foot={`${fmt.money(c.value, { compact: true })} this year${c.pending ? ` · ${c.pending} pending` : ''}`}
               onClick={() => list.setFilter('type', c.type)} />
           ))}
-        </Grid>
+        </div>
       )}
       <div className="mt-4">
-        <Card title="Concession register" sub="Approved value by type, as a share of tuition billed this year" flush>
+        <Card icon="checkSquare" title="Concession register" sub="Approved value by type, as a share of tuition billed this year" flush
+          foot={types.length ? <TotalsBar items={[
+            { label: 'Students', value: fmt.n(types.reduce((a, t) => a + t.students, 0)) },
+            { label: 'Annual value', value: fmt.money(types.reduce((a, t) => a + t.value, 0)) },
+            { label: 'Share of tuition', value: tuition ? fmt.pct((types.reduce((a, t) => a + t.value, 0) / tuition) * 100, 1) : '—' },
+            { label: 'Awaiting decision', value: fmt.n(types.reduce((a, t) => a + t.pending, 0)) },
+          ]} /> : undefined}>
           <DataTable rows={types} loading={s.isLoading} rowKey={(r) => r.type}
             columns={[
               { key: 'type', label: 'Concession type' },
@@ -81,18 +87,20 @@ export default function ConcessionsPage() {
                   return <Meter label="" value={Math.min(100, p * 10)} right={fmt.pct(p, 1)} tone="info" />;
                 },
               },
-              { key: 'pending', label: 'Awaiting decision', className: 'num', render: (r) => (r.pending ? <Status value="Submitted" label={String(r.pending)} /> : '—') },
+              { key: 'pending', label: 'Awaiting decision', className: 'num', render: (r) => (r.pending ? <Status value="Pending" label={`${r.pending} pending`} /> : <span className="t-faint">—</span>) },
               { key: 'a', label: '', className: 'num', render: (r) => <Button size="sm" onClick={() => list.setFilter('type', r.type)}>View students</Button> },
             ]} />
         </Card>
       </div>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
-        <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={CONCESSION_TYPES} />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected']} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
+          <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={CONCESSION_TYPES} />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected']} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="requests" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             emptyText={list.hasFilters ? 'No concessions match the current filters.' : 'No concessions recorded this year.'}
@@ -144,7 +152,7 @@ export function ConcessionModal({ open, onClose, types = CONCESSION_TYPES, title
       </>}>
       <div className="col g-3">
         {student ? (
-          <div className="row between card card--tint" style={{ padding: 12 }}>
+          <div className="row between card card--tint fw-picked">
             <StudentLink id={student.id} name={student.fullName} meta={`${student.admissionNo} · ${student.grade}${student.section}`} />
             <Button size="sm" variant="quiet" onClick={() => setStudent(null)}>Change</Button>
           </div>
@@ -152,7 +160,7 @@ export function ConcessionModal({ open, onClose, types = CONCESSION_TYPES, title
           <div className="field">
             <span className="label">Student<span className="req"> *</span></span>
             <StudentPicker onPick={setStudent} campusId={campusParam.campusId} />
-            {errs.studentId && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{errs.studentId}</span>}
+            {errs.studentId && <span className="hint hint--error" role="alert">{errs.studentId}</span>}
           </div>
         )}
         <SelectField label="Type" required value={type} onChange={setType} options={types} />

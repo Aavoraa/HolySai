@@ -3,10 +3,10 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import {
-  Badge, Banner, Button, Card, Checkbox, DataTable, ErrorState, Page, PageHead, Pagination, SelectField, Skeleton, Status, TextArea, useConfirm,
+  Badge, Banner, Button, Card, Checkbox, DataTable, ErrorState, Icon, Page, PageHead, Pagination, SelectField, Skeleton, Status, TextArea, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { FormModal, SAFETY_KEYS, useFieldErrors } from './shared';
+import { FieldError, FormModal, incidentRowClass, SAFETY_KEYS, SeverityBadge, useFieldErrors } from './shared';
 import type { Broadcast, Incident } from './types';
 
 interface AudienceRow { key: string; label: string; count: number }
@@ -21,7 +21,12 @@ const TYPES = [
   { value: 'Transport', label: 'Transport' },
 ];
 const CHANNELS = ['App + WhatsApp + SMS', 'App + WhatsApp', 'SMS only'];
-const typeTone = (t: string) => (t === 'Drill' ? 'info' : ['Emergency', 'Lockdown', 'Evacuation'].includes(t) ? 'critical' : 'neutral');
+const CRITICAL_TYPES = ['Emergency', 'Lockdown', 'Evacuation'];
+const typeTone = (t: string) => (t === 'Drill' ? 'info' : CRITICAL_TYPES.includes(t) ? 'critical' : 'neutral');
+/** Broadcast type: emergencies carry an alert icon, drills a shield; routine notices stay neutral. */
+function TypeBadge({ type }: { type: string }) {
+  return <Badge tone={typeTone(type)} icon={CRITICAL_TYPES.includes(type) ? 'alert' : type === 'Drill' ? 'shield' : undefined}>{type}</Badge>;
+}
 
 export default function EmergencyPage() {
   const { can } = useAuth();
@@ -39,62 +44,71 @@ export default function EmergencyPage() {
       <PageHead title="Emergency Alerts" sub="One action reaches every audience at once. Every broadcast is logged with who sent it and why." />
       <Card className="card--navy">
         <div className="row-top g-5 wrap">
-          <div className="grow" style={{ minWidth: 260 }}>
-            <div className="eyebrow" style={{ color: 'var(--accent)' }}>Immediate broadcast</div>
-            <h2 className="h1 mt-2" style={{ color: '#fff' }}>Emergency broadcast</h2>
-            <p className="t-sm mt-2" style={{ color: 'var(--text-on-navy)', opacity: .85, maxWidth: '52ch' }}>
+          <div className="grow" style={{ minWidth: 0, flexBasis: 260 }}>
+            <div className="eyebrow st-hero__eyebrow">Immediate broadcast</div>
+            <h2 className="h1 mt-2 st-hero__title">Emergency broadcast</h2>
+            <p className="t-sm mt-2 st-hero__text">
               Reaches parents, teachers, staff and management simultaneously across the app, WhatsApp and SMS. Use only for genuine emergencies. Every use is audited.
             </p>
             {canSend ? (
               <div className="row g-3 mt-4 wrap">
-                <Button variant="danger" size="lg" icon="megaphone" onClick={() => setCompose('Emergency')}>Compose broadcast</Button>
+                <Button variant="danger" size="lg" icon="megaphone" onClick={() => setCompose('Emergency')}>Compose emergency broadcast</Button>
                 <Button variant="onnavy" size="lg" icon="shield" onClick={() => setCompose('Drill')}>Run a drill instead</Button>
               </div>
             ) : (
-              <p className="t-sm mt-4" style={{ color: '#fff' }}>You can view the history. Sending requires emergency broadcast rights.</p>
+              <p className="t-sm mt-4 st-hero__note"><Icon name="lock" size={13} /> You can view the history. Sending requires emergency broadcast rights.</p>
             )}
+            {canSend && <p className="t-micro mt-3 st-hero__note">You review the message and confirm the audience before anything is sent.</p>}
           </div>
-          <div className="none col g-2" style={{ minWidth: 220 }}>
-            {audience.error ? <span className="t-sm" style={{ color: '#fff' }}>Audience unavailable</span>
+          <div className="none col g-2 st-hero__aside" aria-label="Who a broadcast reaches">
+            {audience.error ? <span className="t-sm st-hero__note">Audience unavailable</span>
               : !audience.data ? [0, 1, 2, 3].map((i) => <Skeleton key={i} height={36} />)
-              : audience.data.map((a) => (
-                <div key={a.key} className="row between" style={{ background: 'rgba(255,255,255,.07)', borderRadius: 8, padding: '9px 12px' }}>
-                  <span className="t-sm" style={{ color: '#fff' }}>{a.label}</span>
-                  <span className="t-micro" style={{ color: 'var(--text-on-navy)', opacity: .7 }}>{fmt.n(a.count)} accounts</span>
-                </div>
-              ))}
+              : (
+                <>
+                  {audience.data.map((a) => (
+                    <div key={a.key} className="st-hero__aud">
+                      <span className="st-hero__aud-label">{a.label}</span>
+                      <span className="st-hero__aud-n">{fmt.n(a.count)} accounts</span>
+                    </div>
+                  ))}
+                  <span className="st-hero__total">Up to <strong>{fmt.n(total)}</strong> people in total</span>
+                </>
+              )}
           </div>
         </div>
       </Card>
 
-      <div className="grid g-2col g-4 mt-4">
-        <Card title="Broadcast history" sub="Who sent what, and how many people it reached" flush>
+      <div className="col g-4 mt-4">
+        <Card icon="activity" title="Broadcast history" sub="Who sent what, and how many people it reached — newest first" flush>
           {history.error ? <ErrorState error={history.error} onRetry={() => history.refetch()} /> : (
             <DataTable
               rows={history.data?.rows}
               loading={history.isLoading}
               rowKey={(r) => r.id}
               emptyText="No broadcasts have been sent."
+              rowClassName={(r) => (CRITICAL_TYPES.includes(r.alertType) ? 'st-row--critical' : undefined)}
               columns={[
                 { key: 'when', label: 'When', render: (r) => <span className="t-num">{fmt.dateTime(r.sentAt)}</span> },
-                { key: 'what', label: 'Message', render: (r) => <><div className="t-sm">{r.message}</div><div className="t-micro t-muted">{r.audience}{r.sentByName ? ` · by ${r.sentByName}` : ''}</div></> },
+                { key: 'type', label: 'Type', render: (r) => <TypeBadge type={r.alertType} /> },
+                { key: 'what', label: 'Message', render: (r) => <><div className="t-sm">{r.message}</div><div className="t-micro t-muted">{[r.audience, r.campusName, r.sentByName && `sent by ${r.sentByName}`].filter(Boolean).join(' · ')}</div></> },
                 { key: 'reach', label: 'Reach', className: 'num', render: (r) => <span className="t-num">{fmt.n(r.recipients)}</span> },
-                { key: 'type', label: 'Type', render: (r) => <Badge tone={typeTone(r.alertType)}>{r.alertType}</Badge> },
               ]}
             />
           )}
           <Pagination meta={history.data?.meta} onPage={setPage} />
         </Card>
-        <Card title="Incident and audit trail" sub="Every safety event, open or closed" flush>
+        <Card icon="shield" title="Incident and audit trail" sub="Every safety event, open or closed" flush>
           {incidents.error ? <ErrorState error={incidents.error} onRetry={() => incidents.refetch()} /> : (
             <DataTable
               rows={incidents.data?.rows}
               loading={incidents.isLoading}
               rowKey={(r) => r.id}
               emptyText="No incidents recorded."
+              rowClassName={incidentRowClass}
               columns={[
                 { key: 'date', label: 'Date', render: (r) => fmt.date(r.occurredOn) },
                 { key: 'summary', label: 'Incident', render: (r) => <><div className="t-sm">{r.summary}</div><div className="t-micro t-muted">{r.code} · {r.incidentType}</div></> },
+                { key: 'severity', label: 'Severity', render: (r) => <SeverityBadge value={r.severity} /> },
                 { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
                 { key: 'owner', label: 'Owner', render: (r) => r.ownerName ?? '—' },
               ]}
@@ -131,7 +145,7 @@ function ComposeModal({ type, total, audience, onClose }: { type: string; total:
       body: (
         <div className="col g-3">
           <p className="t-sm">This reaches <strong>{fmt.n(reach)}</strong> people immediately by {f.channels}. It cannot be recalled.</p>
-          <div className="card card--tint t-sm" style={{ padding: 12 }}>{f.alertType === 'Drill' ? 'DRILL — ' : ''}{f.message.trim()}</div>
+          <div className="st-preview">{f.alertType === 'Drill' ? 'DRILL — ' : ''}{f.message.trim()}</div>
         </div>
       ),
     });
@@ -145,23 +159,33 @@ function ComposeModal({ type, total, audience, onClose }: { type: string; total:
     <FormModal title={f.alertType === 'Drill' ? 'Drill broadcast' : 'Emergency broadcast'} sub={`This reaches up to ${fmt.n(total)} people immediately`}
       onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors} onSubmit={submit}
       submitLabel="Send broadcast now" submitIcon="megaphone" danger>
-      <Banner tone="critical" icon="alert"><strong>Confirm before sending.</strong> Emergency broadcasts bypass quiet hours and per-user notification settings.</Banner>
-      <div className="mt-4 col g-3">
-        <SelectField label="Type" required value={f.alertType} onChange={(v) => setF((x) => ({ ...x, alertType: v }))} options={TYPES} />
-        <TextArea label="Message" required rows={3} maxLength={1000} value={f.message} placeholder="Say what is happening and what people should do."
-          onChange={(v) => { setF((x) => ({ ...x, message: v })); fe.clear('message'); }} error={fe.errors.message}
-          hint={f.alertType === 'Drill' ? 'Every message is prefixed with DRILL.' : undefined} />
-        <div>
-          <div className="label mb-2">Send to <span className="req">*</span></div>
-          <div className="row g-3 wrap">
-            {audience.map((a) => (
-              <Checkbox key={a.key} checked={!!aud[a.key]} onChange={(v) => { setAud((x) => ({ ...x, [a.key]: v })); fe.clear('audiences'); }}
-                label={`${a.label} (${fmt.n(a.count)})`} />
-            ))}
-          </div>
-          {fe.errors.audiences && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{fe.errors.audiences}</span>}
+      {f.alertType === 'Drill'
+        ? <Banner tone="neutral" icon="shield"><strong>Drill.</strong> Every message is clearly labelled DRILL. It still reaches everyone you select.</Banner>
+        : <Banner tone="critical" icon="alert"><strong>Confirm before sending.</strong> Emergency broadcasts bypass quiet hours and per-user notification settings.</Banner>}
+      <div className="formsection mt-4">
+        <div className="formsection__title">Message</div>
+        <div className="col g-3">
+          <SelectField label="Type" required value={f.alertType} onChange={(v) => setF((x) => ({ ...x, alertType: v }))} options={TYPES} />
+          <TextArea label="Message" required rows={3} maxLength={1000} value={f.message} placeholder="Say what is happening and what people should do."
+            onChange={(v) => { setF((x) => ({ ...x, message: v })); fe.clear('message'); }} error={fe.errors.message}
+            hint={f.alertType === 'Drill' ? 'Every message is prefixed with DRILL.' : `${f.message.trim().length}/1000 characters`} />
         </div>
-        <SelectField label="Channels" required value={f.channels} onChange={(v) => setF((x) => ({ ...x, channels: v }))} options={CHANNELS} />
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Audience and channels</div>
+        <div className="col g-3">
+          <div className="field" role="group" aria-label="Send to">
+            <span className="label">Send to <span className="req">*</span></span>
+            <div className="row g-3 wrap">
+              {audience.map((a) => (
+                <Checkbox key={a.key} checked={!!aud[a.key]} onChange={(v) => { setAud((x) => ({ ...x, [a.key]: v })); fe.clear('audiences'); }}
+                  label={`${a.label} (${fmt.n(a.count)})`} />
+              ))}
+            </div>
+            <FieldError error={fe.errors.audiences} hint={<>Reaches <strong>{fmt.n(reach)}</strong> people</>} />
+          </div>
+          <SelectField label="Channels" required value={f.channels} onChange={(v) => setF((x) => ({ ...x, channels: v }))} options={CHANNELS} />
+        </div>
       </div>
     </FormModal>
   );

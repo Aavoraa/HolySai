@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  Badge, Banner, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Flow, Modal, Page, PageHead, PageSkeleton, Pagination, SearchInput,
-  SelectField, Status, StudentLink, TextArea,
+  Badge, Banner, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Flow, Icon, InlineError, Modal, Page, PageHead, PageSkeleton, Pagination, SearchInput,
+  SelectField, Status, StudentLink, TextArea, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -47,21 +47,22 @@ export default function TransfersPage() {
           { label: 'Record moved', meta: s ? `${s.completed} completed` : 'Student 360 travels intact', state: st === 'Completed' ? 'active' : undefined },
         ]} />
       </Card>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
-        <FilterSelect label="Status" value={st} onChange={(v) => list.setFilter('status', v)}
-          options={[{ value: 'open', label: 'All open' }, 'Submitted', 'Under Review', 'Approved', 'Completed', 'Rejected']} />
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or reason" />
+          <FilterSelect label="Status" value={st} onChange={(v) => list.setFilter('status', v)}
+            options={[{ value: 'open', label: 'All open' }, 'Submitted', 'Under Review', 'Approved', 'Completed', 'Rejected']} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Transfer>
             rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort} onRowClick={(r) => setOpen(r.id)}
-            emptyText="No transfers match."
+            emptyText={list.hasFilters ? 'No transfers match these filters.' : 'No transfer requests yet. Requests raised by parents or campuses appear here for review.'}
             columns={[
               { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade ?? ''}${r.section ?? ''} · ${r.admissionNo}`} /> },
               { key: 'from', label: 'From', render: (r) => r.fromCampus },
               { key: 'to', label: 'To', render: (r) => <>{r.toCampus}{r.toSection && <div className="t-micro t-muted">{r.toGrade}{r.toSection}</div>}</> },
-              { key: 'reason', label: 'Reason', sortable: false, render: (r) => r.reason },
+              { key: 'reason', label: 'Reason', sortable: false, render: (r) => <span className="t-sm t-clamp-2">{r.reason}</span> },
               { key: 'requested', label: 'Raised', render: (r) => <span className="t-num">{fmt.date(r.requestedOn)}</span> },
               { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => (
@@ -97,6 +98,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="New transfer request" sub="The student stays in their current class until the transfer is completed." busy={save.isPending}
       foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={submit}>Submit request</Button></>}>
+      {save.error && <div className="mb-3"><InlineError error={save.error} /></div>}
       <StudentPicker required value={v.student} onChange={(x) => f.set('student', x)} error={f.errors.student || f.errors.studentId} />
       {v.student && <p className="t-xs t-muted mt-1">Currently at {v.student.campusName}</p>}
       <div className="mt-3"><SelectField label="Move to campus" required value={v.toCampusId} onChange={(x) => f.set('toCampusId', x)} placeholder="Choose…"
@@ -113,12 +115,23 @@ function DetailModal({ id, manage, onClose }: { id: string; manage: boolean; onC
   const [sectionId, setSectionId] = useState('');
   const [secErr, setSecErr] = useState('');
   const inv = ['/group', '/students'];
-  const decide = useApiMutation<{ action: string; note?: string }>('post', `/group/transfers/${id}/decision`, { invalidate: inv });
-  const complete = useApiMutation<{ sectionId: string; note?: string }>('post', `/group/transfers/${id}/complete`, { invalidate: inv });
+  const confirm = useConfirm();
+  const decide = useApiMutation<{ action: string; note?: string }>('post', `/group/transfers/${id}/decision`, {
+    invalidate: inv,
+    success: (_r, v) => (v.action === 'approve' ? 'Transfer approved' : v.action === 'reject' ? 'Transfer rejected' : 'Review started'),
+  });
+  const complete = useApiMutation<{ sectionId: string; note?: string }>('post', `/group/transfers/${id}/complete`, {
+    invalidate: inv, success: 'Transfer completed — the record has moved',
+  });
   const t = q.data;
   const busy = decide.isPending || complete.isPending;
   const run = async (action: string) => {
     if (action === 'reject' && !note.trim()) { setNoteErr('Give a reason for rejecting'); return; }
+    if (action === 'reject' && t && !(await confirm({
+      title: `Reject the transfer for ${t.studentName}?`,
+      body: `${t.studentName} stays at ${t.fromCampus}. The request is closed with your note as the reason.`,
+      confirmLabel: 'Reject transfer', danger: true,
+    }))) return;
     try { await decide.mutateAsync({ action, note: note.trim() || undefined }); if (action !== 'review') onClose(); else setNote(''); } catch { /* toast */ }
   };
   const doComplete = async () => {
@@ -136,16 +149,17 @@ function DetailModal({ id, manage, onClose }: { id: string; manage: boolean; onC
         {manage && open && <>
           <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>
           {t!.status === 'Submitted' && <Button loading={decide.isPending && decide.variables?.action === 'review'} onClick={() => run('review')}>Start review</Button>}
-          <Button variant="primary" loading={decide.isPending && decide.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>
+          <Button variant="primary" icon="check" loading={decide.isPending && decide.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>
         </>}
         {manage && t?.status === 'Approved' && <>
-          <Button variant="danger" loading={decide.isPending} onClick={() => run('reject')}>Reject</Button>
+          <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>
           <Button variant="primary" icon="refresh" loading={complete.isPending} onClick={doComplete}>Complete transfer</Button>
         </>}
       </>}>
       {q.isLoading ? <PageSkeleton kpis={0} /> : q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : t && (
         <>
-          <div className="row between">
+          {(decide.error || complete.error) && <div className="mb-3"><InlineError error={decide.error ?? complete.error} /></div>}
+          <div className="row between g-2 wrap">
             <StudentLink id={t.studentId} name={t.studentName} meta={`${t.admissionNo} · ${t.grade ?? ''}${t.section ?? ''} · now at ${t.currentCampus}`} />
             <Status value={t.status} lg />
           </div>
@@ -156,13 +170,11 @@ function DetailModal({ id, manage, onClose }: { id: string; manage: boolean; onC
             ...(t.completedAt ? [['Moved', `${fmt.date(t.completedAt)} to ${t.toGrade ?? ''}${t.toSection ?? ''} by ${t.completedBy ?? ''}`] as [string, string]] : []),
           ]} /></div>
           <div className="eyebrow mt-4 mb-2">Records check</div>
-          <div className="col g-2">
-            {t.checks.map((c) => (
-              <div key={c.key} className="row between card card--tint" style={{ padding: '9px 12px' }}>
-                <span className="t-sm">{c.label}</span>
-                <Badge tone={c.passed ? 'success' : 'warning'} icon={c.passed ? 'check' : undefined}>{c.passed ? 'Passed' : c.detail}</Badge>
-              </div>
-            ))}
+          <div className="card card--tint">
+            <DataTable compact stack={false} rows={t.checks} rowKey={(c) => c.key} emptyText="No records checks apply to this transfer." columns={[
+              { key: 'label', label: 'Check', render: (c) => <span className="row g-2"><Icon name={c.passed ? 'check' : 'alertCircle'} size={15} className={c.passed ? 't-success' : 't-warning'} />{c.label}</span> },
+              { key: 'result', label: 'Result', className: 'num', render: (c) => <Badge tone={c.passed ? 'success' : 'warning'}>{c.passed ? 'Passed' : c.detail}</Badge> },
+            ]} />
           </div>
           {failing.length > 0 && t.status !== 'Completed' && t.status !== 'Rejected' && (
             <div className="mt-3"><Banner tone="warning" icon="alert">Resolve or note the open items before approving: {failing.map((c) => c.label.toLowerCase()).join(', ')}.</Banner></div>

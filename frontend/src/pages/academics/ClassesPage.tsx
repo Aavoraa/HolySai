@@ -6,10 +6,10 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
-  Badge, Button, Card, DataTable, ErrorState, FilterSelect, InlineError, Meter, Modal, Page, PageHead, Pagination, Person,
-  SearchInput, SelectField, TextField,
+  Badge, Banner, Button, Card, DataTable, ErrorState, FilterSelect, InlineError, Meter, Modal, Page, PageHead, Pagination, Person,
+  SearchInput, SelectField, TextField, Toolbar,
 } from '@/components/ui';
-import { serverFieldErrors } from './shared';
+import { plural, serverFieldErrors } from './shared';
 
 interface ClassRow {
   id: string; name: string; section: string; gradeLevel: number; campusName: string; room: string | null;
@@ -38,18 +38,25 @@ export default function ClassesPage() {
   const s = summary.data;
   const where = campus && campusParam.campusId ? `at ${campus.shortName}` : 'across the campuses';
   const sub = s
-    ? `${s.sections} sections ${where}, each with a class teacher and a home room.${s.withoutClassTeacher && canEdit ? ` ${s.withoutClassTeacher} still need a class teacher.` : ''}`
+    ? `${s.sections} sections ${where}, each with a class teacher and a home room. Select a class to open its register.`
     : 'Sections, class teachers and home rooms.';
 
   return (
     <Page>
       <PageHead title="Classes" sub={sub} />
+      {s && s.withoutClassTeacher > 0 && canEdit && (
+        <div className="mb-4">
+          <Banner tone="warning" icon="alert">
+            <strong>{plural(s.withoutClassTeacher, 'section')} without a class teacher.</strong> Use Edit on a class to assign one — the class teacher marks the register.
+          </Banner>
+        </div>
+      )}
       <Card flush>
-        <div className="filterbar" style={{ padding: '12px 16px' }}>
+        <Toolbar>
           <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search class or teacher" />
           <FilterSelect label="Grade" value={list.filters.grade} onChange={(v) => list.setFilter('grade', v)} options={grades} />
           <FilterSelect label="Register" value={list.filters.register} onChange={(v) => list.setFilter('register', v)} options={['Marked', 'Partial', 'Not marked']} />
-        </div>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={q.data?.rows}
@@ -70,10 +77,16 @@ export default function ClassesPage() {
                   : <Meter label="" value={r.attendance} right={`${r.attendance}%`} tone={r.attendance < 90 ? 'amber' : 'teal'} />),
               },
               { key: 'register', label: 'Register', sortable: false, render: (r) => <Badge tone={REGISTER_TONE[r.register] ?? 'neutral'}>{r.register}</Badge> },
-              ...(canEdit ? [{
+              {
                 key: 'a', label: '', sortable: false, className: 'num',
-                render: (r: ClassRow) => <Button size="sm" icon="edit" onClick={(e) => { e.stopPropagation(); setEditing(r); }} aria-label={`Edit ${r.name}`}>Edit</Button>,
-              }] : []),
+                render: (r: ClassRow) => (
+                  <span className="ac-links" onClick={(e) => e.stopPropagation()}>
+                    <Button size="sm" icon="calendar" to={`/timetable?section=${r.id}`} aria-label={`Timetable for ${r.name}`}>Timetable</Button>
+                    <Button size="sm" icon="fileText" to={`/homework?sectionId=${r.id}`} aria-label={`Homework for ${r.name}`}>Homework</Button>
+                    {canEdit && <Button size="sm" icon="settings" onClick={() => setEditing(r)} aria-label={`Edit ${r.name}`}>Edit</Button>}
+                  </span>
+                ),
+              },
             ]}
           />
         )}

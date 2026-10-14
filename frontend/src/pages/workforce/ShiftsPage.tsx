@@ -4,8 +4,8 @@ import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Banner, Button, Card, DataTable, Dl, Empty, ErrorState, InlineError, Modal, Page, PageHead, SelectField, Status,
-  TextField, useConfirm,
+  Badge, Banner, Button, Card, DataTable, Dl, Empty, ErrorState, InlineError, Modal, Page, PageHead, SelectField, Skeleton,
+  Status, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import { addDays, dayName, fieldErrors, useEmployeeModal } from './shared';
@@ -53,13 +53,13 @@ export default function ShiftsPage() {
 
       <div className="filterbar">
         <Button size="sm" icon="chevronLeft" aria-label="Previous week" onClick={() => setWeek(addDays(r?.weekStart ?? todayKey(), -7))} />
-        <span className="t-bold">{r ? `Week of ${fmt.date(r.weekStart)}` : 'This week'}</span>
+        <span className="t-bold" aria-live="polite">{r ? `Week of ${fmt.date(r.weekStart)}` : 'This week'}</span>
         <Button size="sm" icon="chevronRight" aria-label="Next week" onClick={() => setWeek(addDays(r?.weekStart ?? todayKey(), 7))} />
         {week && <Button size="sm" variant="quiet" onClick={() => setWeek(undefined)}>This week</Button>}
       </div>
 
       {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : q.isLoading || !r ? (
-        <span className="skeleton" style={{ display: 'block', height: 320, borderRadius: 14 }} />
+        <Skeleton height={320} />
       ) : (
         <>
           {r.gaps.length ? (
@@ -83,11 +83,11 @@ export default function ShiftsPage() {
             <Card flush>
               {grid.length ? (
                 <div className="table-wrap">
-                  <table className="table table--compact" style={{ minWidth: 760 }}>
+                  <table className="table table--compact fw-roster">
                     <thead>
                       <tr>
                         <th>Post</th>
-                        {r.days.map((d, i) => <th key={d} style={d === r.today ? { color: 'var(--navy)' } : undefined}>{DAYS[i]} <span className="t-micro t-muted">{d.slice(8)}</span></th>)}
+                        {r.days.map((d, i) => <th key={d} className={d === r.today ? 'is-today' : undefined} aria-current={d === r.today ? 'date' : undefined}>{DAYS[i]} <span className="t-micro t-muted">{d.slice(8)}</span></th>)}
                       </tr>
                     </thead>
                     <tbody>
@@ -98,13 +98,12 @@ export default function ShiftsPage() {
                             <td key={i}>
                               {cell.length === 0 ? (
                                 manage && r.days[i] >= r.today
-                                  ? <button type="button" className="t-faint t-xs" style={{ background: 'none', border: 0, cursor: 'pointer' }} onClick={() => setAdding({ date: r.days[i], group: row.group })}>Off</button>
+                                  ? <button type="button" className="fw-linkbtn t-faint t-xs" title={`Add someone to ${row.group}`} onClick={() => setAdding({ date: r.days[i], group: row.group })}>Off</button>
                                   : <span className="t-faint">Off</span>
                               ) : (
                                 <div className="col g-1">
                                   {cell.map((e) => (
-                                    <button key={e.id} type="button" onClick={() => setEntry(e)} title={`${e.employeeName} · ${e.shiftName}${e.duty ? ` · ${e.duty}` : ''}`}
-                                      style={{ background: 'none', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
+                                    <button key={e.id} type="button" className="fw-linkbtn" onClick={() => setEntry(e)} title={`${e.employeeName} · ${e.shiftName}${e.duty ? ` · ${e.duty}` : ''}`}>
                                       {e.status === 'Cover needed' ? <Badge tone="critical">No cover</Badge>
                                         : e.status === 'Covered' ? <span className="t-xs">{e.coveredByName} <span className="t-micro t-muted">for {e.employeeName}</span></span>
                                         : <span className={`t-xs${['Absent', 'On Leave'].includes(e.attendance ?? '') ? ' t-critical' : ''}`}>{e.employeeName}</span>}
@@ -128,7 +127,7 @@ export default function ShiftsPage() {
 
           {r.gaps.length > 0 && (
             <div className="mt-4">
-              <Card title="Cover needed" flush>
+              <Card title={<span className="fw-queue">Cover needed <Badge tone="critical">{r.gaps.length}</Badge></span>} sub="Posts with no named person — assign a colleague before the shift starts" flush>
                 <DataTable compact rows={r.gaps} rowKey={(g) => g.id}
                   columns={[
                     { key: 'date', label: 'Day', render: (g) => `${dayName(g.date)}, ${fmt.dateShort(g.date)}` },
@@ -229,9 +228,9 @@ function AddModal({ initial, days, groups, onClose }: { initial: { date?: string
         <div className="field">
           <label className="label" htmlFor="roster-post">Post <span className="req">*</span></label>
           <input id="roster-post" className="input" list="roster-posts" value={f.group} onChange={(e) => set('group', e.target.value)} maxLength={80}
-            aria-invalid={!!err('group') || undefined} style={err('group') ? { borderColor: 'var(--critical)' } : undefined} />
+            aria-invalid={!!err('group') || undefined} />
           <datalist id="roster-posts">{groups.map((g) => <option key={g} value={g} />)}</datalist>
-          {err('group') && <span className="hint" style={{ color: 'var(--critical)' }}>{err('group')}</span>}
+          {err('group') && <span className="hint hint--error" role="alert">{err('group')}</span>}
         </div>
         <TextField label="Duty / location" value={f.duty} onChange={(v) => set('duty', v)} placeholder="e.g. Rear Gate, Route 12" maxLength={80} />
       </div>
@@ -261,7 +260,7 @@ function ShiftsModal({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} size="wide" title="Shifts" sub="Shift patterns used by employee records and the roster"
       foot={<><Button onClick={onClose}>Close</Button>{!edit && <Button variant="primary" icon="plus" onClick={() => setEdit({})}>New shift</Button>}</>}>
       {edit && (
-        <div className="card card--tint mb-4" style={{ padding: 16 }}>
+        <div className="card card--tint card__body mb-4">
           <div className="grid g-3col g-3">
             <TextField label="Name" required value={edit.name} onChange={(v) => set('name', v)} error={err('name')} placeholder="Evening 14:00–22:00" />
             <TextField label="Starts" type="time" required value={edit.startsAt} onChange={(v) => set('startsAt', v)} error={err('startsAt')} />
@@ -271,7 +270,7 @@ function ShiftsModal({ onClose }: { onClose: () => void }) {
             <TextField label="Split ends" type="time" value={edit.splitEndsAt ?? ''} onChange={(v) => set('splitEndsAt', v)} error={err('splitEndsAt')} />
           </div>
           {save.error && !Object.keys(fieldErrors(save.error)).length && <div className="mt-3"><InlineError error={save.error} /></div>}
-          <div className="row g-2 mt-3" style={{ justifyContent: 'flex-end' }}>
+          <div className="row g-2 end mt-3">
             <Button onClick={() => { setEdit(null); setTouched(false); }}>Cancel</Button>
             <Button variant="primary" loading={save.isPending} onClick={() => { setTouched(true); if (!Object.keys(errors).length) save.mutate(); }}>Save shift</Button>
           </div>

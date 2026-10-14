@@ -32,7 +32,7 @@ export default function AutomationsPage() {
                       padding: '10px 14px', borderRadius: 'var(--r-sm)',
                       ...(lastStep ? { background: 'var(--success-tint)', borderColor: 'var(--success-line)' } : i === 0 ? { background: 'var(--navy)', borderColor: 'var(--navy)' } : {}),
                     }}>
-                      <span className="t-xs t-bold" style={i === 0 ? { color: '#fff' } : undefined}>{s}</span>
+                      <span className="t-xs t-bold" style={i === 0 ? { color: 'var(--text-invert)' } : undefined}>{s}</span>
                     </div>
                     {!lastStep && <span className="t-faint"><Icon name="arrowRight" size={14} /></span>}
                   </div>
@@ -45,7 +45,7 @@ export default function AutomationsPage() {
         ))}
       </div>
       <div className="mt-4">
-        <Card title="Where a person always intervenes">
+        <Card icon="grid" title="Where a person always intervenes">
           <div className="grid g-2col g-3">
             {HUMAN_GATES.map(([t, d]) => (
               <div className="card card--tint" style={{ padding: 14 }} key={t}>

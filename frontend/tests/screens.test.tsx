@@ -121,7 +121,7 @@ const EXPECT: Record<string, RegExp[]> = {
   '/student-360/:id?tab=tracking': [/Student Tracking/, /Latitude/, /Last Updated/],
   '/student-tracking': [/Student Tracking/, /Students tracked/],
   '/student-tracking/:id': [/Aditya Kumar/, /Latitude/],
-  '/command-center': [/Total Students/, /Attendance analytics/],
+  '/command-center': [/Total Students/, /Attendance Overview/],
   '/students': [/Aditya Kumar|Students/],
   // Sections 2–5 need audit.read, so only the parts every permitted role sees are asserted.
   '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /Fees collected/, /Net position/, /What families still owe/],

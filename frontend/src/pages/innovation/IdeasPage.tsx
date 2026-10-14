@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Button, Card, Chips, DataTable, ErrorState, FilterSelect, Modal, Page, PageHead, Pagination, SearchInput, SelectField, Status, StudentLink,
-  TextArea, TextField,
+  Banner, Button, Card, Chips, DataTable, ErrorState, FilterSelect, InlineError, Modal, Page, PageHead, Pagination, SearchInput, SelectField, Status, StudentLink,
+  TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -43,15 +43,24 @@ export default function IdeasPage() {
         { id: 'Converted', label: 'Became projects', count: s?.converted },
         { id: 'Declined', label: 'Declined', count: s?.declined },
       ]} />
-      {s && s.overdueReview > 0 && <p className="t-sm t-critical mt-2">{s.overdueReview} idea(s) have waited more than a week for review.</p>}
-      <div className="filterbar mt-3">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search idea or student" />
-        <FilterSelect label="Area" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={AREAS} />
-      </div>
-      <Card flush>
+      {s && s.overdueReview > 0 && (
+        <div className="mt-3">
+          <Banner tone="critical" icon="clock">
+            <strong>{s.overdueReview} idea(s)</strong> have waited more than a week for review.{' '}
+            {list.filters.status !== 'Submitted' && <button type="button" className="t-bold" onClick={() => list.setFilter('status', 'Submitted')}>Show submitted ideas</button>}
+          </Banner>
+        </div>
+      )}
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search idea or student" />
+          <FilterSelect label="Area" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={AREAS} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Idea>
-            rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort} emptyText="No ideas match."
+            rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
+            emptyText={list.hasFilters ? 'No ideas match these filters. Clear them to see every idea.' : 'No ideas yet. Submitted ideas appear here for teacher review.'}
             columns={[
               { key: 'title', label: 'Idea', render: (r) => <><span className="t-bold">{r.title}</span>{r.problem && <div className="t-micro t-muted t-clip" style={{ maxWidth: 360 }}>{r.problem}</div>}</> },
               { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade ?? ''}${r.section ?? ''}`} /> },
@@ -81,9 +90,16 @@ export default function IdeasPage() {
 function ReviewModal({ idea, onClose, onConvert }: { idea: Idea; onClose: () => void; onConvert: () => void }) {
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
-  const act = useApiMutation<{ action: string; note?: string }, { status: string }>('post', `/innovation/ideas/${idea.id}/review`, { invalidate: ['/innovation'] });
+  const confirm = useConfirm();
+  const act = useApiMutation<{ action: string; note?: string }, { status: string }>('post', `/innovation/ideas/${idea.id}/review`, {
+    invalidate: ['/innovation'],
+    success: (_r, v) => (v.action === 'accept' ? 'Idea accepted' : v.action === 'decline' ? 'Idea declined' : 'Review started'),
+  });
   const run = async (action: string) => {
     if (action === 'decline' && !note.trim()) { setErr('Tell the student why'); return; }
+    if (action === 'decline' && !(await confirm({
+      title: `Decline "${idea.title}"?`, body: `${idea.studentName} and their family are notified with your note.`, confirmLabel: 'Decline idea', danger: true,
+    }))) return;
     try {
       await act.mutateAsync({ action, note: note.trim() || undefined });
       if (action === 'accept') onConvert(); else onClose();
@@ -97,6 +113,7 @@ function ReviewModal({ idea, onClose, onConvert }: { idea: Idea; onClose: () => 
         {idea.status === 'Submitted' && <Button loading={act.isPending && act.variables?.action === 'start'} onClick={() => run('start')}>Start review</Button>}
         <Button variant="primary" loading={act.isPending && act.variables?.action === 'accept'} onClick={() => run('accept')}>Accept</Button>
       </>}>
+      {act.error && <div className="mb-3"><InlineError error={act.error} /></div>}
       <div className="h3">{idea.title}</div>
       <p className="t-sm mt-2" style={{ whiteSpace: 'pre-wrap' }}>{idea.problem}</p>
       <p className="t-micro t-muted mt-2">Area: {idea.category ?? '—'}</p>
@@ -121,6 +138,7 @@ function ConvertModal({ idea, onClose }: { idea: Idea; onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="Convert to project" sub={`${idea.studentName} becomes the lead student`} size="wide" busy={save.isPending}
       foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={submit}>Create project</Button></>}>
+      {save.error && <div className="mb-3"><InlineError error={save.error} /></div>}
       <FormGrid>
         <TextField label="Project title" required maxLength={160} value={v.title} onChange={(x) => f.set('title', x)} error={f.errors.title} />
         <SelectField label="Mentor" required value={v.mentorId} onChange={(x) => f.set('mentorId', x)} options={mentors} placeholder="Choose a mentor…" error={f.errors.mentorId} />

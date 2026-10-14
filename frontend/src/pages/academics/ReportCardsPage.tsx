@@ -6,7 +6,8 @@ import {
   AiNotice, Badge, Banner, Button, Card, DataTable, Empty, ErrorState, Flow, Icon, InlineError, Modal, Page, PageHead, PageSkeleton,
   Skeleton, Stepper, TextArea, useConfirm,
 } from '@/components/ui';
-import { cx, fmt } from '@/lib/format';
+import { fmt, todayKey } from '@/lib/format';
+import { DueDate } from './shared';
 
 interface BatchRow { id: string; sectionId: string; grade: string; term: string; stage: number; status: string; due: string; releasedAt: string | null; approvedBy: string | null; students: number; drafts: number; approved: number; rejected: number }
 interface Overview { stages: string[]; stageCounts: { label: string; count: number }[]; rows: BatchRow[]; awaitingRelease: number }
@@ -71,14 +72,15 @@ export default function ReportCardsPage() {
                   rows={d.rows}
                   rowKey={(r) => r.id}
                   onRowClick={(r) => setOpen(r.id)}
+                  rowClassName={(r) => (!r.releasedAt && r.due < todayKey() ? 'ac-row--overdue' : undefined)}
                   emptyText="No report card batches for your classes this year."
                   columns={[
                     { key: 'grade', label: 'Class', render: (r) => <><span className="t-bold">{r.grade}</span><div className="t-micro t-muted">{r.term}</div></> },
                     { key: 'students', label: 'Students', className: 'num', render: (r) => <span className="t-num">{r.students}</span> },
                     { key: 'stage', label: 'Progress', render: (r) => <Stepper steps={SHORT} active={r.stage === 5 ? 6 : r.stage} /> },
                     { key: 'status', label: 'Status', render: (r) => <Badge tone={r.stage >= 5 ? 'success' : r.stage >= 4 ? 'info' : 'warning'}>{r.status}</Badge> },
-                    { key: 'due', label: 'Due', render: (r) => (r.releasedAt ? <span className="t-micro">Released {fmt.dateShort(r.releasedAt)}</span> : fmt.date(r.due)) },
-                    { key: 'a', label: '', className: 'num', render: (r) => <Button size="sm" onClick={(e) => { e.stopPropagation(); setOpen(r.id); }}>Open</Button> },
+                    { key: 'due', label: 'Due', render: (r) => (r.releasedAt ? <span className="t-micro t-muted">Released {fmt.dateShort(r.releasedAt)}</span> : <DueDate date={r.due} />) },
+                    { key: 'a', label: '', className: 'num', render: (r) => <Button size="sm" variant={r.drafts > 0 && r.stage >= 2 && r.stage <= 3 ? 'primary' : 'ghost'} onClick={(e) => { e.stopPropagation(); setOpen(r.id); }}>{r.drafts > 0 && r.stage >= 2 && r.stage <= 3 ? `Review ${r.drafts}` : 'Open'}</Button> },
                   ]}
                 />
               </Card>
@@ -178,15 +180,14 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
             <div className="mb-3"><Banner tone="warning" icon="alert">{b.stage === 2 ? 'Some students do not have a draft comment yet.' : `${b.counts.total - b.counts.approved} comment(s) still need your approval before the class can be sent for approval.`}</Banner></div>
           )}
           {b.students.length === 0 ? <Empty icon="users" title="No students in this class" /> : (
-            <div className="grid g-side g-5" style={{ gridTemplateColumns: 'minmax(220px, 280px) 1fr' }}>
-              <Card title="Students" tight flush>
-                <div className="rule-list" style={{ maxHeight: 520, overflowY: 'auto' }}>
+            <div className="rc-split">
+              <Card icon="users" title="Students" tight flush>
+                <div className="rule-list rc-students">
                   {b.students.map((s) => (
-                    <button key={s.id} type="button" className={cx('row g-3 hoverable', sel?.student.id === s.id && 'is-selected')}
+                    <button key={s.id} type="button" className="rc-student hoverable"
                       aria-pressed={sel?.student.id === s.id}
-                      style={{ width: '100%', padding: '10px 14px', textAlign: 'left', background: sel?.student.id === s.id ? 'var(--info-tint)' : undefined }}
                       onClick={() => setStudentId(s.id)}>
-                      <span className="col grow" style={{ minWidth: 0 }}>
+                      <span className="rc-student__body">
                         <span className="t-sm t-clip">{s.fullName}</span>
                         <span className="t-micro t-muted">{s.admissionNo}</span>
                       </span>
@@ -196,8 +197,8 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
                 </div>
               </Card>
               {sel && (
-                <div className="grid g-2col g-5">
-                  <Card title="Marks and grades" sub={sel.student.fullName} tight flush>
+                <div className="rc-detail">
+                  <Card icon="trending" title="Marks and grades" sub={sel.student.fullName} tight flush>
                     {sel.results.length === 0 ? <Empty icon="clipboard" title="No results recorded" /> : (
                       <DataTable compact stack={false} rows={sel.results} rowKey={(r) => r.subject} columns={[
                         { key: 'subject', label: 'Subject' },
@@ -250,7 +251,7 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
                         )}
                       </div>
                     </section>
-                    <Card title="Release" tight>
+                    <Card icon="grid" title="Release" tight>
                       <Flow steps={[
                         { label: 'Teacher review', meta: b.stage === 3 ? 'You are here' : b.stage > 3 ? 'Done' : 'Next', state: b.stage > 3 ? 'done' : b.stage === 3 ? 'active' : undefined },
                         { label: 'Section head approval', meta: b.stage === 4 ? 'Awaiting approval' : b.stage > 4 ? 'Approved' : 'Next', state: b.stage > 4 ? 'done' : b.stage === 4 ? 'active' : undefined },

@@ -8,7 +8,7 @@ import {
   TextField, useConfirm,
 } from '@/components/ui';
 import type { AllowanceRow, AllowanceSummaryRow } from './types';
-import { fieldErrors, Money, useFinanceLookups } from './shared';
+import { fieldErrors, Money, TotalsBar, useFinanceLookups } from './shared';
 
 /** Serves both /allowances (Finance) and /staff-allowances (HR); the wireframe renders the same page with different copy. */
 export default function AllowancesPage({ sub }: { sub: string }) {
@@ -20,6 +20,8 @@ export default function AllowancesPage({ sub }: { sub: string }) {
   const [open, setOpen] = useState<string | null>(null);
   const canManage = can(['finance.manage', 'hr.manage']);
   const canApprove = can(['finance.approve', 'hr.approve']);
+  const rows = q.data ?? [];
+  const pending = rows.filter((r) => r.pendingCount > 0);
   const decide = useApiMutation<{ allowanceType: string; decision: string }>('post', '/finance/allowances/decide', {
     invalidate: ['/finance/allowances'], body: (v) => ({ ...v, ...campusParam }),
   });
@@ -38,9 +40,19 @@ export default function AllowancesPage({ sub }: { sub: string }) {
     <Page>
       <PageHead title="Allowances" sub={sub}
         actions={canManage && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Add allowance</Button>} />
-      <Card flush>
+      {pending.length > 0 && (
+        <div className="mb-4"><Banner tone="warning" icon="clock">
+          <strong>{pending.reduce((acc, r) => acc + r.pendingCount, 0)} proposed allowance(s) awaiting approval</strong> across {pending.length} type{pending.length === 1 ? '' : 's'} — {fmt.money(pending.reduce((acc, r) => acc + r.pendingCost, 0))} a month.{canApprove ? ' Approve or reject them below.' : ''}
+        </Banner></div>
+      )}
+      <Card flush
+        foot={rows.length ? <TotalsBar items={[
+          { label: 'Employees', value: fmt.n(rows.reduce((acc, r) => acc + r.employees, 0)) },
+          { label: 'Monthly cost', value: fmt.money(rows.reduce((acc, r) => acc + r.monthlyCost, 0)) },
+          { label: 'Proposed', value: fmt.money(rows.reduce((acc, r) => acc + r.pendingCost, 0)) },
+        ]} /> : undefined}>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
-          <DataTable rows={q.data} loading={q.isLoading} rowKey={(r) => r.allowanceType} emptyText="No allowances are configured."
+          <DataTable rows={q.data} loading={q.isLoading} rowKey={(r) => r.allowanceType} emptyText={canManage ? 'No allowances are configured. Add one to include it in the next payroll run.' : 'No allowances are configured.'}
             onRowClick={(r) => setOpen(r.allowanceType)}
             columns={[
               { key: 'name', label: 'Allowance', render: (r) => <span className="t-bold">{r.allowanceType}</span> },
@@ -52,13 +64,13 @@ export default function AllowancesPage({ sub }: { sub: string }) {
               },
               { key: 'employees', label: 'Employees', className: 'num' },
               { key: 'total', label: 'Monthly cost', className: 'num', render: (r) => <><Money v={r.monthlyCost} strong />{r.pendingCost > 0 && <div className="t-micro t-muted">+{fmt.money(r.pendingCost)} proposed</div>}</> },
-              { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
+              { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.pendingCount > 0 && <div className="mt-1"><Status value="Pending" label={`${r.pendingCount} proposed`} /></div>}</> },
               {
                 key: 'a', label: '', className: 'num', render: (r) => canApprove && (
                   <div className="row g-2 end" onClick={(e) => e.stopPropagation()}>
                     {r.pendingCount > 0 ? <>
-                      <Button size="sm" variant="teal" onClick={() => ask(r, 'Approved')}>Approve</Button>
-                      <Button size="sm" onClick={() => ask(r, 'Rejected')}>Reject</Button>
+                      <Button size="sm" variant="teal" icon="check" loading={decide.isPending && decide.variables?.allowanceType === r.allowanceType && decide.variables?.decision === 'Approved'} onClick={() => ask(r, 'Approved')}>Approve {r.pendingCount}</Button>
+                      <Button size="sm" icon="x" loading={decide.isPending && decide.variables?.allowanceType === r.allowanceType && decide.variables?.decision === 'Rejected'} onClick={() => ask(r, 'Rejected')}>Reject</Button>
                     </> : r.status === 'Active' && <Button size="sm" variant="quiet" onClick={() => ask(r, 'Stopped')}>Stop</Button>}
                   </div>
                 ),

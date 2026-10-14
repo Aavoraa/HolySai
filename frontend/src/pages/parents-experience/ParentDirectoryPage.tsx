@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Badge, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination,
-  Person, SearchInput, SelectField, Skeleton, Status, StudentLink, Tabs, TextArea, TextField, Timeline,
+  Person, SearchInput, SelectField, Skeleton, Status, StudentLink, Tabs, TextArea, TextField, Timeline, Toolbar,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
@@ -46,14 +46,15 @@ export default function ParentDirectoryPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.refetch} /> : (
         <Grid cols="g-4col">
-          <Kpi label="Parent accounts" loading={summary.isLoading} value={fmt.n(s?.appAccounts)} foot={`${pct(s?.appAccounts)}% of ${fmt.n(s?.parents)} families use the app`} onClick={() => list.setFilter('app', 'yes')} />
-          <Kpi label="High engagement" tone="teal" loading={summary.isLoading} value={`${pct(s?.high)}%`} foot={`${fmt.n(s?.high)} families scoring 70 or more`} onClick={() => list.setFilter('engagement', 'high')} />
-          <Kpi label="Low engagement" tone="amber" loading={summary.isLoading} value={fmt.n(s?.low)} foot={`Score below 50 · ${fmt.n(s?.noContact30d)} not contacted in 30 days`} onClick={() => list.setFilter('engagement', 'low')} />
-          <Kpi label="Average engagement" tone="teal" loading={summary.isLoading} value={fmt.n(s?.averageEngagement)} unit="/ 100" foot={`${fmt.n(s?.contacted7d)} families contacted this week`} />
+          <Kpi icon="phone" label="Parent accounts" loading={summary.isLoading} value={fmt.n(s?.appAccounts)} foot={`${pct(s?.appAccounts)}% of ${fmt.n(s?.parents)} families use the app`} onClick={() => list.setFilter('app', 'yes')} />
+          <Kpi icon="heart" label="High engagement" tone="teal" loading={summary.isLoading} value={`${pct(s?.high)}%`} foot={`${fmt.n(s?.high)} families scoring 70 or more`} onClick={() => list.setFilter('engagement', 'high')} />
+          <Kpi icon="alertCircle" label="Low engagement" tone="amber" loading={summary.isLoading} value={fmt.n(s?.low)} foot={`Score below 50 · ${fmt.n(s?.noContact30d)} not contacted in 30 days`} onClick={() => list.setFilter('engagement', 'low')} />
+          <Kpi icon="activity" label="Average engagement" tone="teal" loading={summary.isLoading} value={fmt.n(s?.averageEngagement)} unit="/ 100" foot={`${fmt.n(s?.contacted7d)} families contacted this week`} />
         </Grid>
       )}
 
-      <div className="filterbar mt-4">
+      <Card flush className="mt-4">
+        <Toolbar>
         <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search by name, phone, email or code" />
         <FilterSelect label="Engagement" value={list.filters.engagement} onChange={(v) => list.setFilter('engagement', v)}
           options={[{ value: 'high', label: 'High (70+)' }, { value: 'medium', label: 'Medium (50–69)' }, { value: 'low', label: 'Low (below 50)' }]} />
@@ -64,9 +65,9 @@ export default function ParentDirectoryPage() {
         <FilterSelect label="Grade" value={list.filters.gradeLevel} onChange={(v) => list.setFilter('gradeLevel', v)}
           options={levels.map((g) => ({ value: String(g), label: `Grade ${g}` }))} />
         {list.hasFilters && <Button variant="quiet" size="sm" icon="x" onClick={list.clear}>Clear</Button>}
-      </div>
-
-      <Card flush>
+        <div className="spacer" />
+        <span className="t-sm t-muted t-num">{q.data ? `${fmt.n(q.data.meta.total)} ${list.hasFilters ? 'matching' : 'families'}` : ''}</span>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<DirectoryRow>
             rows={q.data?.rows}
@@ -75,7 +76,7 @@ export default function ParentDirectoryPage() {
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => openProfile(r.id)}
-            emptyText={list.hasFilters ? 'No parents match the current filters.' : 'No parent records yet.'}
+            emptyText={list.hasFilters ? 'No parents match the current filters.' : 'No parent records yet. Parents are added with each admission, or use “Add parent”.'}
             columns={[
               { key: 'name', label: 'Parent', render: (r) => <Person name={r.fullName} meta={r.phone} onClick={() => openProfile(r.id)} /> },
               {
@@ -161,7 +162,7 @@ function ParentProfileModal({ id, onClose, onEdit }: { id: string | null; onClos
                 {children.isLoading ? <Skeleton height={48} /> : children.error ? <ErrorState error={children.error} onRetry={children.refetch} /> : children.data?.length ? (
                   <div className="col g-2">
                     {children.data.map((c) => (
-                      <div key={c.id} className="row between wrap g-3 card" style={{ padding: '10px 14px' }}>
+                      <div key={c.id} className="card pe-child">
                         <StudentLink id={c.id} name={c.fullName} meta={`${c.admissionNo} · ${c.grade ?? ''}${c.section ?? ''} · ${c.relationship}${c.isPrimary ? ' (primary)' : ''}`} />
                         <div className="row g-3 wrap">
                           <span className="t-xs t-muted">Attendance <strong className="t-num">{fmt.pct(c.attendance)}</strong></span>
@@ -240,17 +241,23 @@ function ParentFormModal({ open, parent, onClose, onSaved }: { open: boolean; pa
         <Button onClick={onClose} disabled={save.isPending}>Cancel</Button>
         <Button variant="primary" icon="save" onClick={submit} loading={save.isPending}>{parent ? 'Save changes' : 'Create parent'}</Button>
       </>}>
-      <div className="grid g-2col g-3">
+      <div className="formsection">
+        <div className="formsection__title">Contact</div>
+        <div className="form-grid">
         <TextField label="Full name" required value={v.fullName} onChange={set('fullName')} error={errors.fullName} maxLength={120} autoFocus />
         <SelectField label="Preferred channel" value={v.preferredChannel} onChange={set('preferredChannel')}
           options={[{ value: 'whatsapp', label: 'WhatsApp' }, { value: 'sms', label: 'SMS' }, { value: 'email', label: 'Email' }, { value: 'push', label: 'App notification' }, { value: 'call', label: 'Phone call' }]} />
         <TextField label="Phone" required type="tel" value={v.phone} onChange={set('phone')} error={errors.phone} placeholder="+91 98407 22110" />
         <TextField label="Alternate phone" type="tel" value={v.altPhone} onChange={set('altPhone')} error={errors.altPhone} />
         <TextField label="Email" type="email" value={v.email} onChange={set('email')} error={errors.email} />
-        <TextField label="Occupation" value={v.occupation} onChange={set('occupation')} error={errors.occupation} maxLength={80} />
+        </div>
       </div>
-      <div className="mt-3">
-        <TextArea label="Address" rows={2} value={v.address} onChange={set('address')} error={errors.address} maxLength={300} />
+      <div className="formsection">
+        <div className="formsection__title">Profile</div>
+        <div className="form-grid">
+        <TextField label="Occupation" value={v.occupation} onChange={set('occupation')} error={errors.occupation} maxLength={80} />
+        <TextArea className="span-2" label="Address" rows={2} value={v.address} onChange={set('address')} error={errors.address} maxLength={300} />
+        </div>
       </div>
     </Modal>
   );

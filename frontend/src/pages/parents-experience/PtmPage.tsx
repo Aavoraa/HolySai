@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Badge, Button, Card, DataTable, Empty, ErrorState, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination,
-  Person, SearchInput, Segment, SelectField, Skeleton, Status, StudentLink, TextField, useConfirm,
+  Person, SearchInput, Segment, SelectField, Skeleton, Status, StudentLink, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
-import { fmt, todayKey } from '@/lib/format';
+import { cx, fmt, todayKey } from '@/lib/format';
 import { fieldErrorsOf } from './shared';
 import type { PtmSession, PtmSessionDetail, PtmSummary } from './types';
 
@@ -45,20 +45,19 @@ export default function PtmPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.refetch} /> : (
         <Grid cols="g-4col">
-          <Kpi label="Slots available" loading={summary.isLoading} value={fmt.n(s?.totalSlots)} foot={`${fmt.n(s?.sessions)} upcoming sessions`} />
-          <Kpi label="Booked" tone="teal" loading={summary.isLoading} value={fmt.n(s?.booked)} unit={`${filled}% filled`} foot={`${fmt.n((s?.totalSlots ?? 0) - (s?.booked ?? 0))} slots still free`} />
-          <Kpi label="Unbooked families" tone="amber" loading={summary.isLoading} value={fmt.n(s?.unbookedFamilies)} foot={`${fmt.n(s?.unbookedStudents)} children without any booking`} />
-          <Kpi label="Families to prioritise" tone="critical" loading={summary.isLoading} value={fmt.n(s?.prioritiseFamilies)} foot="Unbooked children flagged At Risk or Developing Risk" />
+          <Kpi icon="calendar" label="Slots available" loading={summary.isLoading} value={fmt.n(s?.totalSlots)} foot={`${fmt.n(s?.sessions)} upcoming sessions`} />
+          <Kpi icon="checkSquare" label="Booked" tone="teal" loading={summary.isLoading} value={fmt.n(s?.booked)} unit={`${filled}% filled`} foot={`${fmt.n((s?.totalSlots ?? 0) - (s?.booked ?? 0))} slots still free`} />
+          <Kpi icon="users" label="Unbooked families" tone="amber" loading={summary.isLoading} value={fmt.n(s?.unbookedFamilies)} foot={`${fmt.n(s?.unbookedStudents)} children without any booking`} />
+          <Kpi icon="flag" label="Families to prioritise" tone="critical" loading={summary.isLoading} value={fmt.n(s?.prioritiseFamilies)} foot="Unbooked children flagged At Risk or Developing Risk" />
         </Grid>
       )}
 
-      <div className="filterbar mt-4">
+      <Card flush className="mt-4">
+        <Toolbar>
         <Segment items={[{ id: 'upcoming', label: 'Upcoming' }, { id: 'past', label: 'Past' }, { id: 'all', label: 'All' }]} active={when}
           onChange={(v) => list.setFilter('when', v === 'upcoming' ? '' : v)} />
         <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search teacher or subject" />
-      </div>
-
-      <Card flush>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<PtmSession>
             rows={q.data?.rows}
@@ -67,7 +66,7 @@ export default function PtmPage() {
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => setOpenId(r.id)}
-            emptyText={when === 'upcoming' ? 'No upcoming sessions. Create one to open booking to families.' : 'No sessions match.'}
+            emptyText={when === 'upcoming' ? 'No upcoming sessions. Use “New session” to open booking to the families of a section.' : 'No sessions match.'}
             columns={[
               { key: 'teacher', label: 'Teacher', render: (r) => <Person name={r.teacher} meta={r.subjectLabel} /> },
               {
@@ -84,7 +83,7 @@ export default function PtmPage() {
               },
               {
                 key: 'a', label: '', sortable: false, className: 'num', render: (r) => (
-                  <Button size="sm" onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }}>
+                  <Button size="sm" variant={r.booked >= r.totalSlots && !r.past && can('communication.send') ? 'primary' : undefined} onClick={(e) => { e.stopPropagation(); setOpenId(r.id); }}>
                     {r.booked >= r.totalSlots && !r.past && can('communication.send') ? 'Add slots' : 'View slots'}
                   </Button>
                 ),
@@ -145,9 +144,9 @@ function SessionModal({ id, onClose }: { id: string | null; onClose: () => void 
         <div className="col g-4">
           <Meter label={`${d.booked} of ${d.totalSlots} slots booked`} value={(d.booked / d.totalSlots) * 100} right={`${d.free} free`}
             tone={d.free === 0 ? 'critical' : 'teal'} lg />
-          <div className="grid g-3col g-2">
+          <div className="pe-slots">
             {d.slots.map((sl) => (
-              <div key={sl.slotNo} className="card" style={{ padding: '8px 10px', background: sl.booking ? 'var(--surface-alt)' : undefined }}>
+              <div key={sl.slotNo} className={cx('card pe-slot', sl.booking && 'pe-slot--booked')}>
                 <div className="row between">
                   <span className="t-sm t-bold t-num">{sl.time}</span>
                   {sl.booking ? <Status value={sl.booking.status} /> : <Badge tone="success">Free</Badge>}
@@ -157,7 +156,7 @@ function SessionModal({ id, onClose }: { id: string | null; onClose: () => void 
                     <span className="t-xs t-clip">{sl.booking.studentName}</span>
                     <span className="t-micro t-muted t-clip">{sl.booking.parentName}</span>
                     {can('communication.send') && (
-                      <select className="select mt-2" style={{ height: 28 }} aria-label={`Status for slot ${sl.slotNo}`} value={sl.booking.status}
+                      <select className="select" aria-label={`Status for slot ${sl.slotNo}`} value={sl.booking.status}
                         disabled={status.isPending} onChange={(e) => setStatus(sl.booking!.id, e.target.value, sl.booking!.parentName)}>
                         {['Booked', 'Attended', 'No-show', 'Cancelled'].map((x) => <option key={x}>{x}</option>)}
                       </select>
@@ -169,8 +168,8 @@ function SessionModal({ id, onClose }: { id: string | null; onClose: () => void 
           </div>
 
           {editable && (
-            <div className="row g-2 wrap" style={{ alignItems: 'flex-end' }}>
-              <TextField label="Add slots" type="number" min={1} max={30} value={slots} onChange={(v) => { setSlots(v); setSlotError(''); }} error={slotError} style={{ maxWidth: 160 }} />
+            <div className="pe-addslots">
+              <TextField label="Add slots" type="number" min={1} max={30} value={slots} onChange={(v) => { setSlots(v); setSlotError(''); }} error={slotError} />
               <Button icon="plus" onClick={addSlots} loading={patch.isPending}>Add</Button>
               <span className="t-micro t-muted">New slots continue after {d.slots[d.slots.length - 1]?.time}.</span>
             </div>
@@ -187,7 +186,7 @@ function SessionModal({ id, onClose }: { id: string | null; onClose: () => void 
                   </div>
                 ))}
               </div>
-            ) : <Empty icon="checkSquare" title="Every family has booked" />}
+            ) : <Empty icon="checkSquare" title="Every family has booked" sub="All families in this section have a slot." />}
           </div>
         </div>
       )}
@@ -253,7 +252,9 @@ function NewSessionModal({ open, onClose, onCreated }: { open: boolean; onClose:
         <Button onClick={onClose} disabled={create.isPending}>Cancel</Button>
         <Button variant="primary" icon="calendar" onClick={submit} loading={create.isPending}>Create session</Button>
       </>}>
-      <div className="grid g-2col g-3">
+      <div className="formsection">
+        <div className="formsection__title">Who</div>
+        <div className="form-grid">
         <SelectField label="Teacher" required value={v.employeeId} onChange={set('employeeId')} error={errors.employeeId} disabled={teacherOnly}
           placeholder="Choose a teacher" options={teachers.map((t) => ({ value: t.id, label: `${t.fullName} — ${t.designation}` }))} />
         <TextField label="Subject" required value={v.subject} onChange={set('subject')} error={errors.subjectLabel} placeholder="Mathematics" maxLength={80}
@@ -261,12 +262,18 @@ function NewSessionModal({ open, onClose, onCreated }: { open: boolean; onClose:
         <SelectField label="Class" required value={v.classId} onChange={set('classId')} placeholder="Choose a class" options={classChoices} />
         <SelectField label="Section" required value={v.sectionId} onChange={set('sectionId')} error={errors.sectionId} placeholder="Choose a section"
           options={sectionOptions(v.classId)} disabled={!v.classId} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">When and where</div>
+        <div className="form-grid">
         <TextField label="Date" required type="date" min={todayKey()} value={v.sessionDate} onChange={set('sessionDate')} error={errors.sessionDate} />
         <TextField label="Starts at" required type="time" value={v.startsAt} onChange={set('startsAt')} error={errors.startsAt} />
         <SelectField label="Slot length" value={v.slotMinutes} onChange={set('slotMinutes')} options={['5', '10', '15', '20', '30'].map((x) => ({ value: x, label: `${x} minutes` }))} />
         <TextField label="Number of slots" required type="number" min={1} max={60} value={v.totalSlots} onChange={set('totalSlots')} error={errors.totalSlots}
           hint={ends ? `Last slot ends at ${ends}` : undefined} />
         <TextField label="Venue" value={v.venue} onChange={set('venue')} placeholder="Academic Block · R-204" maxLength={120} className="span-2" />
+        </div>
       </div>
     </Modal>
   );

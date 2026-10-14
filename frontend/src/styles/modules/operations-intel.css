@@ -1,0 +1,99 @@
+/* Module styles: operations-intel. Uses tokens from tokens.css only — no new colours. */
+
+/* ---- Small utilities (module-scoped) ------------------------------------ */
+.oi-minw0 { min-width: 0; }
+.oi-block { display: block; margin-top: 2px; }
+.oi-crit { color: var(--critical-text); }
+.oi-cap { text-transform: capitalize; }
+.oi-self-start { align-self: flex-start; }
+.oi-code { overflow-wrap: anywhere; }
+.oi-select-auto { width: auto; max-width: 100%; }
+.oi-form-narrow { max-width: 440px; }
+.oi-scroll-x { overflow-x: auto; }
+.oi-clip-device { display: inline-block; max-width: 320px; vertical-align: bottom; }
+.oi-tile { padding: var(--s-3) var(--s-4); }
+.oi-check { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+.oi-indent-0 { padding-left: 0; }
+.oi-indent-1 { padding-left: 8px; }
+.oi-indent-2 { padding-left: 16px; }
+.oi-indent-3 { padding-left: 24px; }
+@media (max-width: 767px) { .oi-hide-sm { display: none; } }
+
+/* Filter bars that mix segments, chips and labelled fields */
+.oi-filters { gap: var(--s-3); }
+.oi-filters--fields { align-items: flex-end; }
+.oi-filters--fields > .badge { align-self: center; }
+.oi-scope-note { align-items: flex-start; }
+.oi-scope-note > svg { flex: none; margin-top: 1px; }
+
+/* Tabs bar placed directly under the page head */
+.oi-tabsbar-top { margin-top: 0; }
+
+/* ---- Overdue / due highlighting in tables ------------------------------- */
+.table tbody tr.oi-row--overdue { background: var(--critical-tint); }
+.table tbody tr.oi-row--overdue td:first-child { box-shadow: inset 3px 0 0 var(--critical); }
+.oi-task--done { text-decoration: line-through; color: var(--text-muted); }
+
+/* ---- Notification list --------------------------------------------------- */
+.oi-notif-list { list-style: none; margin: 0; padding: 0; }
+.oi-notif {
+  position: relative; display: flex; align-items: center; gap: var(--s-2);
+  border-bottom: 1px solid var(--border-soft); padding-right: var(--s-4);
+  transition: background var(--t-fast);
+}
+.oi-notif:last-child { border-bottom: 0; }
+.oi-notif:hover { background: var(--surface-alt); }
+.oi-notif::before {
+  content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+  border-radius: 0 3px 3px 0; background: var(--neutral-line);
+}
+.oi-notif.alert-item--critical::before { background: var(--critical); }
+.oi-notif.alert-item--warning::before { background: var(--warning); }
+.oi-notif.alert-item--caution::before { background: var(--caution); }
+.oi-notif.alert-item--info::before { background: var(--brand); }
+.oi-notif.alert-item--success::before { background: var(--success); }
+.oi-notif--unread { background: var(--surface-alt); }
+.oi-notif--critical.oi-notif--unread { background: var(--critical-tint); }
+.oi-notif__main {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: flex-start; gap: 14px;
+  padding: 13px 0 13px var(--s-5); background: transparent; border: 0; color: inherit;
+  text-align: left; cursor: pointer; font: inherit;
+}
+.oi-notif__main:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; border-radius: var(--r-sm); }
+.oi-notif__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.oi-notif__title { font-size: var(--fs-sm); font-weight: 500; color: var(--text); display: flex; align-items: center; gap: var(--s-2); overflow-wrap: anywhere; }
+.oi-notif--unread .oi-notif__title { font-weight: 700; color: var(--text-strong); }
+.oi-notif__dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); flex: none; }
+.oi-notif--critical .oi-notif__dot { background: var(--critical); }
+.oi-notif__body { font-size: var(--fs-xs); color: var(--text-muted); overflow-wrap: anywhere; }
+.oi-notif__meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-top: 4px; font-size: var(--fs-xs); color: var(--text-faint); }
+.oi-notif__go { display: inline-flex; align-items: center; gap: 2px; color: var(--brand); font-weight: 600; }
+.oi-notif__read { flex: none; }
+
+/* ---- Users & roles ------------------------------------------------------- */
+.oi-rolecard { border-radius: 0; width: 100%; }
+.oi-permgroup { min-width: 0; }
+
+/* ---- Owner overview ------------------------------------------------------ */
+.oi-ov-welcome { padding: var(--s-4) var(--s-6); background: var(--surface-alt); box-shadow: none; }
+.oi-ov-section { padding: var(--s-2) var(--s-1) 0; }
+.oi-ov-govgrid { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.oi-ov-list { overflow: hidden; }
+.oi-ov-line { padding: 3px 0; }
+.oi-ov-owing { padding: 10px var(--s-5); border-bottom: 1px solid var(--border-soft); }
+.oi-ov-owing:last-child { border-bottom: 0; }
+.oi-ov-owing__fig { align-items: flex-end; gap: 4px; }
+.oi-ov-person { padding: 6px 0; }
+.oi-ov-person__mods { padding-left: 40px; }
+.oi-ov-events { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+.oi-ov-colmeter { width: 26%; }
+.oi-ov-aged { height: 14px; border-radius: 99px; overflow: hidden; background: var(--bg-sunken); flex-wrap: nowrap; gap: 0; }
+@media (max-width: 767px) {
+  .oi-ov-welcome { padding: var(--s-4); }
+  .oi-ov-person__mods { padding-left: 0; }
+  .oi-ov-colmeter { width: auto; }
+}
+
+/* ---- Report Centre ------------------------------------------------------- */
+.oi-report-tile { padding: 18px; text-align: left; width: 100%; }
+.oi-report-tile--locked { opacity: .6; cursor: not-allowed; }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
-  Badge, Banner, Button, Card, DataTable, ErrorState, FilterSelect, Flow, Icon, Modal, Page, PageHead, Pagination, SearchInput, SelectField,
-  Status, StudentLink, TextArea, TextField, useConfirm,
+  Badge, Banner, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Flow, Icon, Modal, Page, PageHead, Pagination, SearchInput, SelectField,
+  Status, StudentLink, TextArea, TextField, Toolbar, useConfirm, useToast,
 } from '@/components/ui';
 import { api } from '@/api/client';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
@@ -9,7 +9,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
-import { StudentPicker, req, useForm, type StudentPick } from './shared';
+import { FormError, FormGrid, StudentPicker, req, useForm, type StudentPick } from './shared';
 
 interface Cert {
   id: string; certificateType: string; status: string; purpose: string | null; requestedOn: string; verificationCode: string | null; issuedAt: string | null;
@@ -58,6 +58,8 @@ export default function CertificatesPage() {
   const confirm = useConfirm();
   const act = useApiMutation<{ id: string; action: string }, { status: string }>('post', (v) => `/certificates/${v.id}/decision`,
     { invalidate: ['/certificates'], body: (v) => ({ action: v.action }) });
+  const toast = useToast();
+  const print = (c: Cert) => { if (!printCertificate(c)) toast('Allow pop-ups for this site to open the print view.', 'warning'); };
   const s = sum.data;
   const st = list.filters.status;
   return (
@@ -76,15 +78,21 @@ export default function CertificatesPage() {
           { label: 'Issued with QR', meta: s ? `${s.issued} issued · verifiable` : 'Verifiable by anyone', state: st === 'Issued' ? 'active' : undefined },
         ]} />
       </Card>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or code" />
-        <FilterSelect label="Status" value={st} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Issued', 'Rejected']} />
-        <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={TYPES} />
-      </div>
-      <Card flush>
-        {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search student or code" />
+          <FilterSelect label="Status" value={st} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Issued', 'Rejected']} />
+          <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={TYPES} />
+          {list.hasFilters && <Button variant="quiet" size="sm" icon="x" onClick={list.clear}>Clear</Button>}
+        </Toolbar>
+        {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : !q.isLoading && q.data && !q.data.rows.length && !list.hasFilters ? (
+          <Empty icon="award" title="No certificate requests yet"
+            sub="Requests from parents or the office appear here. Each certificate is checked, approved by the Principal and issued with a verification code."
+            action={manage ? <Button variant="primary" icon="plus" onClick={() => setIssue(true)}>Issue a certificate</Button> : undefined} />
+        ) : (
           <DataTable<Cert>
-            rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort} emptyText="No certificate requests match."
+            rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
+            emptyText="No certificate requests match the current filters."
             columns={[
               { key: 'type', label: 'Certificate', render: (r) => <><span className="t-bold">{r.certificateType}</span>{r.purpose && <div className="t-micro t-muted">{r.purpose}</div>}</> },
               { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.studentId} name={r.studentName} meta={`${r.grade ?? ''}${r.section ?? ''} · ${r.admissionNo}`} /> },
@@ -94,13 +102,13 @@ export default function CertificatesPage() {
                 ? <span className="row g-2"><Icon name="qr" size={15} className="t-muted" /><span className="t-num t-xs">{r.verificationCode}</span></span>
                 : <span className="t-faint">—</span> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => {
-                if (r.status === 'Issued') return <Button size="sm" icon="printer" onClick={() => printCertificate(r)}>Print</Button>;
+                if (r.status === 'Issued') return <Button size="sm" icon="printer" onClick={() => print(r)}>Print</Button>;
                 if (!manage) return null;
                 if (r.status === 'Approved') return <Button size="sm" variant="primary" icon="printer" loading={act.isPending && act.variables?.id === r.id} onClick={async () => {
                   if (!(await confirm({ title: `Issue ${r.certificateType.toLowerCase()}?`, body: `Issuing ${r.verificationCode} for ${r.studentName} makes it verifiable and opens the print view.`, confirmLabel: 'Issue and print' }))) return;
                   try {
                     await act.mutateAsync({ id: r.id, action: 'issue' });
-                    printCertificate({ ...r, issuedAt: new Date().toISOString() });
+                    print({ ...r, issuedAt: new Date().toISOString() });
                   } catch { /* error toast already shown */ }
                 }}>Issue &amp; print</Button>;
                 if (r.status === 'Submitted' || r.status === 'Under Review') return <Button size="sm" variant="primary" onClick={() => setDecide(r)}>Review</Button>;
@@ -125,7 +133,7 @@ function ChecksList({ studentId, type }: { studentId: string; type: string }) {
   return (
     <div className="col g-2">
       {checks.data!.map((c) => (
-        <div key={c.key} className="row between card card--tint" style={{ padding: '9px 12px' }}>
+        <div key={c.key} className="row between wrap g-2 card card--tint oi-ops-tile">
           <span className="t-sm">{c.label}{!c.blocking && <span className="t-micro t-muted"> · advisory for this type</span>}</span>
           <Badge tone={c.passed ? 'success' : c.blocking ? 'critical' : 'warning'} icon={c.passed ? 'check' : undefined}>{c.passed ? 'Passed' : c.detail}</Badge>
         </div>
@@ -151,10 +159,10 @@ function IssueModal({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title="Issue a certificate" size="wide" busy={save.isPending}
       foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" disabled={blocking} loading={save.isPending} onClick={submit}>Send for approval</Button></>}>
-      <div className="grid g-2col g-3">
+      <FormGrid>
         <SelectField label="Certificate type" required value={v.certificateType} onChange={(x) => f.set('certificateType', x)} options={TYPES} placeholder="Choose…" error={f.errors.certificateType} />
         <StudentPicker required value={v.student} onChange={(x) => f.set('student', x)} error={f.errors.student || f.errors.studentId} />
-      </div>
+      </FormGrid>
       <div className="mt-3"><TextField label="Purpose" value={v.purpose} maxLength={200} onChange={(x) => f.set('purpose', x)} placeholder="e.g. Passport application" /></div>
       {v.student && v.certificateType && (
         <div className="mt-4">
@@ -163,6 +171,7 @@ function IssueModal({ onClose }: { onClose: () => void }) {
         </div>
       )}
       <div className="mt-4"><Banner tone="warning" icon="lock">A certificate cannot be issued while a check is failing. Finance can waive a fee check with a recorded reason.</Banner></div>
+      <FormError error={save.error} />
     </Modal>
   );
 }
@@ -189,6 +198,7 @@ function DecisionModal({ cert, onClose }: { cert: Cert; onClose: () => void }) {
       {blocking && <div className="mt-3"><Banner tone="critical" icon="lock">Approval is blocked until the failing checks are resolved.</Banner></div>}
       <div className="mt-4"><TextArea label="Note (required to reject)" rows={2} maxLength={300} value={note} onChange={(x) => { setNote(x); setErr(''); }} error={err} /></div>
       <p className="t-xs t-muted mt-2">Approving assigns the QR verification code. The certificate becomes verifiable once issued.</p>
+      <FormError error={act.error} />
     </Modal>
   );
 }

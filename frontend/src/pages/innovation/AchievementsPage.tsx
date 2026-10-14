@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { Badge, Card, DataTable, ErrorState, FilterSelect, Grid, Icon, Kpi, Page, PageHead, Pagination, SearchInput, StudentLink } from '@/components/ui';
+import { Badge, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Icon, Kpi, Page, PageHead, Pagination, SearchInput, StudentLink, Toolbar } from '@/components/ui';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
@@ -24,20 +24,22 @@ export default function AchievementsPage() {
     <Page>
       <PageHead title="Achievements" sub="Verified recognition of Innovation Lab students, recorded on the student profile and in the portfolio." />
       <Grid cols="g-4col">
-        <Kpi label="Achievements this year" value={fmt.n(s?.thisYear)} tone="teal" delta={delta} deltaUnit="% vs last year" loading={sum.isLoading} />
-        <Kpi label="Competition & innovation" value={fmt.n(s?.competition)} tone="amber" loading={sum.isLoading} onClick={() => list.setFilter('type', 'Competition')} />
-        <Kpi label="Academic honours" value={fmt.n(s?.academic)} tone="info" loading={sum.isLoading} onClick={() => list.setFilter('type', 'Academic')} />
-        <Kpi label="Sport, arts and other" value={fmt.n(s?.other)} loading={sum.isLoading} />
+        <Kpi icon="award" label="Achievements this year" value={fmt.n(s?.thisYear)} tone="teal" delta={delta} deltaUnit="% vs last year" loading={sum.isLoading} />
+        <Kpi icon="rocket" label="Competition & innovation" value={fmt.n(s?.competition)} tone="amber" loading={sum.isLoading} onClick={() => list.setFilter('type', 'Competition')} />
+        <Kpi icon="graduation" label="Academic honours" value={fmt.n(s?.academic)} tone="info" loading={sum.isLoading} onClick={() => list.setFilter('type', 'Academic')} />
+        <Kpi icon="star" label="Sport, arts and other" value={fmt.n(s?.other)} loading={sum.isLoading} />
       </Grid>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search achievement or student" />
-        <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={types.data ?? []} />
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search achievement or student" />
+          <FilterSelect label="Type" value={list.filters.type} onChange={(v) => list.setFilter('type', v)} options={types.data ?? []} />
+          {list.hasFilters && <Button size="sm" variant="quiet" icon="x" onClick={list.clear}>Clear filters</Button>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<Row>
             rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
-            onRowClick={(r) => navigate(`/student-360/${r.studentId}`)} emptyText="No verified achievements match."
+            onRowClick={(r) => navigate(`/student-360/${r.studentId}`)}
+            emptyText={list.hasFilters ? 'No achievements match these filters.' : 'No achievements recorded yet. They are added when a project completes or from Student 360.'}
             columns={[
               { key: 'title', label: 'Achievement', render: (r) => <span className="row g-3"><Icon name="award" size={16} className="t-warning" />
                 <span><span className="t-bold">{r.title}</span>{r.projectCode && <div className="t-micro"><Link to={`/projects/${r.projectId}`} className="t-info" onClick={(e) => e.stopPropagation()}>Project {r.projectCode}</Link></div>}</span></span> },

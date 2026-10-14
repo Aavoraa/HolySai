@@ -7,7 +7,7 @@ import {
   Banner, Button, Card, DataTable, ErrorState, Grid, Kpi, Meter, Modal, Page, PageHead, SelectField, TextField,
 } from '@/components/ui';
 import type { BudgetRow, Budgets } from './types';
-import { fieldErrors, Money, useFinanceLookups } from './shared';
+import { fieldErrors, Money, TotalsBar, useFinanceLookups } from './shared';
 
 export default function BudgetsPage() {
   const { can } = useAuth();
@@ -17,25 +17,35 @@ export default function BudgetsPage() {
   const k = q.data?.kpis;
   const spentPct = k?.allocated ? Math.round((k.spent / k.allocated) * 100) : 0;
   const canEdit = can('finance.manage') && !!campusParam.campusId;
+  const rows = q.data?.rows ?? [];
+  const sum = (pick: (r: BudgetRow) => number) => rows.reduce((acc, r) => acc + (pick(r) || 0), 0);
+  const totalVariance = sum((r) => r.variance);
 
   return (
     <Page>
       <PageHead title="Budgets" sub="Budget against actual, by department, with the year-end position projected."
         actions={canEdit && <Button variant="primary" icon="plus" onClick={() => setEditing('new')}>Add budget line</Button>} />
       <Grid cols="g-4col">
-        <Kpi label="Annual budget" value={fmt.money(k?.allocated, { compact: true })} loading={q.isLoading} foot={campus ? campus.shortName : 'All campuses'} />
-        <Kpi label="Spent to date" value={fmt.money(k?.spent, { compact: true })} tone="teal" loading={q.isLoading}
+        <Kpi icon="wallet" label="Annual budget" value={fmt.money(k?.allocated, { compact: true })} loading={q.isLoading} foot={campus ? campus.shortName : 'All campuses'} />
+        <Kpi icon="pieChart" label="Spent to date" value={fmt.money(k?.spent, { compact: true })} tone="teal" loading={q.isLoading}
           foot={k ? `${spentPct}% of budget, ${k.yearElapsedPct}% of year` : undefined} />
-        <Kpi label="Committed" value={fmt.money(k?.committed, { compact: true })} tone="amber" loading={q.isLoading} foot="Expenses awaiting approval" />
-        <Kpi label="Projected variance" loading={q.isLoading}
+        <Kpi icon="clock" label="Committed" value={fmt.money(k?.committed, { compact: true })} tone="amber" loading={q.isLoading} foot="Expenses awaiting approval" />
+        <Kpi icon="trending" label="Projected variance" loading={q.isLoading}
           value={k ? `${k.projectedVariance > 0 ? '+' : ''}${fmt.money(k.projectedVariance, { compact: true })}` : '—'}
           tone={k && k.projectedVariance > 0 ? 'critical' : 'teal'}
           foot={k?.overBudget ? `Over budget — ${k.overBudget.category}` : 'Within budget at the current run rate'} />
       </Grid>
       <div className="mt-4">
-        <Card title="Budget against actual by department" sub="Actual = approved and paid expenses this academic year; projection = actual ÷ share of year elapsed" flush>
+        <Card icon="wallet" title="Budget against actual by department" sub="Actual = approved and paid expenses this academic year; projection = actual ÷ share of year elapsed" flush
+          foot={rows.length ? <TotalsBar items={[
+            { label: 'Total budget', value: fmt.money(sum((r) => r.allocated), { compact: true }) },
+            { label: 'Actual', value: fmt.money(sum((r) => r.actual), { compact: true }) },
+            { label: 'Committed', value: fmt.money(sum((r) => r.committed), { compact: true }) },
+            { label: 'Projected', value: fmt.money(sum((r) => r.projected), { compact: true }) },
+            { label: 'Variance', value: `${totalVariance > 0 ? '+' : ''}${fmt.money(totalVariance, { compact: true })}`, tone: totalVariance > 0 ? 'critical' : 'success' },
+          ]} /> : undefined}>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
-            <DataTable rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.category} emptyText="No budgets have been set for this year."
+            <DataTable rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.category} emptyText={canEdit ? 'No budgets have been set for this year. Add a budget line to start tracking spend.' : 'No budgets have been set for this year.'}
               columns={[
                 { key: 'dept', label: 'Department', render: (r) => <span className="t-bold">{r.category}</span> },
                 { key: 'budget', label: 'Budget', className: 'num', render: (r) => <Money v={r.allocated} compact /> },
@@ -49,7 +59,7 @@ export default function BudgetsPage() {
                 { key: 'committed', label: 'Committed', className: 'num', render: (r) => (r.committed ? <Money v={r.committed} compact /> : <span className="t-faint">—</span>) },
                 { key: 'projected', label: 'Projected', className: 'num', render: (r) => <><Money v={r.projected} compact />{r.allocated > 0 && <div className={`t-micro ${r.variance > 0 ? 't-critical' : 't-muted'}`}>{r.variance > 0 ? '+' : ''}{fmt.money(r.variance, { compact: true })}</div>}</> },
                 { key: 'owner', label: 'Owner', render: (r) => r.owner ?? '—' },
-                { key: 'a', label: '', className: 'num', render: (r) => canEdit && r.id && <Button size="sm" onClick={() => setEditing(r)}>Edit</Button> },
+                { key: 'a', label: '', className: 'num', render: (r) => canEdit && r.id && <Button size="sm" icon="edit" onClick={() => setEditing(r)}>Edit</Button> },
               ]} />
           )}
         </Card>

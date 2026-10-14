@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Badge, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Modal, Page, PageHead, Pagination, Person, SearchInput, TextField, errorMessage, useToast,
+  Badge, Button, Card, DataTable, Dl, ErrorState, FilterSelect, Modal, Page, PageHead, Pagination, Person, SearchInput, TextField, Toolbar, errorMessage, useToast,
 } from '@/components/ui';
 import { api } from '@/api/client';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
@@ -65,23 +65,24 @@ export default function AuditPage() {
     <Page>
       <PageHead title="Audit Trail" sub="Every consequential action, who took it and against what. Restricted records log reads as well as writes."
         actions={<Button icon="download" loading={exporting} disabled={!q.data?.meta.total} onClick={exportCsv}>Export</Button>} />
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search user, action or record" />
-        <FilterSelect label="Module" allLabel="All modules" value={f.module} onChange={(v) => list.setFilter('module', v)}
-          options={(facets.data?.modules ?? []).map((m) => ({ value: m.module, label: `${capitalize(m.module.replace(/_/g, ' '))} (${fmt.n(m.n)})` }))} />
-        <FilterSelect label="Action" allLabel="All actions" value={f.action} onChange={(v) => list.setFilter('action', v)}
-          options={(facets.data?.actions ?? []).map((a) => ({ value: a, label: capitalize(a.replace(/_/g, ' ')) }))} />
-        <FilterSelect label="Period" allLabel="All time" value={f.period} onChange={(v) => list.setFilter('period', v)}
-          options={[{ value: 'today', label: 'Today' }, { value: '7d', label: 'Last 7 days' }, { value: '30d', label: 'Last 30 days' },
-            { value: 'year', label: 'This academic year' }, { value: 'custom', label: 'Custom range…' }]} />
-        {f.period === 'custom' && <>
-          <TextField label="From" type="date" value={f.from} max={f.to || todayIso()} onChange={(v) => list.setFilter('from', v)} style={{ width: 150 }} />
-          <TextField label="To" type="date" value={f.to} min={f.from} max={todayIso()} onChange={(v) => list.setFilter('to', v)} style={{ width: 150 }} />
-        </>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{q.data ? `${fmt.n(q.data.meta.total)} entries` : ''}</span>
-      </div>
       <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search user, action or record" />
+          <FilterSelect label="Module" allLabel="All modules" value={f.module} onChange={(v) => list.setFilter('module', v)}
+            options={(facets.data?.modules ?? []).map((m) => ({ value: m.module, label: `${capitalize(m.module.replace(/_/g, ' '))} (${fmt.n(m.n)})` }))} />
+          <FilterSelect label="Action" allLabel="All actions" value={f.action} onChange={(v) => list.setFilter('action', v)}
+            options={(facets.data?.actions ?? []).map((a) => ({ value: a, label: capitalize(a.replace(/_/g, ' ')) }))} />
+          <FilterSelect label="Period" allLabel="All time" value={f.period} onChange={(v) => list.setFilter('period', v)}
+            options={[{ value: 'today', label: 'Today' }, { value: '7d', label: 'Last 7 days' }, { value: '30d', label: 'Last 30 days' },
+              { value: 'year', label: 'This academic year' }, { value: 'custom', label: 'Custom range…' }]} />
+          {f.period === 'custom' && <>
+            <TextField label="From" type="date" value={f.from} max={f.to || todayIso()} onChange={(v) => list.setFilter('from', v)} style={{ width: 150 }} />
+            <TextField label="To" type="date" value={f.to} min={f.from} max={todayIso()} onChange={(v) => list.setFilter('to', v)} style={{ width: 150 }} />
+          </>}
+          {list.hasFilters && <Button variant="quiet" size="sm" icon="x" onClick={list.clear}>Clear</Button>}
+          <span className="spacer" />
+          <span className="t-sm t-muted t-num">{q.data ? `${fmt.n(q.data.meta.total)} entries` : ''}</span>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
           <DataTable<AuditRow>
             rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => String(r.id)} onRowClick={setOpen} emptyText="No audit entries match these filters."

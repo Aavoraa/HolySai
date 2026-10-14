@@ -6,15 +6,15 @@ import {
 } from '@/components/ui';
 
 const SWATCHES: [string, string, string][] = [
-  ['Holy Sai Magenta', '#990033', 'Primary brand color, primary actions, core brand identity'],
-  ['Deep Magenta', '#B30042', 'Vibrant accent, hover highlights, interactive elements'],
-  ['Warm Yellow (Gold)', '#FEDB6E', 'Secondary accent, badges, active indicators & borders'],
-  ['Charcoal Black', '#171717', 'Headings, primary typography, high-contrast surfaces'],
-  ['White Surface', '#FFFFFF', 'Cards, tables, panels and pristine containers'],
-  ['Deep Royal Wine', '#3E0013', 'Sidebar and dark application shell surfaces'],
-  ['Warm Luxury Ground', '#F8F5F2', 'Application ground and soothing background canvas'],
-  ['Muted Charcoal', '#666666', 'Body text labels, secondary metadata and subtitles'],
-  ['Warm Border', '#E5DDD6', 'Dividers, subtle lines and card borders'],
+  ['Holy Sai Magenta', '--brand', 'Primary brand color, primary actions, core brand identity'],
+  ['Deep Magenta', '--brand-hover', 'Vibrant accent, hover highlights, interactive elements'],
+  ['Warm Yellow (Gold)', '--accent', 'Secondary accent, badges, active indicators & borders'],
+  ['Charcoal Black', '--charcoal', 'Headings, primary typography, high-contrast surfaces'],
+  ['Surface', '--surface', 'Cards, tables, panels and pristine containers'],
+  ['Deep Royal Wine', '--magenta-deep', 'Sidebar and dark application shell surfaces'],
+  ['Warm Luxury Ground', '--bg', 'Application ground and soothing background canvas'],
+  ['Muted Charcoal', '--text-muted', 'Body text labels, secondary metadata and subtitles'],
+  ['Warm Border', '--border', 'Dividers, subtle lines and card borders'],
 ];
 const STATUSES: [string, string, string][] = [
   ['Critical', 'critical', 'Immediate attention required.'],
@@ -48,29 +48,29 @@ export default function DesignSystemPage() {
         sub="Official Holy Sai International School Brand Guidelines: Holy Sai Magenta, Deep Magenta, Warm Yellow/Gold, Charcoal Black, Cinzel Display and Montserrat UI. Every sample below is the live component used by the application."
       />
       <Card flush>
-        <div className="row between wrap g-4" style={{ padding: 24, background: 'linear-gradient(135deg, #3E0013, #730022)', color: '#fff', borderRadius: 'var(--r-lg)' }}>
+        <div className="row between wrap g-4" style={{ padding: 24, background: 'var(--magenta-deep)', color: 'var(--text-on-navy)', borderRadius: 'var(--r-lg)' }}>
           <div className="row g-4">
             <Lotus size={60} />
             <div>
-              <div className="serif" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.02em', color: '#fff' }}>Holy Sai International School</div>
+              <div className="serif" style={{ fontSize: 24, fontWeight: 700, letterSpacing: '.02em', color: 'var(--text-on-navy)' }}>Holy Sai International School</div>
               <div style={{ fontSize: 12, color: 'var(--gold)', textTransform: 'uppercase', letterSpacing: '.14em', marginTop: 2 }}>Brand Identity &amp; Digital System</div>
             </div>
           </div>
           <div className="col end">
             <div className="script-font" style={{ fontSize: 22, color: 'var(--gold)' }}>Growing Minds. Inspiring Futures.</div>
-            <div className="t-micro" style={{ color: '#FAD4DF', letterSpacing: '.1em', textTransform: 'uppercase' }}>A Brighter Tomorrow Begins Here</div>
+            <div className="t-micro" style={{ color: 'var(--text-on-navy)', letterSpacing: '.1em', textTransform: 'uppercase' }}>A Brighter Tomorrow Begins Here</div>
           </div>
         </div>
       </Card>
 
       <div className="mt-4">
-        <Card title="Brand Color Palette" sub="The official palette reflecting confidence, positivity and excellence">
+        <Card icon="grid" title="Brand Color Palette" sub="Live design tokens from tokens.css — each swatch follows the current light or dark theme">
           <div className="grid g-3col g-4">
-            {SWATCHES.map(([n, hex, use]) => (
-              <div className="card card--tint" style={{ padding: 12 }} key={hex}>
-                <div className="swatch-tile" style={{ background: hex, ...(hex === '#FFFFFF' ? { border: '1px solid #ddd' } : {}) }} />
+            {SWATCHES.map(([n, token, use]) => (
+              <div className="card card--tint" style={{ padding: 12 }} key={token}>
+                <div className="swatch-tile" style={{ background: `var(${token})` }} />
                 <div className="t-sm t-bold mt-2">{n}</div>
-                <div className="t-micro t-muted t-num">{hex}</div>
+                <div className="t-micro t-muted t-mono">var({token})</div>
                 <div className="t-micro t-muted mt-1">{use}</div>
               </div>
             ))}
@@ -79,7 +79,7 @@ export default function DesignSystemPage() {
       </div>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Typography System" sub="Cinzel for Headings & Display, Montserrat for Body & Supporting UI">
+        <Card icon="grid" title="Typography System" sub="Cinzel for Headings & Display, Montserrat for Body & Supporting UI">
           <div className="col g-4">
             <div><div className="eyebrow">Primary Typeface · Cinzel Display 32</div><div className="display mt-1">Holy Sai International</div></div>
             <div><div className="eyebrow">Heading 1 · Cinzel 24</div><div className="h1 mt-1">Student Intelligence 360</div></div>
@@ -89,13 +89,13 @@ export default function DesignSystemPage() {
             <div><div className="eyebrow">Data Figures · Montserrat Tabular</div><div className="t-num mt-1" style={{ fontSize: 22, fontWeight: 700, color: 'var(--magenta)' }}>1,284 Students · ₹17.96L · 98.4%</div></div>
           </div>
         </Card>
-        <Card title="Brand Mood & Values" sub="The feeling we create in everything we do">
+        <Card icon="grid" title="Brand Mood & Values" sub="The feeling we create in everything we do">
           <div className="col g-4">
             <div className="grid g-2col g-3">
               {VALUES.map(([ic, t, d]) => (
                 <div className="card card--tint" style={{ padding: 14 }} key={t}>
                   <div className="row g-2">
-                    <span className="avatar avatar--sm" style={{ background: 'var(--magenta)', color: '#fff' }}><Icon name={ic} size={15} /></span>
+                    <span className="avatar avatar--sm" style={{ background: 'var(--magenta)', color: 'var(--text-invert)' }}><Icon name={ic} size={15} /></span>
                     <span className="t-sm t-bold" style={{ color: 'var(--magenta)' }}>{t}</span>
                   </div>
                   <div className="t-micro t-muted mt-2">{d}</div>
@@ -114,7 +114,7 @@ export default function DesignSystemPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Buttons and controls">
+        <Card icon="grid" title="Buttons and controls">
           <div className="col g-5">
             <div>
               <div className="eyebrow mb-3">Buttons</div>
@@ -173,7 +173,7 @@ export default function DesignSystemPage() {
       </div>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Data visualisation" sub="Every chart is inline SVG — no library, works offline, scales to any container">
+        <Card icon="grid" title="Data visualisation" sub="Every chart is inline SVG — no library, works offline, scales to any container">
           <div className="col g-5">
             <Chart svg={charts.line({ labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'], series: [{ name: 'Attendance', values: [93, 94, 92, 94, 91], color: 'var(--teal)' }], yMin: 85, yMax: 100, height: 160 })} />
             <Chart svg={charts.bar({ labels: ['G3', 'G4', 'G5', 'G6'], series: [{ name: 'Students', values: [96, 98, 96, 99], color: 'var(--navy)' }], height: 150 })} />
@@ -184,9 +184,9 @@ export default function DesignSystemPage() {
             </div>
           </div>
         </Card>
-        <Card title="Cards, lists and feedback">
+        <Card icon="wallet" title="Cards, lists and feedback">
           <div className="col g-4">
-            <Kpi label="KPI card" value="1,284" unit="students" tone="teal" delta={3.1} foot="With sparkline" spark={[8, 11, 9, 14, 12, 16]} />
+            <Kpi icon="activity" label="KPI card" value="1,284" unit="students" tone="teal" delta={3.1} foot="With sparkline" spark={[8, 11, 9, 14, 12, 16]} />
             <AlertItem tone="critical" icon="alert" title="Attention row" meta="Used in Command Center and notifications" onClick={() => toast('Attention rows open the related screen', 'info')} />
             <Banner tone="warning" icon="info">Banner — context that applies to the whole screen.</Banner>
             <AiNotice />
@@ -199,7 +199,7 @@ export default function DesignSystemPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Responsive behaviour">
+        <Card icon="grid" title="Responsive behaviour">
           <div className="grid g-3col g-4">
             {[
               ['Desktop', '1200px and above', 'Fixed left sidebar, top header, multi-column dashboards, wide data tables.', 'grid'],
@@ -218,7 +218,7 @@ export default function DesignSystemPage() {
       </div>
 
       <div className="mt-4">
-        <Card title="Icon set" sub={`One stroke-based family at 24px (${iconNames.length} icons). No emoji is used as an interface icon anywhere.`}>
+        <Card icon="grid" title="Icon set" sub={`One stroke-based family at 24px (${iconNames.length} icons). No emoji is used as an interface icon anywhere.`}>
           <div className="row g-4 wrap">
             {iconNames.map((n) => (
               <span className="col center" style={{ width: 62, alignItems: 'center', gap: 5 }} title={n} key={n}>

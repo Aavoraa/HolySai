@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  Avatar, Badge, Button, Card, Chips, DataTable, Empty, ErrorState, FilterSelect, Page, PageHead, Pagination,
-  SearchInput, Segment, Skeleton, StatStrip, Status, StudentLink, TextArea, useConfirm,
+  Avatar, Badge, Button, Card, Chips, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Page, PageHead, Pagination,
+  SearchInput, Segment, Skeleton, Status, StudentLink, TextArea, Toolbar, useConfirm,
 } from '@/components/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
@@ -58,18 +58,21 @@ export default function ParentCommunicationPage() {
         </>}
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.refetch} /> : (
-        <StatStrip items={[
-          { label: 'Awaiting reply', value: summary.isLoading ? '…' : fmt.n(s?.unanswered) },
-          { label: 'Over 24 hours', value: summary.isLoading ? '…' : <span className={s?.unansweredOver24h ? 't-critical' : ''}>{fmt.n(s?.unansweredOver24h)}</span> },
-          { label: 'Oldest waiting', value: summary.isLoading ? '…' : s?.unanswered ? ageLabel(s.oldestHours) : '—' },
-          { label: 'Interactions today', value: summary.isLoading ? '…' : fmt.n(s?.today) },
-          { label: 'Last 30 days', value: summary.isLoading ? '…' : fmt.n(s?.last30Days) },
-          { label: 'Unread conversations', value: summary.isLoading ? '…' : fmt.n(s?.unreadThreads) },
-        ]} />
+        <Grid cols="g-4col">
+          <Kpi icon="message" label="Awaiting reply" loading={summary.isLoading} value={fmt.n(s?.unanswered)}
+            tone={s?.unansweredOver24h ? 'critical' : s?.unanswered ? 'amber' : 'teal'}
+            foot={s?.unansweredOver24h ? `${fmt.n(s.unansweredOver24h)} waiting over 24 hours` : 'None waiting over 24 hours'}
+            onClick={() => { setSide('queue'); select(null); }} />
+          <Kpi icon="clock" label="Oldest waiting" loading={summary.isLoading} value={s?.unanswered ? ageLabel(s.oldestHours) : '—'}
+            tone={(s?.oldestHours ?? 0) >= 24 ? 'critical' : undefined} foot={s?.unanswered ? 'Since the family wrote' : 'Queue is clear'} />
+          <Kpi icon="bell" label="Unread conversations" loading={summary.isLoading} value={fmt.n(s?.unreadThreads)} tone={s?.unreadThreads ? 'info' : undefined}
+            foot="Parent app threads" onClick={() => { setSide('threads'); select(null); }} />
+          <Kpi icon="activity" label="Interactions today" loading={summary.isLoading} value={fmt.n(s?.today)} foot={`${fmt.n(s?.last30Days)} in the last 30 days`} />
+        </Grid>
       )}
 
       <div className="grid g-side mt-4">
-        <Card
+        <Card icon="grid"
           flush
           title="Open threads"
           sub={s ? `${fmt.n(s.unansweredOver24h)} unanswered over 24 hours` : ' '}
@@ -79,42 +82,53 @@ export default function ParentCommunicationPage() {
           {side === 'queue' ? (
             queue.error ? <ErrorState error={queue.error} onRetry={queue.refetch} />
               : queue.isLoading ? <div className="card__body col g-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={44} />)}</div>
-                : !queue.data?.rows.length ? <Empty icon="checkSquare" title="Nothing waiting" sub="Every parent message has been answered." />
-                  : <div>{queue.data.rows.map((c) => (
-                    <button key={c.id} type="button"
-                      className={`alert-item alert-item--${(c.ageHours ?? 0) >= 24 ? 'critical' : (c.ageHours ?? 0) >= 12 ? 'warning' : 'info'}`}
-                      style={pane?.kind === 'item' && pane.id === c.id ? { background: 'var(--surface-alt)' } : undefined}
-                      aria-current={pane?.kind === 'item' && pane.id === c.id}
-                      onClick={() => select({ kind: 'item', id: c.id })}>
-                      <Avatar name={c.counterpart} size="sm" />
-                      <span className="grow" style={{ minWidth: 0 }}>
-                        <span className="alert-item__title" style={{ display: 'block' }}>{c.counterpart}</span>
-                        <span className="alert-item__meta t-clip" style={{ display: 'block' }}>{c.channel} · {c.subject}{c.studentName ? ` · ${c.studentName}${c.grade ? ` (${c.grade.replace('Grade ', '')})` : ''}` : ''}</span>
-                      </span>
-                      <span className="t-micro t-muted none">{ageLabel(c.ageHours)}</span>
-                    </button>
-                  ))}</div>
+                : !queue.data?.rows.length ? <Empty icon="checkSquare" title="Nothing waiting" sub="Every parent message has been answered. New messages from families land here, oldest first." />
+                  : <div className="pe-inbox">{queue.data.rows.map((c) => {
+                    const active = pane?.kind === 'item' && pane.id === c.id;
+                    const age = c.ageHours ?? 0;
+                    return (
+                      <button key={c.id} type="button"
+                        className={cx('alert-item pe-inbox__item', `alert-item--${age >= 24 ? 'critical' : age >= 12 ? 'warning' : 'info'}`, active && 'is-active')}
+                        aria-current={active || undefined}
+                        onClick={() => select({ kind: 'item', id: c.id })}>
+                        <Avatar name={c.counterpart} size="sm" />
+                        <span className="pe-inbox__main">
+                          <span className="alert-item__title pe-inbox__title"><span>{c.counterpart}</span></span>
+                          <span className="alert-item__meta pe-inbox__meta">{c.channel} · {c.subject}{c.studentName ? ` · ${c.studentName}${c.grade ? ` (${c.grade.replace('Grade ', '')})` : ''}` : ''}</span>
+                        </span>
+                        <span className="pe-inbox__side">
+                          <span>{ageLabel(c.ageHours)}</span>
+                          {age >= 24 && <Badge tone="critical">Over 24 h</Badge>}
+                        </span>
+                      </button>
+                    );
+                  })}</div>
           ) : (
             threads.error ? <ErrorState error={threads.error} onRetry={threads.refetch} />
               : threads.isLoading ? <div className="card__body col g-2">{[0, 1, 2].map((i) => <Skeleton key={i} height={44} />)}</div>
-                : !threads.data?.rows.length ? <Empty icon="message" title="No app conversations" sub="Messages parents send from the app appear here." />
-                  : <div>{threads.data.rows.map((t) => (
-                    <button key={t.id} type="button"
-                      className={`alert-item alert-item--${t.status === 'Closed' ? 'success' : t.awaitingReply ? 'warning' : 'info'}`}
-                      style={pane?.kind === 'thread' && pane.id === t.id ? { background: 'var(--surface-alt)' } : undefined}
-                      aria-current={pane?.kind === 'thread' && pane.id === t.id}
-                      onClick={() => select({ kind: 'thread', id: t.id })}>
-                      <Avatar name={t.parentName ?? t.subject} size="sm" />
-                      <span className="grow" style={{ minWidth: 0 }}>
-                        <span className="alert-item__title" style={{ display: 'block' }}>
-                          {t.parentName ?? 'Conversation'}
-                          {t.unread && <span className="dot dot--critical" style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 6 }} aria-label="Unread" />}
+                : !threads.data?.rows.length ? <Empty icon="message" title="No app conversations" sub="Messages parents send from the parent app appear here as conversations you can reply to." />
+                  : <div className="pe-inbox">{threads.data.rows.map((t) => {
+                    const active = pane?.kind === 'thread' && pane.id === t.id;
+                    return (
+                      <button key={t.id} type="button"
+                        className={cx('alert-item pe-inbox__item', `alert-item--${t.status === 'Closed' ? 'success' : t.awaitingReply ? 'warning' : 'info'}`, t.unread && 'pe-inbox__item--unread', active && 'is-active')}
+                        aria-current={active || undefined}
+                        onClick={() => select({ kind: 'thread', id: t.id })}>
+                        <Avatar name={t.parentName ?? t.subject} size="sm" />
+                        <span className="pe-inbox__main">
+                          <span className="alert-item__title pe-inbox__title">
+                            <span>{t.parentName ?? 'Conversation'}</span>
+                            {t.unread && <span className="dot dot--critical" role="img" aria-label="Unread" />}
+                          </span>
+                          <span className="alert-item__meta pe-inbox__meta">{t.subject}{t.studentName ? ` · ${t.studentName}` : ''}</span>
                         </span>
-                        <span className="alert-item__meta t-clip" style={{ display: 'block' }}>{t.subject}{t.studentName ? ` · ${t.studentName}` : ''}</span>
-                      </span>
-                      <span className="t-micro t-muted none">{fmt.relative(t.lastMessageAt)}</span>
-                    </button>
-                  ))}</div>
+                        <span className="pe-inbox__side">
+                          <span>{fmt.relative(t.lastMessageAt)}</span>
+                          {t.status === 'Closed' ? <Badge tone="neutral">Closed</Badge> : t.awaitingReply ? <Badge tone="warning">Awaiting reply</Badge> : null}
+                        </span>
+                      </button>
+                    );
+                  })}</div>
           )}
         </Card>
 
@@ -123,13 +137,13 @@ export default function ParentCommunicationPage() {
             : <Card><Empty icon="message" title="Choose a conversation" sub="Select an unanswered message or an app conversation to read and reply." /></Card>}
       </div>
 
-      <Card flush title="Communication history" sub="WhatsApp, email, SMS, calls, notes and app messages in one record" className="mt-4">
-        <div className="toolbar">
+      <Card icon="bell" flush title="Communication history" sub="WhatsApp, email, SMS, calls, notes and app messages in one record" className="mt-4">
+        <Toolbar>
           <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search subject, family or message" />
           <FilterSelect label="Direction" value={list.filters.direction} onChange={(v) => list.setFilter('direction', v)}
             options={[{ value: 'inbound', label: 'From families' }, { value: 'outbound', label: 'From school' }, { value: 'internal', label: 'Internal notes' }]} />
-        </div>
-        <div style={{ padding: '0 var(--s-4) var(--s-3)' }}>
+        </Toolbar>
+        <div className="pe-chips mt-3">
           <Chips items={[{ id: '', label: 'All channels' }, ...channels.map((c) => ({ id: c, label: c, count: s?.byChannel[c] }))]}
             active={list.filters.channel} onChange={(v) => list.setFilter('channel', v)} />
         </div>
@@ -140,7 +154,7 @@ export default function ParentCommunicationPage() {
             rowKey={(r) => r.id}
             sort={list.sort}
             onSort={list.setSort}
-            emptyText="No interactions match the current filters."
+            emptyText={list.hasFilters ? 'No interactions match the current filters.' : 'No interactions recorded yet. Messages, calls and notes with families appear here.'}
             columns={[
               { key: 'channel', label: 'Channel', render: (r) => <ChannelBadge channel={r.channel} /> },
               {
@@ -153,7 +167,7 @@ export default function ParentCommunicationPage() {
               },
               {
                 key: 'subject', label: 'Subject', render: (r) => (
-                  <span className="col" style={{ maxWidth: 360 }}>
+                  <span className="pe-subject">
                     <span className="t-sm">{r.direction === 'inbound' ? '← ' : r.direction === 'outbound' ? '→ ' : ''}{r.subject}</span>
                     {r.body && <span className="t-micro t-muted t-clip">{r.body}</span>}
                   </span>
@@ -242,14 +256,13 @@ function ItemPane({ id, onOpenThread, onDone }: { id: string; onOpenThread: (thr
       </>}
     >
       {historyQ.isLoading ? <Skeleton height={180} /> : historyQ.error ? <ErrorState error={historyQ.error} onRetry={historyQ.refetch} /> : (
-        <div className="chat" style={{ maxHeight: 380, overflowY: 'auto', paddingRight: 4 }}>
+        <div className="chat pe-chat">
           {items.length === 0 && <p className="t-sm t-muted">No earlier interactions with this family.</p>}
           {items.map((c) => (
-            <div key={c.id} className={cx('bubble', c.direction === 'inbound' ? 'bubble--in' : c.direction === 'internal' ? 'bubble--ai' : 'bubble--out')}
-              style={c.id === item.id ? { boxShadow: '0 0 0 2px var(--warning)' } : undefined}>
+            <div key={c.id} className={cx('bubble', c.direction === 'inbound' ? 'bubble--in' : c.direction === 'internal' ? 'bubble--ai' : 'bubble--out', c.id === item.id && 'pe-bubble--focus')}>
               {c.direction === 'internal' && <strong>Note · </strong>}
               {c.body ?? c.subject}
-              <div className="bubble__meta" style={c.direction === 'outbound' ? { color: 'rgba(255,255,255,.75)' } : undefined}>
+              <div className="bubble__meta">
                 {c.channel} · {fmt.dateTime(c.occurredAt)}
                 {c.direction !== 'inbound' && c.sentBy ? ` · ${c.sentBy}` : ''}
                 {c.direction === 'outbound' ? ` · ${c.status.toLowerCase()}` : ''}
@@ -278,8 +291,8 @@ function ItemPane({ id, onOpenThread, onDone }: { id: string; onOpenThread: (thr
           <TextArea label="Reply" rows={3} value={text} onChange={(v) => { setText(v); setError(''); }} error={error} maxLength={2000}
             placeholder="Write a reply. It is sent from the school account and recorded here." />
           {!item.parentHasApp && <p className="t-micro t-muted mt-1">This family has no app account; the reply is recorded but cannot be delivered. Consider calling instead.</p>}
-          <div className="row between wrap g-2 mt-3">
-            <div className="row g-2">
+          <div className="pe-composer__bar">
+            <div className="row g-2 wrap">
               <FilterSelect label="Reply channel" allLabel={null} value={channel} onChange={setChannel} options={['WhatsApp', 'SMS', 'Email', 'In-app']} />
               <Button size="sm" onClick={() => setCompose(true)}>Full editor</Button>
             </div>
@@ -345,11 +358,11 @@ function ThreadPane({ id }: { id: string }) {
           : <Button size="sm" variant="quiet" onClick={() => status.mutate('reopen')} loading={status.isPending}>Reopen</Button>)}
       </>}
     >
-      <div className="chat" style={{ maxHeight: 380, overflowY: 'auto', paddingRight: 4 }}>
+      <div className="chat pe-chat">
         {d.messages.map((m) => (
           <div key={m.id} className={cx('bubble', m.mine ? 'bubble--out' : m.senderRole === 'parent' ? 'bubble--in' : 'bubble--ai')}>
             {m.body}
-            <div className="bubble__meta" style={m.mine ? { color: 'rgba(255,255,255,.75)' } : undefined}>
+            <div className="bubble__meta">
               {m.mine ? 'You' : m.senderName} · App · {fmt.dateTime(m.createdAt)}
             </div>
           </div>
@@ -361,7 +374,7 @@ function ThreadPane({ id }: { id: string }) {
         <>
           <TextArea label="Reply" rows={3} value={text} onChange={(v) => { setText(v); setError(''); }} error={error} maxLength={2000}
             placeholder={d.status === 'Closed' ? 'Replying reopens the conversation.' : 'Write a reply. The family is notified in the app.'} />
-          <div className="row between wrap g-2 mt-3">
+          <div className="pe-composer__bar">
             <span className="t-micro t-muted">{d.messageCount} messages · last {fmt.relative(d.lastMessageAt)}</span>
             <Button size="sm" variant="primary" icon="send" onClick={submit} loading={reply.isPending}>Send</Button>
           </div>

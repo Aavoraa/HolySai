@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiQuery } from '@/hooks/useApi';
-import { Badge, Card, DataTable, ErrorState, Meter, Page, PageHead, SearchInput, type Sort } from '@/components/ui';
+import { Badge, Button, Card, DataTable, ErrorState, Meter, Page, PageHead, SearchInput, type Sort, Toolbar } from '@/components/ui';
 import { useListParams } from '@/hooks/useListParams';
 
 interface SubjectRow { id: string; code: string; name: string; stage: string | null; isCore: boolean; teachers: number; classes: number; average: number | null; coverage: number | null; objectives: number }
@@ -31,9 +31,9 @@ export default function SubjectsPage() {
     <Page>
       <PageHead title="Subjects" sub="Subject configuration across stages, with staffing and performance in one view." />
       <Card flush>
-        <div className="filterbar" style={{ padding: '12px 16px' }}>
+        <Toolbar>
           <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search subjects" />
-        </div>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={rows}
@@ -41,7 +41,7 @@ export default function SubjectsPage() {
             rowKey={(r) => r.id}
             sort={list.sort}
             onSort={(s: Sort) => list.setSort(s)}
-            emptyText="No subjects match."
+            emptyText={list.q ? 'No subjects match this search.' : 'No subjects are configured yet.'}
             columns={[
               { key: 'subject', label: 'Subject', render: (r) => <><span className="t-bold">{r.name}</span> {!r.isCore && <Badge>Elective</Badge>}<div className="t-micro t-muted">{r.code} · {r.stage ?? 'All stages'}</div></> },
               { key: 'teachers', label: 'Teachers', className: 'num', render: (r) => <span className="t-num">{r.teachers}</span> },
@@ -51,6 +51,10 @@ export default function SubjectsPage() {
                 key: 'coverage', label: 'Objective coverage', render: (r) => (r.coverage == null
                   ? <span className="t-faint">No objectives mapped</span>
                   : <Meter label="" value={r.coverage} right={`${r.coverage}% · ${r.objectives} obj.`} tone={r.coverage >= 70 ? 'teal' : 'amber'} />),
+              },
+              {
+                key: 'a', label: '', sortable: false, className: 'num',
+                render: (r) => <Button size="sm" icon="target" to={`/objectives?subjectId=${r.id}`} aria-label={`Objectives for ${r.name}`}>Objectives</Button>,
               },
             ]}
           />

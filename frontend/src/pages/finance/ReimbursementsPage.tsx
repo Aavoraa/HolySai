@@ -6,10 +6,10 @@ import { useListParams } from '@/hooks/useListParams';
 import { fmt } from '@/lib/format';
 import {
   Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Modal, Page, PageHead, Pagination, Person, SearchInput,
-  SelectField, Status, TextField, useConfirm,
+  SelectField, Status, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import type { ReimbursementRow, ReimbursementSummary } from './types';
-import { fieldErrors, isMoney, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
+import { fieldErrors, isMoney, ListCount, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
 
 const CLAIM_TYPES = ['Travel', 'Training', 'Supplies', 'Medical', 'Transport', 'Other'];
 
@@ -39,20 +39,22 @@ export default function ReimbursementsPage() {
       <PageHead title="Reimbursements" sub="Staff claims for money already spent, on the same approval path as expenses."
         actions={can('finance.manage') && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Record a claim</Button>} />
       <Grid cols="g-4col">
-        <Kpi label="Awaiting decision" value={d?.pending ?? '—'} tone="amber" loading={s.isLoading} foot={d ? fmt.money(d.pendingValue) : undefined}
+        <Kpi icon="clock" label="Awaiting decision" value={d?.pending ?? '—'} tone="amber" loading={s.isLoading} foot={d ? fmt.money(d.pendingValue) : undefined}
           onClick={() => list.setFilter('status', 'Under Review')} />
-        <Kpi label="Approved, to be paid" value={fmt.money(d?.approvedUnpaid, { compact: true })} tone="info" loading={s.isLoading} foot="Paid with the next payroll run"
+        <Kpi icon="checkSquare" label="Approved, to be paid" value={fmt.money(d?.approvedUnpaid, { compact: true })} tone="info" loading={s.isLoading} foot="Paid with the next payroll run"
           onClick={() => list.setFilter('status', 'Approved')} />
-        <Kpi label="Paid this month" value={fmt.money(d?.paidThisMonth, { compact: true })} tone="teal" loading={s.isLoading} />
-        <Kpi label="Rejected" value={d?.rejected ?? '—'} tone="critical" loading={s.isLoading} onClick={() => list.setFilter('status', 'Rejected')} />
+        <Kpi icon="wallet" label="Paid this month" value={fmt.money(d?.paidThisMonth, { compact: true })} tone="teal" loading={s.isLoading} />
+        <Kpi icon="x" label="Rejected" value={d?.rejected ?? '—'} tone="critical" loading={s.isLoading} onClick={() => list.setFilter('status', 'Rejected')} />
       </Grid>
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference, claim or employee" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid']} />
-        <FilterSelect label="Type" value={list.filters.claimType} onChange={(v) => list.setFilter('claimType', v)} options={CLAIM_TYPES} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search reference, claim or employee" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Submitted', 'Under Review', 'Approved', 'Rejected', 'Paid']} />
+          <FilterSelect label="Type" value={list.filters.claimType} onChange={(v) => list.setFilter('claimType', v)} options={CLAIM_TYPES} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="claims" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             emptyText={list.hasFilters ? 'No claims match the current filters.' : 'No reimbursement claims yet.'}
@@ -68,10 +70,10 @@ export default function ReimbursementsPage() {
                   <div className="row g-2 end">
                     {r.status === 'Submitted' && can('finance.approve') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
                     {['Submitted', 'Under Review'].includes(r.status) && can('finance.approve') && <>
-                      <Button size="sm" variant="teal" loading={busy('approve', r.id)} onClick={async () => {
+                      <Button size="sm" variant="teal" icon="check" loading={busy('approve', r.id)} onClick={async () => {
                         if (await confirm({ title: `Approve ${r.code}?`, body: `${r.employee} will be reimbursed ${fmt.money(r.amount)} with the next payroll run.`, confirmLabel: 'Approve', icon: 'check' })) act.approve.mutate(r.id);
                       }}>Approve</Button>
-                      <Button size="sm" onClick={() => setRejecting(r)}>Reject</Button>
+                      <Button size="sm" icon="x" onClick={() => setRejecting(r)}>Reject</Button>
                     </>}
                     {r.status === 'Approved' && can('finance.manage') && (
                       <Button size="sm" loading={busy('pay', r.id)} onClick={async () => {

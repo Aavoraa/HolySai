@@ -15,6 +15,8 @@ interface Analytics { area: string; areas: { id: string; label: string }[]; scop
 const RISK_COLORS: Record<string, string> = { 'On Track': 'var(--teal)', Watch: 'var(--viz-5)', 'Developing Risk': 'var(--amber)', 'At Risk': 'var(--critical)' };
 const color = (i: number) => SERIES[i % SERIES.length];
 const withColors = (rows: LV[]) => rows.map((r, i) => ({ ...r, color: color(i) }));
+const ATT_BANDS = [{ label: '92% and above', color: 'var(--teal)' }, { label: '85–92%', color: 'var(--amber)' }, { label: 'Below 85%', color: 'var(--critical)' }];
+const DELAY_BANDS = [{ label: 'On time', color: 'var(--teal)' }, { label: 'Up to 10 min late', color: 'var(--amber)' }, { label: 'Over 10 min late', color: 'var(--critical)' }];
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
 function ChartCard({ title, sub, empty, children }: { title: string; sub?: string; empty?: boolean; children: ReactNode }) {
@@ -44,7 +46,7 @@ export default function AnalyticsPage() {
       sub="The same figures the Command Center summarises, with room to explore them."
       actions={<>
         {can('ai.use') && <Button variant="amber" icon="brain" to="/knowledge-ai">Ask in plain language</Button>}
-        <Button icon="download" loading={busy === 'a'} onClick={() => download('a', '/analytics/export', { area, ...campusParam }, `analytics-${area}.csv`)}>Export</Button>
+        <Button icon="download" title="Download the figures for this area as a CSV file" loading={busy === 'a'} onClick={() => download('a', '/analytics/export', { area, ...campusParam }, `analytics-${area}.csv`)}>Export</Button>
       </>}
     />
   );
@@ -68,7 +70,7 @@ function AreaBody({ area, d }: { area: string; d: any }) {
     const total = bands.reduce((a, b) => a + b.value, 0);
     return (
       <div className="grid g-2col g-4">
-        <ChartCard title="Enrolment by grade" empty={!d.enrolment.length}>
+        <ChartCard title="Enrolment by grade" sub="Students enrolled in each grade" empty={!d.enrolment.length}>
           <Chart svg={charts.bar({ labels: d.enrolment.map((x: LV) => x.label), series: [{ name: 'Students', values: d.enrolment.map((x: LV) => x.value), color: 'var(--navy)' }], height: 230 })} />
         </ChartCard>
         <ChartCard title="Risk bands today" sub="Working view for staff only" empty={!total}>
@@ -99,8 +101,9 @@ function AreaBody({ area, d }: { area: string; d: any }) {
         <ChartCard title="Daily attendance" sub="Present or late, last 20 school days" empty={!d.trend.length}>
           <Chart svg={charts.line({ labels: d.trend.map((x: LV) => x.label), series: [{ name: 'Attendance', values: d.trend.map((x: LV) => x.value), color: 'var(--teal)' }], yMax: 100, unit: '%', height: 230 })} />
         </ChartCard>
-        <ChartCard title="By grade" sub="Last 30 days" empty={!d.byGrade.length}>
+        <ChartCard title="Attendance by grade" sub="Present %, last 30 days" empty={!d.byGrade.length}>
           <Chart svg={charts.bar({ labels: d.byGrade.map((x: LV) => x.label), series: [{ name: 'Present %', values: d.byGrade.map((x: LV) => x.value), colors: d.byGrade.map((x: LV) => (x.value < 85 ? 'var(--critical)' : x.value < 92 ? 'var(--amber)' : 'var(--teal)')) }], yMax: 100, height: 230 })} />
+          <div className="mt-3"><Legend items={ATT_BANDS} /></div>
         </ChartCard>
         <ChartCard title="Absences by weekday" sub="Last 60 days" empty={!d.weekday.length}>
           <Chart svg={charts.bar({ labels: d.weekday.map((x: LV) => x.label), series: [{ name: 'Absences', values: d.weekday.map((x: LV) => x.value), color: 'var(--navy)' }], height: 220 })} />
@@ -117,10 +120,10 @@ function AreaBody({ area, d }: { area: string; d: any }) {
     const DIST = ['var(--teal)', 'var(--teal)', 'var(--navy)', 'var(--navy)', 'var(--amber)', 'var(--critical)'];
     return (
       <div className="grid g-2col g-4">
-        <ChartCard title="Subject averages" sub="Latest term" empty={!subj.length}>
+        <ChartCard title="Subject averages" sub="Latest term, against the school average" empty={!subj.length}>
           <Chart svg={charts.bar({ labels: subj.map((s) => s.label), series: [{ name: 'Average', values: subj.map((s) => s.value), color: 'var(--navy)' }], yMax: 100, target: avg, targetLabel: 'School average', height: 230 })} />
         </ChartCard>
-        <ChartCard title="Average by term" empty={!d.terms.length}>
+        <ChartCard title="Average by term" sub="School-wide academic average for each term" empty={!d.terms.length}>
           <Chart svg={charts.line({ labels: d.terms.map((x: LV) => x.label), series: [{ name: 'Average', values: d.terms.map((x: LV) => x.value), color: 'var(--teal)' }], yMax: 100, height: 230 })} />
         </ChartCard>
         <ChartCard title="Coverage against mastery" sub="Average across learning objectives, by subject" empty={!d.coverage.length}>
@@ -143,8 +146,8 @@ function AreaBody({ area, d }: { area: string; d: any }) {
     const sources: LV[] = d.sources;
     return (
       <div className="grid g-2col g-4">
-        <ChartCard title="Funnel" sub="Every lead at a later stage has passed the earlier ones" empty={!d.funnel[0]?.value}><Funnel rows={d.funnel} /></ChartCard>
-        <ChartCard title="Source mix" empty={!sources.length}><Donut rows={sources} center={fmt.n(d.totals?.enquiries)} centerSub="enquiries" /></ChartCard>
+        <ChartCard title="Admissions funnel" sub="Every lead at a later stage has passed the earlier ones" empty={!d.funnel[0]?.value}><Funnel rows={d.funnel} /></ChartCard>
+        <ChartCard title="Source mix" sub="Where enquiries came from" empty={!sources.length}><Donut rows={sources} center={fmt.n(d.totals?.enquiries)} centerSub="enquiries" /></ChartCard>
         <ChartCard title="Enquiries and admissions" sub="Last six months">
           <Chart svg={charts.bar({ labels: d.monthly.map((x: any) => x.label), series: [
             { name: 'Enquiries', values: d.monthly.map((x: any) => x.enquiries), color: 'var(--navy)' },
@@ -152,7 +155,7 @@ function AreaBody({ area, d }: { area: string; d: any }) {
           ], height: 230 })} />
           <div className="mt-3"><Legend items={[{ label: 'Enquiries', color: 'var(--navy)' }, { label: 'Admissions', color: 'var(--teal)' }]} /></div>
         </ChartCard>
-        <ChartCard title="Conversion" sub={`${d.lost} leads lost`} empty={!d.totals?.enquiries}>
+        <ChartCard title="Conversion" sub={`Enquiries that enrolled · ${d.lost} leads lost`} empty={!d.totals?.enquiries}>
           <Chart svg={charts.gauge({ percent: d.conversion ?? 0, value: `${d.totals?.enrolled}/${d.totals?.enquiries}`, sub: `${d.conversion ?? 0}% of enquiries enrolled`, color: 'var(--amber)' })} />
         </ChartCard>
       </div>
@@ -169,13 +172,13 @@ function AreaBody({ area, d }: { area: string; d: any }) {
           ], height: 230 })} />
           <div className="mt-3"><Legend items={[{ label: 'Billed', color: 'var(--border-strong)' }, { label: 'Collected', color: 'var(--teal)' }]} /></div>
         </ChartCard>
-        <ChartCard title="Overdue ageing" empty={!d.ageing.some((x: LV) => x.value)}>
+        <ChartCard title="Overdue ageing" sub="Overdue amount by days past the due date" empty={!d.ageing.some((x: LV) => x.value)}>
           <Chart svg={charts.hbar({ rows: d.ageing.map((a: LV, i: number) => ({ label: a.label, value: a.value, color: AGE[i], display: fmt.money(a.value, { compact: true }) })), labelW: 92, rowH: 32 })} />
         </ChartCard>
-        <ChartCard title="Payment method" empty={!d.methods.length}>
+        <ChartCard title="Payment method" sub="Fees collected, by how they were paid" empty={!d.methods.length}>
           <Donut size={180} rows={d.methods} center={fmt.money(d.methods.reduce((a: number, m: LV) => a + m.value, 0), { compact: true })} centerSub="collected" />
         </ChartCard>
-        <ChartCard title="Collection rate" empty={!d.totals?.billed}>
+        <ChartCard title="Collection rate" sub="Collected against billed, year to date" empty={!d.totals?.billed}>
           <Chart svg={charts.gauge({ percent: d.collectionRate ?? 0, value: fmt.pct(d.collectionRate, 1), sub: 'Of billed, year to date', color: 'var(--teal)' })} />
         </ChartCard>
       </div>
@@ -185,7 +188,7 @@ function AreaBody({ area, d }: { area: string; d: any }) {
     const comp: LV[] = d.composition;
     return (
       <div className="grid g-2col g-4">
-        <ChartCard title="Composition" empty={!comp.length}><Donut rows={comp} center={fmt.n(comp.reduce((a, c) => a + c.value, 0))} centerSub="employees" /></ChartCard>
+        <ChartCard title="Workforce composition" sub="Employees by group" empty={!comp.length}><Donut rows={comp} center={fmt.n(comp.reduce((a, c) => a + c.value, 0))} centerSub="employees" /></ChartCard>
         <ChartCard title="Attendance by department" sub="Last 30 days" empty={!d.attendance.length}>
           <Chart svg={charts.bar({ labels: d.attendance.map((x: LV) => x.label.slice(0, 8)), series: [{ name: 'Present %', values: d.attendance.map((x: LV) => x.value), color: 'var(--teal)' }], yMax: 100, height: 230 })} />
         </ChartCard>
@@ -208,6 +211,7 @@ function AreaBody({ area, d }: { area: string; d: any }) {
       </ChartCard>
       <ChartCard title="Bus delays now" sub="Minutes behind schedule by route" empty={!routes.length}>
         <Chart svg={charts.bar({ labels: routes.map((r) => r.label), series: [{ name: 'Delay (min)', values: routes.map((r) => r.delay), colors: routes.map((r) => (r.delay > 10 ? 'var(--critical)' : r.delay > 0 ? 'var(--amber)' : 'var(--teal)')) }], height: 220 })} />
+        <div className="mt-3"><Legend items={DELAY_BANDS} /></div>
         <p className="t-xs t-muted mt-2">{routes.filter((r) => r.delay === 0).length} of {routes.length} routes on time.</p>
       </ChartCard>
       <ChartCard title="Parent notification delivery" sub="External channels, last 30 days" empty={!del?.total}>

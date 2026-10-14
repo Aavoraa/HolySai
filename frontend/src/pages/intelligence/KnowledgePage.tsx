@@ -68,7 +68,7 @@ export default function KnowledgePage() {
       />
       <div className="grid g-main">
         <div className="col g-4">
-          <Card title="Ask Holy Sai Knowledge">
+          <Card icon="grid" title="Ask Holy Sai Knowledge">
             <form onSubmit={(e) => { e.preventDefault(); submit(); }} className="row g-2">
               <div className="input-icon grow" style={{ maxWidth: 'none' }}>
                 <Icon name="brain" size={16} />
@@ -77,8 +77,9 @@ export default function KnowledgePage() {
               </div>
               <Button type="submit" variant="primary" icon="send" loading={ask.isPending} style={{ height: 46 }}>Ask</Button>
             </form>
-            {error && <div className="hint mt-2" style={{ color: 'var(--critical)' }} role="alert">{error}</div>}
-            <div className="row g-2 wrap mt-3">
+            {error && <div className="mt-2"><span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{error}</span></div>}
+            <div className="eyebrow mt-4 mb-2">Suggested questions</div>
+            <div className="row g-2 wrap">
               {SUGGESTED.map((q) => (
                 <button key={q} type="button" className="chip" aria-pressed={result?.question === q} onClick={() => submit(q)}>{q}</button>
               ))}
@@ -95,9 +96,13 @@ export default function KnowledgePage() {
                 <Badge tone={result.found ? confTone(result.confidence) : 'neutral'}>{result.found ? `${result.confidence} confidence` : 'Not found'}</Badge>
               </div>
               <div className="card__body">
+                <div className="row-top g-2 mb-4">
+                  <Icon name="user" size={15} className="t-muted" />
+                  <span className="col"><span className="t-micro t-muted">You asked</span><span className="t-sm t-bold">{result.question}</span></span>
+                </div>
                 {result.found ? (
                   <div className="col g-3">
-                    {result.answer.split('\n\n').map((p, i) => <p key={i} className="t-sm" style={{ fontSize: 15, lineHeight: 1.65 }}>{p}</p>)}
+                    {result.answer.split('\n\n').map((p, i) => <p key={i} className="t-sm" style={{ fontSize: 15, lineHeight: 1.65, maxWidth: '72ch' }}>{p}</p>)}
                   </div>
                 ) : (
                   <Banner tone={result.restricted ? 'warning' : 'neutral'} icon={result.restricted ? 'lock' : 'search'}>{result.answer}</Banner>
@@ -132,6 +137,7 @@ export default function KnowledgePage() {
                     <span className="t-sm t-muted row g-2"><Icon name="check" size={14} className="t-success" />
                       {feedbackSent === 'routed' ? 'Sent to the front office — they will reply in your notifications.' : 'Thanks — your feedback is recorded.'}</span>
                   ) : <>
+                    <span className="t-xs t-muted">Was this useful?</span>
                     <Button size="sm" icon="check" loading={feedback.isPending} onClick={() => feedback.mutate({ question: result.question, helpful: true, documentIds: docIds })}>Helpful</Button>
                     <Button size="sm" icon="x" loading={feedback.isPending} onClick={() => feedback.mutate({ question: result.question, helpful: false, documentIds: docIds })}>Not quite</Button>
                     <Button size="sm" icon="message" loading={feedback.isPending} onClick={() => feedback.mutate({ question: result.question, helpful: false, documentIds: docIds, routeToPerson: true })}>Ask a person instead</Button>
@@ -144,11 +150,11 @@ export default function KnowledgePage() {
         </div>
 
         <div className="col g-4">
-          <Card title="Approved sources" sub="What the assistant is allowed to read for your role" flush>
-            {sources.isLoading ? <div style={{ padding: 16 }}><Skeleton height={180} /></div> : sources.error ? <ErrorState error={sources.error} onRetry={() => sources.refetch()} /> : (
-              <div>
+          <Card icon="target" title="Approved sources" sub="What the assistant is allowed to read for your role" flush>
+            {sources.isLoading ? <div className="card__body"><Skeleton height={180} /></div> : sources.error ? <ErrorState error={sources.error} onRetry={() => sources.refetch()} /> : (
+              <div style={{ padding: '0 var(--s-5)' }}>
                 {sources.data!.documents.map((s) => (
-                  <div key={s.id} className="row g-3" style={{ padding: '11px 20px', borderBottom: '1px solid var(--border-soft)' }}>
+                  <div key={s.id} className="mrow">
                     <Icon name={s.restricted ? 'lock' : 'fileText'} size={15} className="t-muted" />
                     <span className="col grow" style={{ minWidth: 0 }}>
                       <span className="t-sm t-clip">{s.title}</span>
@@ -158,20 +164,20 @@ export default function KnowledgePage() {
                   </div>
                 ))}
                 {sources.data!.live.map((l) => (
-                  <div key={l.title} className="row g-3" style={{ padding: '11px 20px', borderBottom: '1px solid var(--border-soft)' }}>
+                  <div key={l.title} className="mrow">
                     <Icon name="zap" size={15} className="t-muted" />
-                    <span className="col grow"><span className="t-sm">Live records — {l.title}</span><span className="t-micro t-muted">{l.detail}</span></span>
+                    <span className="col grow" style={{ minWidth: 0 }}><span className="t-sm">Live records — {l.title}</span><span className="t-micro t-muted">{l.detail}</span></span>
                     <span className="t-micro t-faint none">Continuous</span>
                   </div>
                 ))}
-                {!sources.data!.documents.length && <Empty icon="folder" title="No documents available for your role" />}
+                {!sources.data!.documents.length && <Empty icon="folder" title="No documents available for your role" sub="Approved documents appear here once the school shares them with your role. Live records can still be asked about." />}
               </div>
             )}
           </Card>
-          <Card title="Most asked this month">
+          <Card icon="grid" title="Most asked this month" sub="Number of times each question was asked">
             {top.isLoading ? <Skeleton height={150} /> : top.data?.length ? (
               <Chart svg={charts.hbar({ rows: top.data.map((r, i) => ({ label: r.label.replace(/ 2026–27$/, ''), value: r.value, color: SERIES[i % SERIES.length] })), labelW: 150, rowH: 28 })} />
-            ) : <Empty icon="barChart" title="No questions yet this month" />}
+            ) : <Empty icon="barChart" title="No questions yet this month" sub="Questions asked by staff and parents are counted here." />}
           </Card>
         </div>
       </div>
