@@ -9,3 +9,4 @@ pypdfium2>=4.30
 cryptography>=42
 anthropic>=1.0.0
 pytest>=8
+psycopg[binary]>=3.2

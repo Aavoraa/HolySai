@@ -182,6 +182,11 @@ def exam_for_user(db: Session, exam_id: str, user: User) -> Exam:
 # --- secrets -----------------------------------------------------------------
 
 def _fernet() -> Fernet:
+    if settings.integrated:
+        # As the Holy Sai module the key is derived from the gateway secret, so secrets saved in
+        # the database stay readable on hosts that wipe the disk (secret.key would be lost).
+        digest = hashlib.sha256(b"exam-vision/settings-encryption/" + settings.gateway_secret.encode()).digest()
+        return Fernet(base64.urlsafe_b64encode(digest))
     path = settings.secret_key_path
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)

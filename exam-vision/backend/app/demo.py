@@ -31,7 +31,7 @@ from .models import (
     User, now,
 )
 from .security import audit
-from .services import prompts
+from .services import page_store, prompts
 from .services.documents import quality, to_png
 
 log = logging.getLogger(__name__)
@@ -116,9 +116,11 @@ def _build(db: Session, spec: dict, students: dict[str, Student]) -> None:
         folder = settings.upload_dir / sub.id
         folder.mkdir(parents=True, exist_ok=True)
         for no, (im, png) in enumerate(zip(images, pngs), start=1):
-            (folder / f"page-{no}.png").write_bytes(png)
-            db.add(Page(submission_id=sub.id, page_no=no, image_path=str(folder / f"page-{no}.png"), width=im.width,
-                        height=im.height, quality=quality(im)))
+            page = Page(submission_id=sub.id, page_no=no, image_path=str(folder / f"page-{no}.png"), width=im.width,
+                        height=im.height, quality=quality(im))
+            db.add(page)
+            db.flush()
+            page_store.save(db, page, png)
 
         page_of = sheet.get("page_of", {})
         answers_text = {n: a[0] for n, a in sheet["answers"].items()}

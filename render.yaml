@@ -106,11 +106,10 @@ services:
   # ---------------------------------------------------------------------------
   # Paper Correction service (exam-vision/): Claude reads and marks answer sheets.
   #
-  # FREE PLAN = TESTING ONLY. A free instance has no persistent disk and sleeps
-  # after 15 minutes idle; every sleep, restart or deploy wipes its data —
-  # examinations, uploaded sheets and marks. Students and staff are re-sent by
-  # the main service automatically. Send approved marks to an assessment before
-  # leaving it idle. For real use: plan starter + a disk mounted at /data.
+  # Free plan: the instance has no persistent disk, so everything (exams, sheet
+  # images, marks, settings) is stored in the same Supabase Postgres as the main
+  # app, in its own "exam_vision" schema. Sleeps, restarts and deploys lose
+  # nothing. The main app wakes it on start and keeps it awake while in use.
   # ---------------------------------------------------------------------------
   - type: web
     name: holy-sai-exam
@@ -124,9 +123,14 @@ services:
       # Shared with the main service (EXAM_VISION_SECRET). Generated once by Render.
       - key: EXAM_GATEWAY_SECRET
         generateValue: true
-      # Survive the wipes: the Claude key and the acknowledgement that student
-      # pages are sent to Anthropic come from here (AI configuration overrides
-      # them until the next wipe). Enter them in the Render dashboard.
+      # Its data lives in the main app's Supabase database (schema exam_vision).
+      - key: EXAM_DATABASE_URL
+        fromService:
+          type: web
+          name: holy-sai
+          envVarKey: DATABASE_URL
+      # Optional defaults for the Claude key and the acknowledgement that student
+      # pages are sent to Anthropic (what is saved in AI configuration wins).
       - key: EXAM_CLAUDE_API_KEY
         sync: false
       # Type 1 once the school's consent covers sending pages to Anthropic.

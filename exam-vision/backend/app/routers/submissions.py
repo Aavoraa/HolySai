@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import re
 from typing import Annotated
 
@@ -20,7 +21,7 @@ from ..models import (
     Answer, Evaluation, Exam, Extraction, Job, MarkOverride, Page, Question, Student, Submission, User, now,
 )
 from ..security import CurrentUser, StaffUser, audit, exam_for_user
-from ..services import jobs, processing
+from ..services import jobs, page_store, processing
 from ..services.documents import DocumentError, load_pages, quality, rotate, sha256, to_png
 from ..services.reports import sheet_cost
 from ..services.scoring import increments_ok
@@ -100,10 +101,11 @@ def _store_submission(db: Session, exam: Exam, student: Student, files: list[tup
         suffix = ".pdf" if data[:4] == b"%PDF" else ".img"
         (folder / f"original-{i}{suffix}").write_bytes(data)
     for no, img in enumerate(images, start=1):
-        path = folder / f"page-{no}.png"
-        path.write_bytes(to_png(img))
-        db.add(Page(submission_id=sub.id, page_no=no, image_path=str(path), width=img.width, height=img.height,
-                    quality=quality(img)))
+        page = Page(submission_id=sub.id, page_no=no, image_path=str(folder / f"page-{no}.png"), width=img.width,
+                    height=img.height, quality=quality(img))
+        db.add(page)
+        db.flush()
+        page_store.save(db, page, to_png(img))
     audit(db, user, "sheet_uploaded", "submission", sub.id, exam_id=exam.id, pages=len(images))
     db.commit()
     db.refresh(sub)
@@ -241,9 +243,11 @@ def page_image(page_id: str, user: StaffUser, db: DB) -> Response:
     if page is None:
         raise HTTPException(404, "Page not found.")
     _submission(db, page.submission_id, user)
-    from pathlib import Path
-
-    return Response(Path(page.image_path).read_bytes(), media_type="image/png",
+    try:
+        data = page_store.read(db, page)
+    except FileNotFoundError:
+        raise HTTPException(404, "The page image is missing.") from None
+    return Response(data, media_type="image/png",
                     headers={"Cache-Control": "private, no-store"})
 
 
@@ -258,11 +262,10 @@ def rotate_page(page_id: str, body: RotateIn, user: StaffUser, db: DB) -> dict:
         raise HTTPException(404, "Page not found.")
     _submission(db, page.submission_id, user)
     try:
-        img = rotate(Image.open(page.image_path).convert("RGB"), body.degrees)
+        img = rotate(Image.open(io.BytesIO(page_store.read(db, page))).convert("RGB"), body.degrees)
     except DocumentError as exc:
         raise HTTPException(400, str(exc)) from exc
-    with open(page.image_path, "wb") as fh:
-        fh.write(to_png(img))
+    page_store.save(db, page, to_png(img))
     page.width, page.height, page.quality = img.width, img.height, quality(img)
     audit(db, user, "page_rotated", "page", page.id, degrees=body.degrees)
     db.commit()

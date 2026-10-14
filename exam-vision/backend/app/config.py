@@ -38,6 +38,9 @@ class Settings:
     # Shared with the Holy Sai API. When set, EXAM Vision runs as a module of Holy Sai: every request
     # must carry an identity signed by the Holy Sai API, and local sign-in is switched off.
     gateway_secret: str = os.getenv("EXAM_GATEWAY_SECRET", "")
+    # Postgres for hosts without a persistent disk (e.g. Render free + Supabase): everything,
+    # page images included, lives in its own "exam_vision" schema. Empty = SQLite in data_dir.
+    database_url: str = os.getenv("EXAM_DATABASE_URL", "")
 
     @property
     def integrated(self) -> bool:

@@ -1,5 +1,5 @@
 # backend/app/db.py
-"""Engine, sessions and schema migrations (SQLite)."""
+"""Engine, sessions and schema migrations (SQLite, or Postgres when EXAM_DATABASE_URL is set)."""
 
 from __future__ import annotations
 
@@ -27,12 +27,36 @@ def _sqlite_pragmas(dbapi_conn, _record) -> None:
     cur.close()
 
 
+# On Postgres every table lives in this schema, so they never collide with the Holy Sai tables
+# (users, students, exams …) when both share one database.
+PG_SCHEMA = "exam_vision"
+
+
+def postgres_url(url: str) -> str | None:
+    """postgres://… or postgresql://… → the SQLAlchemy psycopg URL; None for anything else."""
+    for prefix in ("postgresql+psycopg://", "postgresql://", "postgres://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return None
+
+
 def configure(s: Settings = settings) -> Engine:
     """(Re)create the engine for ``s`` and apply migrations."""
     global _engine, _SessionLocal
     ensure_dirs(s)
-    _engine = create_engine(f"sqlite:///{s.db_path}", connect_args={"check_same_thread": False, "timeout": 30})
-    event.listen(_engine, "connect", _sqlite_pragmas)
+    if _engine is not None:
+        _engine.dispose()  # reconfiguring (tests): release the old pool's connections
+    pg = postgres_url(s.database_url)
+    if pg:
+        base = create_engine(pg, pool_size=3, max_overflow=2, pool_pre_ping=True, pool_recycle=300,
+                             # poolers (Supabase/Supavisor) do not keep server-side prepared statements
+                             connect_args={"prepare_threshold": None})
+        with base.begin() as conn:
+            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {PG_SCHEMA}"))
+        _engine = base.execution_options(schema_translate_map={None: PG_SCHEMA})
+    else:
+        _engine = create_engine(f"sqlite:///{s.db_path}", connect_args={"check_same_thread": False, "timeout": 30})
+        event.listen(_engine, "connect", _sqlite_pragmas)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
     migrate(_engine)
     return _engine
@@ -69,25 +93,36 @@ def _v1(conn) -> None:
 
 
 def _v2(conn) -> None:
-    # who wrote a rubric version: "teacher" or "ai_draft"
+    # who wrote a rubric version: "teacher" or "ai_draft" (Postgres databases start with it)
+    if conn.dialect.name != "sqlite":
+        return
     cols = [r[1] for r in conn.execute(text("PRAGMA table_info(rubric_versions)"))]
     if "source" not in cols:
         conn.execute(text("ALTER TABLE rubric_versions ADD COLUMN source VARCHAR(20) NOT NULL DEFAULT 'teacher'"))
 
 
-MIGRATIONS: list[Callable] = [_v1, _v2]
+def _v3(conn) -> None:
+    # page images in the database, so pages survive hosts that wipe the disk
+    from .models import PageImage
+
+    PageImage.__table__.create(conn, checkfirst=True)
+
+
+MIGRATIONS: list[Callable] = [_v1, _v2, _v3]
 
 
 def migrate(eng: Engine) -> int:
     with eng.begin() as conn:
-        conn.execute(text("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)"))
-        row = conn.execute(text("SELECT version FROM schema_version")).fetchone()
+        # raw SQL is not schema-translated: name the table in full on Postgres
+        table = f"{PG_SCHEMA}.schema_version" if conn.dialect.name == "postgresql" else "schema_version"
+        conn.execute(text(f"CREATE TABLE IF NOT EXISTS {table} (version INTEGER NOT NULL)"))
+        row = conn.execute(text(f"SELECT version FROM {table}")).fetchone()
         current = row[0] if row else 0
         for number, step in enumerate(MIGRATIONS, start=1):
             if number > current:
                 step(conn)
         if row is None:
-            conn.execute(text("INSERT INTO schema_version (version) VALUES (:v)"), {"v": len(MIGRATIONS)})
+            conn.execute(text(f"INSERT INTO {table} (version) VALUES (:v)"), {"v": len(MIGRATIONS)})
         elif current < len(MIGRATIONS):
-            conn.execute(text("UPDATE schema_version SET version = :v"), {"v": len(MIGRATIONS)})
+            conn.execute(text(f"UPDATE {table} SET version = :v"), {"v": len(MIGRATIONS)})
     return len(MIGRATIONS)

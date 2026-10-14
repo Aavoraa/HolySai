@@ -12,7 +12,7 @@ import datetime as dt
 import uuid
 
 from sqlalchemy import (
-    JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, Index,
+    JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, Index,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -171,6 +171,14 @@ class Page(Base):
     width: Mapped[int] = mapped_column(Integer, default=0)
     height: Mapped[int] = mapped_column(Integer, default=0)
     quality: Mapped[dict] = mapped_column(JSON, default=dict)  # {"brightness":..,"sharpness":..,"warnings":[..]}
+
+
+class PageImage(Base):
+    """The page image itself, so nothing depends on a local disk; files are only a cache."""
+
+    __tablename__ = "page_images"
+    page_id: Mapped[str] = mapped_column(ForeignKey("pages.id", ondelete="CASCADE"), primary_key=True)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
 
 
 class Extraction(Base):

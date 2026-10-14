@@ -26,7 +26,7 @@ from .. import ai_config, providers
 from ..models import Answer, Evaluation, Exam, Extraction, Page, Question, RubricVersion, Student, Submission
 from ..providers.base import ILLEGIBLE, ProviderError
 from ..security import audit
-from . import prompts, scoring
+from . import page_store, prompts, scoring
 from .documents import redact_top, to_png
 
 log = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ log = logging.getLogger(__name__)
 
 # --- reading -----------------------------------------------------------------
 
-def _page_bytes(page: Page, redact_percent: float | None) -> bytes:
-    data = Path(page.image_path).read_bytes()
+def _page_bytes(db: Session, page: Page, redact_percent: float | None) -> bytes:
+    data = page_store.read(db, page)
     if redact_percent and page.page_no == 1:
         img = Image.open(io.BytesIO(data)).convert("RGB")
         return to_png(redact_top(img, redact_percent))
@@ -58,7 +58,7 @@ def run_extraction(db: Session, submission_id: str, *, user_id: str | None, make
         reader = providers.reader(cfg)
         extraction.model = reader.model
         say(f"Claude is reading {len(sub.pages)} page(s)")
-        images = [_page_bytes(p, cfg.redact_top_percent) for p in sub.pages]
+        images = [_page_bytes(db, p, cfg.redact_top_percent) for p in sub.pages]
         result = reader.read_sheet(images, [{"number": q.number, "text": q.text} for q in exam.questions])
     except ProviderError as exc:
         extraction.status, extraction.error = "failed", str(exc)

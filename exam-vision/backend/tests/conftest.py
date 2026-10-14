@@ -90,6 +90,16 @@ def full_marks(message, schema):
 def fresh(tmp_path):
     settings.data_dir = tmp_path
     settings.run_jobs = False
+    # EXAM_TEST_DATABASE_URL=postgresql://… runs the suite on Postgres (schema exam_vision, emptied per test)
+    pg = os.getenv("EXAM_TEST_DATABASE_URL", "")
+    if pg:
+        from sqlalchemy import create_engine, text
+
+        settings.database_url = pg
+        eng = create_engine(db.postgres_url(pg))
+        with eng.begin() as conn:
+            conn.execute(text(f"DROP SCHEMA IF EXISTS {db.PG_SCHEMA} CASCADE"))
+        eng.dispose()
     db.configure(settings)
     providers.FACTORIES.clear()
     providers.FACTORIES.update({"reader": FakeReader, "evaluator": FakeEvaluator})
