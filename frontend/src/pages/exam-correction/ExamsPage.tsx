@@ -8,7 +8,7 @@ import {
   SelectField, TextArea, TextField, Toolbar,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { AiNotReady, BASE, EV, EvStatus, marks, NotConnected, usePcStatus, type Exam } from './shared';
+import { AiNotReady, BASE, Connecting, EV, EvStatus, marks, NotConnected, usePcStatus, type Exam } from './shared';
 
 export default function ExamsPage() {
   const navigate = useNavigate();
@@ -37,7 +37,7 @@ export default function ExamsPage() {
           {manager && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>New examination</Button>}
         </>} />
 
-      {st.isLoading ? null : st.error ? <ErrorState error={st.error} onRetry={() => st.refetch()} />
+      {st.isLoading ? <Connecting /> : st.error ? <ErrorState error={st.error} onRetry={() => st.refetch()} />
         : !connected ? <NotConnected status={st.data} onRetry={() => st.refetch()} />
         : (
           <>

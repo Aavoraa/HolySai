@@ -10,7 +10,7 @@ import { errorMessage } from '@/components/ui/states';
 import { fmt } from '@/lib/format';
 import { ExamModal } from './ExamsPage';
 import {
-  AiNotReady, BASE, EV, EvStatus, isBusy, marks, NotConnected, QTYPES, usePcStatus,
+  AiNotReady, BASE, EV, EvStatus, isBusy, marks, Connecting, NotConnected, QTYPES, usePcStatus,
   type AiStatus, type Criterion, type EvStudent, type Exam, type Question, type Rubric, type SheetRow,
 } from './shared';
 
@@ -36,7 +36,8 @@ export default function ExamPage() {
     invalidate: ['/exam-correction'], success: (r) => `Results are now ${r.data.results_status}`, body: () => ({}),
   });
 
-  if (st.isLoading || (st.data?.connected && q.isLoading)) return <Page><PageSkeleton /></Page>;
+  if (st.isLoading) return <Page><PageHead title="Paper Correction" /><Connecting /></Page>;
+  if (st.data?.connected && q.isLoading) return <Page><PageSkeleton /></Page>;
   if (st.data && !st.data.connected) return <Page><PageHead title="Paper Correction" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (q.error || !q.data) return <Page><PageHead title="Examination" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const exam = q.data;

@@ -9,7 +9,7 @@ import {
 import { errorMessage } from '@/components/ui/states';
 import { cx, fmt } from '@/lib/format';
 import {
-  AiNotReady, BASE, EV, EvStatus, isBusy, marks, NotConnected, ReasonModal, usePcStatus,
+  AiNotReady, BASE, EV, EvStatus, isBusy, marks, Connecting, NotConnected, ReasonModal, usePcStatus,
   type EvStudent, type Rubric, type SheetRow,
 } from './shared';
 
@@ -64,7 +64,8 @@ export default function SheetPage() {
     if (s && openQ === null) setOpenQ(s.questions.find((r) => r.answer && r.answer.mark_status !== 'approved')?.question.id ?? '');
   }, [s, openQ]);
 
-  if (st.isLoading || (st.data?.connected && q.isLoading)) return <Page><PageSkeleton /></Page>;
+  if (st.isLoading) return <Page><PageHead title="Answer sheet" /><Connecting /></Page>;
+  if (st.data?.connected && q.isLoading) return <Page><PageSkeleton /></Page>;
   if (st.data && !st.data.connected) return <Page><PageHead title="Answer sheet" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (q.error || !s) return <Page><PageHead title="Answer sheet" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const ai = st.data?.ai;

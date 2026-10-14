@@ -83,6 +83,16 @@ export function usePcStatus() {
   });
 }
 
+/** Shown while the connection check runs; on free hosting the service may need up to a minute to wake. */
+export function Connecting() {
+  return (
+    <Card>
+      <Empty icon="clock" title="Connecting to Paper Correction…"
+        sub="If the marking service has been idle it takes up to a minute to start. This page continues by itself." />
+    </Card>
+  );
+}
+
 export function NotConnected({ status, onRetry }: { status?: PcStatus; onRetry?: () => void }) {
   if (status?.waking) {
     return (

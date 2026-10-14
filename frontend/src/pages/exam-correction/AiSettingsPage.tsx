@@ -6,7 +6,7 @@ import {
 } from '@/components/ui';
 import { errorMessage } from '@/components/ui/states';
 import { fmt } from '@/lib/format';
-import { BASE, EV, NotConnected, usePcStatus } from './shared';
+import { BASE, EV, Connecting, NotConnected, usePcStatus } from './shared';
 
 interface AiConfig {
   config: {
@@ -38,7 +38,8 @@ export default function AiSettingsPage() {
     invalidate: ['/exam-correction'], success: 'AI configuration saved', onSuccess: () => setKey(''),
   });
 
-  if (st.isLoading || q.isLoading) return <Page><PageSkeleton /></Page>;
+  if (st.isLoading) return <Page><PageHead title="AI configuration" /><Connecting /></Page>;
+  if (q.isLoading) return <Page><PageSkeleton /></Page>;
   if (st.data && !st.data.connected) return <Page><PageHead title="AI configuration" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (st.data?.role !== 'admin') return <Page><PageHead title="AI configuration" /><Banner tone="neutral" icon="lock">Only administrators who manage settings can change the AI configuration.</Banner></Page>;
   if (q.error || !q.data) return <Page><PageHead title="AI configuration" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
