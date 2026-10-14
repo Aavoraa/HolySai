@@ -101,3 +101,18 @@ def test_teacher_uploads_through_gateway(client, integrated):
                     data={"student_id": student["id"], "auto_process": "false"},
                     files=[("files", ("p1.png", page_png(), "image/png"))])
     assert r.status_code == 200, r.text
+
+
+def test_server_defaults_survive_an_empty_database(client, integrated, monkeypatch):
+    """Hosts that wipe the disk (Render free): the key and acknowledgement come from the environment."""
+    admin = who(PRINCIPAL, "admin", "Admin")
+    assert client.get("/api/settings/ai/status", headers=admin).json()["reading_available"] is False
+    monkeypatch.setenv("EXAM_CLAUDE_API_KEY", "sk-ant-from-env")
+    monkeypatch.setenv("EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED", "1")
+    assert client.get("/api/settings/ai/status", headers=admin).json()["reading_available"] is True
+    cfg = client.get("/api/settings/ai", headers=admin).json()["config"]
+    assert cfg["claude_api_key"].endswith("-env") and cfg["claude_enabled"] is True
+    # what an administrator saves still wins
+    client.put("/api/settings/ai", headers=admin, json={"changes": {"claude_enabled": False}})
+    assert client.get("/api/settings/ai/status", headers=admin).json()["reading_available"] is False
+    assert isinstance(client.get("/api/health").json()["started"], int)

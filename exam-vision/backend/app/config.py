@@ -6,6 +6,7 @@ Settings -> AI Configuration and they are stored in the database (keys encrypted
 """
 
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -56,6 +57,9 @@ class Settings:
 
 
 settings = Settings()
+# Lets the Holy Sai API notice a restart (on hosts without a persistent disk, a restart also
+# means an empty database that needs the roster again).
+STARTED_AT = int(time.time())
 
 
 def ensure_dirs(s: Settings = settings) -> None:

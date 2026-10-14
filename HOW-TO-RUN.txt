@@ -282,6 +282,14 @@ G. PAPER CORRECTION (AI marking of answer sheets - exam-vision\)
   Mark as reviewed -> Approve results -> Results & reports -> Send to
   assessment.
 
+  On Render (render.yaml): the service "holy-sai-exam" runs on the FREE
+  plan - testing only. It sleeps after 15 minutes idle (first visit then
+  shows "Starting Paper Correction..." for up to a minute) and every sleep
+  or deploy WIPES its exams, sheets and marks. Send approved marks to an
+  assessment before leaving it. In the Render dashboard, set on
+  holy-sai-exam: EXAM_CLAUDE_API_KEY = the Claude key, and
+  EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED = 1 (these survive the wipes).
+
   Tests of the service:  cd exam-visionackend
                          .venv\Scripts\python.exe -m pytest tests -q
 

@@ -39,7 +39,7 @@ export default function AiSettingsPage() {
   });
 
   if (st.isLoading || q.isLoading) return <Page><PageSkeleton /></Page>;
-  if (st.data && !st.data.connected) return <Page><PageHead title="AI configuration" /><NotConnected reason={st.data.reason} /></Page>;
+  if (st.data && !st.data.connected) return <Page><PageHead title="AI configuration" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (st.data?.role !== 'admin') return <Page><PageHead title="AI configuration" /><Banner tone="neutral" icon="lock">Only administrators who manage settings can change the AI configuration.</Banner></Page>;
   if (q.error || !q.data) return <Page><PageHead title="AI configuration" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const { config: c, options } = q.data;
@@ -92,7 +92,7 @@ export default function AiSettingsPage() {
               school's consent and data-processing arrangements cover this (for children's data, parental consent).
             </Banner>
             <Switch checked={!!f.external_processing_acknowledged} onChange={set('external_processing_acknowledged')} label="I acknowledge this external processing on behalf of the school" />
-            {c.external_processing_acknowledged_by && <p className="t-xs t-muted">Acknowledged by {c.external_processing_acknowledged_by.user} on {fmt.dateTime(c.external_processing_acknowledged_by.at)}</p>}
+            {c.external_processing_acknowledged_by && <p className="t-xs t-muted">Acknowledged by {c.external_processing_acknowledged_by.user}{c.external_processing_acknowledged_by.at ? ` on ${fmt.dateTime(c.external_processing_acknowledged_by.at)}` : ''}</p>}
             <TextField label="Blank this % of the top of page 1 before sending" type="number" min={0} max={50} value={f.redact_top_percent as string} onChange={set('redact_top_percent')}
               hint="0 = off. Blanking hides the name and roll number, but then the name on the sheet cannot be checked against the chosen student." />
           </div>

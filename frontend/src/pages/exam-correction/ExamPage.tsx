@@ -37,7 +37,7 @@ export default function ExamPage() {
   });
 
   if (st.isLoading || (st.data?.connected && q.isLoading)) return <Page><PageSkeleton /></Page>;
-  if (st.data && !st.data.connected) return <Page><PageHead title="Paper Correction" /><NotConnected reason={st.data.reason} /></Page>;
+  if (st.data && !st.data.connected) return <Page><PageHead title="Paper Correction" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (q.error || !q.data) return <Page><PageHead title="Examination" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const exam = q.data;
 

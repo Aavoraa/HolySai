@@ -121,6 +121,23 @@ describe('Paper Correction gateway', () => {
     expect(r.headers['content-type']).toBe('image/png');
   });
 
+  it('sends the roster again when the service restarts (free hosting wipes its data)', async () => {
+    let started = 1000;
+    reply = (s) => (s.url === '/api/health' ? { status: 200, body: JSON.stringify({ status: 'ok', started }) } : { status: 200, body: '{}' });
+    const p = await as('principal');
+    const syncs = () => seen.filter((s) => s.url === '/api/integration/sync').length;
+    expect((await p.get('/api/exam-correction/status')).body.data.connected).toBe(true);
+    const first = syncs();
+    expect(first).toBeGreaterThanOrEqual(0);
+    // integration/sync replies without "started"; the next status sees a different start time and syncs
+    await p.get('/api/exam-correction/status');
+    expect(syncs()).toBeGreaterThan(first);
+    started = 2000;
+    const before = syncs();
+    await p.get('/api/exam-correction/status');
+    expect(syncs()).toBe(before + 1);
+  });
+
   it('reports "not connected" when unconfigured', async () => {
     env.EXAM_VISION_URL = undefined;
     try {

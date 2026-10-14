@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
+from ..config import STARTED_AT, settings
 from ..db import get_db
 from ..models import Student, User
 from ..security import GATEWAY_ROLES, audit, gateway_fresh, gateway_signature, gateway_user_id
@@ -96,4 +96,5 @@ def sync(body: Annotated[bytes, Depends(signed_body)], db: DB) -> dict:
     audit(db, None, "roster_synced", "student", None, created=created, updated=updated,
           staff=len(seen), staff_disabled=disabled)
     db.commit()
-    return {"students_created": created, "students_updated": updated, "staff": len(seen), "staff_disabled": disabled}
+    return {"students_created": created, "students_updated": updated, "staff": len(seen), "staff_disabled": disabled,
+            "started": STARTED_AT}

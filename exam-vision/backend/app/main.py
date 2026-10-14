@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .config import BASE_DIR, settings
+from .config import BASE_DIR, STARTED_AT, settings
 from .routers import auth, exams, integration, reports, settings as settings_router, submissions
 from .services import jobs
 
@@ -63,7 +63,7 @@ for r in (auth.router, settings_router.router, exams.router, submissions.router,
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"status": "ok"}
+    return {"status": "ok", "started": STARTED_AT}
 
 
 app.mount("/static", StaticFiles(directory=STATIC), name="static")

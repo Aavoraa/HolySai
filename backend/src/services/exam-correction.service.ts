@@ -224,13 +224,32 @@ async function ensureSynced() {
   }
 }
 
+/** The service's process start time; a change means it restarted (and may have lost its data). */
+async function startedAt(): Promise<number | null> {
+  const res = await call(upstream('health'), {});
+  const body = await res.json().catch(() => null);
+  return typeof body?.started === 'number' ? body.started : null;
+}
+
+/** Free hosting puts the service to sleep when idle; waking it takes up to a minute. */
+const STATUS_WAIT_MS = 20_000;
+
 export async function status(user: AuthUser) {
   const role = examRole(user);
   if (!configured()) return { connected: false, reason: 'Not configured on the server (EXAM_VISION_URL / EXAM_VISION_SECRET).', role, lastSync: null };
-  try {
-    await ensureSynced();
+  const check = (async () => {
+    const started = await startedAt();
+    // A restarted service on a host without a persistent disk starts empty: send the roster again now.
+    if (!lastSync || (started !== null && lastSync.result.started !== started)) await syncRoster();
+    else await ensureSynced();
     const ai = await getJson<Record<string, unknown>>(user, 'settings/ai/status');
     return { connected: true, reason: null, role, ai, lastSync: lastSync && { at: lastSync.at.toISOString(), ...lastSync.result } };
+  })();
+  check.catch(() => undefined); // may finish after the timeout below
+  const waking = new Promise<null>((ok) => setTimeout(() => ok(null), STATUS_WAIT_MS).unref());
+  try {
+    const out = await Promise.race([check, waking]);
+    return out ?? { connected: false, waking: true, reason: 'The Paper Correction service is starting up. Try again in a minute.', role, lastSync: null };
   } catch (err) {
     return { connected: false, reason: (err as Error).message, role, lastSync: null };
   }

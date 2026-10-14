@@ -4,7 +4,8 @@
  * marking service as the signed-in user.
  */
 import { useState, type ReactNode } from 'react';
-import { useApiQuery } from '@/hooks/useApi';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 import { Badge, Banner, Button, Card, Empty, Modal, TextArea } from '@/components/ui';
 
 export const EV = '/exam-correction/api';
@@ -14,6 +15,8 @@ export type ExamRole = 'admin' | 'coordinator' | 'teacher';
 
 export interface PcStatus {
   connected: boolean;
+  /** The service is waking up (free hosting sleeps when idle). */
+  waking?: boolean;
   reason: string | null;
   role: ExamRole | null;
   ai?: AiStatus;
@@ -70,16 +73,30 @@ export function EvStatus({ value }: { value?: string | null }) {
 
 export const isBusy = (job: Job | null | undefined) => !!job && (job.status === 'queued' || job.status === 'running');
 
-/** Service status: connection, the caller's role and Claude readiness. */
+/** Service status: connection, the caller's role and Claude readiness. Re-checks every 10 s while the service wakes. */
 export function usePcStatus() {
-  return useApiQuery<PcStatus>('/exam-correction/status', undefined, { staleTime: 60_000 });
+  return useQuery<PcStatus>({
+    queryKey: ['/exam-correction/status', {}],
+    queryFn: ({ signal }) => api.get<PcStatus>('/exam-correction/status', undefined, signal),
+    staleTime: 60_000,
+    refetchInterval: (q) => (q.state.data?.waking ? 10_000 : false),
+  });
 }
 
-export function NotConnected({ reason }: { reason: string | null }) {
+export function NotConnected({ status, onRetry }: { status?: PcStatus; onRetry?: () => void }) {
+  if (status?.waking) {
+    return (
+      <Card>
+        <Empty icon="clock" title="Starting Paper Correction…"
+          sub="The marking service sleeps when nobody uses it and takes up to a minute to wake. This page continues by itself." />
+      </Card>
+    );
+  }
   return (
     <Card>
       <Empty icon="alert" title="Paper Correction is not connected"
-        sub={<>{reason ?? 'The marking service is not available.'} An administrator starts it from <code>exam-vision/</code> — see HOW-TO-RUN.txt.</>} />
+        sub={<>{status?.reason ?? 'The marking service is not available.'} An administrator starts it from <code>exam-vision/</code> — see HOW-TO-RUN.txt.</>}
+        action={onRetry && <Button icon="refresh" onClick={onRetry}>Try again</Button>} />
     </Card>
   );
 }

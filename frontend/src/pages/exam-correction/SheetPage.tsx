@@ -65,7 +65,7 @@ export default function SheetPage() {
   }, [s, openQ]);
 
   if (st.isLoading || (st.data?.connected && q.isLoading)) return <Page><PageSkeleton /></Page>;
-  if (st.data && !st.data.connected) return <Page><PageHead title="Answer sheet" /><NotConnected reason={st.data.reason} /></Page>;
+  if (st.data && !st.data.connected) return <Page><PageHead title="Answer sheet" /><NotConnected status={st.data} onRetry={() => st.refetch()} /></Page>;
   if (q.error || !s) return <Page><PageHead title="Answer sheet" /><ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const ai = st.data?.ai;
   const ext = s.active_extraction;

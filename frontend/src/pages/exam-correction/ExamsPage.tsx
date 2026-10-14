@@ -38,7 +38,7 @@ export default function ExamsPage() {
         </>} />
 
       {st.isLoading ? null : st.error ? <ErrorState error={st.error} onRetry={() => st.refetch()} />
-        : !connected ? <NotConnected reason={st.data?.reason ?? null} />
+        : !connected ? <NotConnected status={st.data} onRetry={() => st.refetch()} />
         : (
           <>
             <div className="col g-3 mb-4">

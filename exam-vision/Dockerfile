@@ -10,4 +10,5 @@ COPY backend/static static
 RUN useradd -r app && mkdir -p /data && chown app /data
 USER app
 EXPOSE 8006
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8006"]
+# Render (and similar hosts) set PORT; 8006 otherwise.
+CMD ["sh", "-c", "exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8006}"]

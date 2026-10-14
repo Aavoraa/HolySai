@@ -4,6 +4,7 @@ database (the key encrypted); nothing here depends on a local model or GPU."""
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -67,12 +68,27 @@ class AIConfig:
         return True, ""
 
 
+def _server_defaults() -> tuple[dict, dict]:
+    """Defaults set on the server, for hosts whose disk is wiped on restart (e.g. Render free):
+    EXAM_CLAUDE_API_KEY (enables Claude) and EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED=1.
+    Anything saved in AI Configuration takes precedence."""
+    values, secrets = dict(DEFAULTS), {}
+    key = os.getenv("EXAM_CLAUDE_API_KEY", "").strip()
+    if key:
+        secrets["claude_api_key"] = key
+        values["claude_enabled"] = True
+    if os.getenv("EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED", "") == "1":
+        values["external_processing_acknowledged"] = True
+        values["external_processing_acknowledged_by"] = {"user": "server configuration", "at": ""}
+    return values, secrets
+
+
 def load(db: Session) -> AIConfig:
-    values = dict(DEFAULTS)
-    secrets: dict = {}
+    values, secrets = _server_defaults()
     for row in db.query(Setting).all():
         if row.key in SECRET_KEYS:
-            secrets[row.key] = decrypt_secret(row.secret)
+            if row.secret:  # a cleared key falls back to the server default
+                secrets[row.key] = decrypt_secret(row.secret)
         elif row.key in DEFAULTS:
             values[row.key] = row.value
     return AIConfig(values=values, secrets=secrets)
