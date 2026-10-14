@@ -90,116 +90,134 @@ function SheetsTab({ exam, ai }: { exam: Exam; ai?: AiStatus }) {
     setBusyPoll(anyBusy);
   }, [anyBusy]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const uploaded = new Set((subs.data ?? []).map((s) => s.student.id));
   const classStudents = (students.data ?? []).filter((s) => !exam.section || !s.section || s.section === exam.section);
-  const eligible = classStudents.filter((s) => !uploaded.has(s.id));
+  const bySheet = new Map((subs.data ?? []).map((s) => [s.student.id, s]));
+  // The whole class, one row per student: their sheet if uploaded, an upload button if not.
+  // Sheets of students no longer in the roster (moved class) are kept at the end.
+  const rows: RosterRow[] = [
+    ...[...classStudents].sort((a, b) => (Number(a.roll_no) || 999) - (Number(b.roll_no) || 999) || a.name.localeCompare(b.name))
+      .map((st) => ({ id: st.id, name: st.name, admissionNo: st.admission_no, rollNo: st.roll_no, sheet: bySheet.get(st.id) })),
+    ...(subs.data ?? []).filter((s) => !classStudents.some((c) => c.id === s.student.id))
+      .map((s) => ({ id: s.student.id, name: s.student.name, admissionNo: s.student.admission_no, rollNo: s.student.roll_no, sheet: s })),
+  ];
+  const withSheet = rows.filter((r) => r.sheet).length;
 
-  const [studentId, setStudentId] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
+  const [uploadFor, setUploadFor] = useState<RosterRow | null>(null);
   const [bulkFiles, setBulkFiles] = useState<File[]>([]);
-  const [auto, setAuto] = useState(true);
-  const [uploading, setUploading] = useState<'one' | 'bulk' | null>(null);
+  const [bulking, setBulking] = useState(false);
   const [bulkOut, setBulkOut] = useState<{ file: string; ok: boolean; student?: string; error?: string }[] | null>(null);
   const [inputKey, setInputKey] = useState(0);
 
-  const uploadOne = async () => {
-    if (!studentId || !files.length) return toast('Choose the student and the page files.', 'warning');
-    const fd = new FormData();
-    fd.append('student_id', studentId);
-    fd.append('auto_process', String(auto));
-    files.forEach((f) => fd.append('files', f));
-    setUploading('one');
-    try {
-      const r = await api.upload<SheetRow & { note?: string }>(`${EV}/exams/${exam.id}/submissions`, fd);
-      toast(r.data.note || 'Answer sheet uploaded', r.data.note ? 'warning' : 'success');
-      setStudentId(''); setFiles([]); setInputKey((k) => k + 1);
-      await invalidate('/exam-correction');
-    } catch (e) { toast(errorMessage(e), 'critical'); } finally { setUploading(null); }
-  };
   const uploadBulk = async () => {
     if (!bulkFiles.length) return toast('Choose files named with admission numbers.', 'warning');
     const fd = new FormData();
-    fd.append('auto_process', String(auto));
+    fd.append('auto_process', 'true');
     bulkFiles.forEach((f) => fd.append('files', f));
-    setUploading('bulk');
+    setBulking(true);
     try {
       const r = await api.upload<{ results: { file: string; ok: boolean; student?: string; error?: string }[] }>(`${EV}/exams/${exam.id}/submissions/bulk`, fd);
       setBulkOut(r.data.results); setBulkFiles([]); setInputKey((k) => k + 1);
       await invalidate('/exam-correction');
-    } catch (e) { toast(errorMessage(e), 'critical'); } finally { setUploading(null); }
+    } catch (e) { toast(errorMessage(e), 'critical'); } finally { setBulking(false); }
   };
 
   const classLabel = `${exam.class_name}${exam.section ? ` · Section ${exam.section}` : ''}`;
   return (
     <div className="col g-4">
       <AiNotReady ai={ai} />
-      <Grid cols="g-2col">
-        <Card icon="upload" title="Upload one answer sheet" sub="A PDF, or photos of the pages in order">
-          <div className="col g-3">
-            <SelectField label="Student" required value={studentId} onChange={setStudentId}
-              placeholder={eligible.length ? 'Choose the student…' : classStudents.length ? `Every ${classLabel} student already has a sheet` : `No students in ${classLabel}`}
-              options={eligible.map((s) => ({ value: s.id, label: `${s.name} (${s.admission_no}${s.roll_no ? `, roll ${s.roll_no}` : ''})` }))}
-              hint={classStudents.length ? 'Identity comes from your choice here, never from what the AI reads.' : 'Students come from Holy Sai. Use "Sync students & staff" if a new admission is missing.'} />
-            <div className="field">
-              <label className="label" htmlFor="pc-files">Pages</label>
-              <input key={`one${inputKey}`} id="pc-files" className="input pc-file" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
-              <span className="hint">Up to 40 pages per student.</span>
-            </div>
-            <Checkbox checked={auto} onChange={setAuto} label={`Read and mark automatically with Claude${ai ? ` (${ai.vision_model} / ${ai.eval_model})` : ''}`} />
-            <div><Button variant="primary" icon="upload" loading={uploading === 'one'} onClick={uploadOne}>Upload</Button></div>
-          </div>
-        </Card>
-        <Card icon="folder" title="Bulk upload" sub="One file per student, named with the admission number, e.g. HS-2026-1041.pdf">
-          <div className="col g-3">
-            <div className="field">
-              <label className="label" htmlFor="pc-bulk">Files</label>
-              <input key={`bulk${inputKey}`} id="pc-bulk" className="input pc-file" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => setBulkFiles(Array.from(e.target.files ?? []))} />
-              <span className="hint">You still confirm each student's identity on the review screen.</span>
-            </div>
-            <div><Button icon="upload" loading={uploading === 'bulk'} onClick={uploadBulk}>Upload all</Button></div>
-            {bulkOut && (
-              <ul className="pc-list">
-                {bulkOut.map((r) => <li key={r.file}><span className="t-sm">{r.file}</span> {r.ok ? <Badge tone="success">{r.student}</Badge> : <Badge tone="critical">{r.error}</Badge>}</li>)}
-              </ul>
-            )}
-          </div>
-        </Card>
-      </Grid>
-
-      <Card icon="fileText" title={`Answer sheets (${subs.data?.length ?? 0})`} flush sub={anyBusy ? 'Claude is working — this list refreshes by itself.' : undefined}>
-        {subs.error ? <ErrorState error={subs.error} onRetry={() => subs.refetch()} /> : (
-          <DataTable rows={subs.data} loading={subs.isLoading} rowKey={(s) => s.id} onRowClick={(s) => navigate(`${BASE}/sheets/${s.id}`)}
-            emptyText="No answer sheets uploaded yet."
+      <Card icon="users" title={`${classLabel} — ${withSheet} of ${classStudents.length} answer sheets`} flush
+        sub={anyBusy ? 'Claude is working — this list refreshes by itself.' : 'Upload each student’s sheet from their row. Identity comes from the row, never from what the AI reads.'}>
+        {subs.error || students.error ? <ErrorState error={subs.error ?? students.error} onRetry={() => { subs.refetch(); students.refetch(); }} /> : (
+          <DataTable rows={rows} loading={subs.isLoading || students.isLoading} rowKey={(r) => r.id}
+            onRowClick={(r) => (r.sheet ? navigate(`${BASE}/sheets/${r.sheet.id}`) : setUploadFor(r))}
+            emptyText={`No students in ${classLabel}. Students come from Holy Sai — use "Sync students & staff" if a new admission is missing.`}
             columns={[
-              { key: 'student', label: 'Student', render: (s) => <><span className="t-bold">{s.student.name}</span><div className="t-micro t-muted">{s.student.admission_no}</div></> },
-              { key: 'status', label: 'Status', render: (s) => <><EvStatus value={s.status} />{s.status_note && <div className="t-micro t-critical pc-note">{s.status_note}</div>}</> },
-              { key: 'marks', label: 'Marks', className: 'num', render: (s) => <><span className="t-num t-bold">{marks(s.totals.total)} / {marks(s.totals.maximum)}</span><div className="t-micro t-muted">{s.totals.marked}/{s.totals.questions} marked</div></> },
-              { key: 'pages', label: 'Pages', className: 'num', render: (s) => <span className="t-num">{s.pages}</span> },
-              { key: 'id', label: 'Identity', render: (s) => s.identity_verified ? <Badge tone="success">confirmed</Badge> : <Badge tone="warning">to confirm</Badge> },
+              { key: 'roll', label: 'Roll', width: '60px', render: (r) => <span className="t-num">{r.rollNo || '—'}</span> },
+              { key: 'student', label: 'Student', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.admissionNo}</div></> },
+              { key: 'status', label: 'Status', render: (r) => !r.sheet ? <Badge>No sheet yet</Badge> : <><EvStatus value={r.sheet.status} />{r.sheet.status_note && <div className="t-micro t-critical pc-note">{r.sheet.status_note}</div>}</> },
+              { key: 'marks', label: 'Marks', className: 'num', render: (r) => !r.sheet ? <span className="t-faint">—</span> : <><span className="t-num t-bold">{marks(r.sheet.totals.total)} / {marks(r.sheet.totals.maximum)}</span><div className="t-micro t-muted">{r.sheet.totals.marked}/{r.sheet.totals.questions} marked</div></> },
+              { key: 'pages', label: 'Pages', className: 'num', render: (r) => <span className="t-num">{r.sheet ? r.sheet.pages : '—'}</span> },
+              { key: 'id', label: 'Identity', render: (r) => !r.sheet ? '—' : r.sheet.identity_verified ? <Badge tone="success">confirmed</Badge> : <Badge tone="warning">to confirm</Badge> },
               {
-                key: 'name', label: 'Name on sheet', render: (s) => !s.name_check ? '—' : (
-                  <span title={s.name_check.detail}>
-                    <Badge tone={s.name_check.status === 'match' ? 'success' : s.name_check.status === 'differs' ? 'critical' : 'neutral'}>
-                      {s.name_check.status === 'match' ? 'matches' : s.name_check.status === 'differs' ? 'differs' : 'none'}
+                key: 'name', label: 'Name on sheet', render: (r) => !r.sheet?.name_check ? '—' : (
+                  <span title={r.sheet.name_check.detail}>
+                    <Badge tone={r.sheet.name_check.status === 'match' ? 'success' : r.sheet.name_check.status === 'differs' ? 'critical' : 'neutral'}>
+                      {r.sheet.name_check.status === 'match' ? 'matches' : r.sheet.name_check.status === 'differs' ? 'differs' : 'none'}
                     </Badge>
                   </span>
                 ),
               },
-              { key: 'cost', label: 'Claude cost', className: 'num', render: (s) => <span className="t-num t-xs">{s.cost.cost_usd ? `$${s.cost.cost_usd}` : '—'}</span> },
               {
-                key: 'job', label: 'Activity', render: (s) => !s.job ? '—' : (
-                  <><span className="row g-1"><EvStatus value={s.job.status} /><span className="t-xs">{s.job.kind}</span></span>
-                    {s.job.progress && isBusy(s.job) && <div className="t-micro t-muted">{s.job.progress}</div>}
-                    {s.job.error && <div className="t-micro t-critical pc-note">{s.job.error}</div>}</>
+                key: 'job', label: 'Activity', render: (r) => !r.sheet?.job ? '—' : (
+                  <><span className="row g-1"><EvStatus value={r.sheet.job.status} /><span className="t-xs">{r.sheet.job.kind}</span></span>
+                    {r.sheet.job.progress && isBusy(r.sheet.job) && <div className="t-micro t-muted">{r.sheet.job.progress}</div>}
+                    {r.sheet.job.error && <div className="t-micro t-critical pc-note">{r.sheet.job.error}</div>}</>
                 ),
               },
-              { key: 'go', label: '', sortable: false, className: 'num', render: () => <Button size="sm" iconRight="arrowRight">Review</Button> },
+              {
+                key: 'go', label: '', sortable: false, className: 'num', render: (r) => r.sheet
+                  ? <Button size="sm" iconRight="arrowRight">Review</Button>
+                  : <Button size="sm" variant="primary" icon="upload">Upload</Button>,
+              },
             ]} />
         )}
       </Card>
+
+      <Card icon="folder" title="Bulk upload" sub="Many sheets at once: one file per student, named with the admission number, e.g. HS-2026-1041.pdf">
+        <div className="row g-3 wrap">
+          <input key={`bulk${inputKey}`} aria-label="Answer sheet files" className="input pc-file grow" type="file" multiple accept=".pdf,.jpg,.jpeg,.png"
+            onChange={(e) => setBulkFiles(Array.from(e.target.files ?? []))} />
+          <Button icon="upload" loading={bulking} onClick={uploadBulk}>Upload all</Button>
+        </div>
+        {bulkOut && (
+          <ul className="pc-list">
+            {bulkOut.map((r) => <li key={r.file}><span className="t-sm">{r.file}</span> {r.ok ? <Badge tone="success">{r.student}</Badge> : <Badge tone="critical">{r.error}</Badge>}</li>)}
+          </ul>
+        )}
+      </Card>
+      {uploadFor && <UploadSheetModal exam={exam} row={uploadFor} ai={ai} onClose={() => setUploadFor(null)} />}
     </div>
+  );
+}
+
+interface RosterRow { id: string; name: string; admissionNo: string; rollNo: string; sheet?: SheetRow }
+
+/** Uploads one student's answer sheet; the student is the row it was opened from. */
+function UploadSheetModal({ exam, row, ai, onClose }: { exam: Exam; row: RosterRow; ai?: AiStatus; onClose: () => void }) {
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  const [files, setFiles] = useState<File[]>([]);
+  const [auto, setAuto] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const submit = async () => {
+    if (!files.length) return setError(new Error('Choose the PDF or the photos of the pages.'));
+    const fd = new FormData();
+    fd.append('student_id', row.id);
+    fd.append('auto_process', String(auto));
+    files.forEach((f) => fd.append('files', f));
+    setBusy(true); setError(null);
+    try {
+      const r = await api.upload<SheetRow & { note?: string }>(`${EV}/exams/${exam.id}/submissions`, fd);
+      toast(r.data.note || `${row.name}’s answer sheet uploaded`, r.data.note ? 'warning' : 'success');
+      await invalidate('/exam-correction');
+      onClose();
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} title={`Upload answer sheet — ${row.name}`} sub={`${row.admissionNo}${row.rollNo ? ` · Roll ${row.rollNo}` : ''} · ${exam.name}`} busy={busy}
+      foot={<><Button onClick={onClose} disabled={busy}>Cancel</Button><Button variant="primary" icon="upload" loading={busy} onClick={submit}>Upload</Button></>}>
+      <div className="col g-3">
+        {error ? <InlineError error={error} /> : null}
+        <div className="field">
+          <label className="label" htmlFor="pc-files">Pages</label>
+          <input id="pc-files" className="input pc-file" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+          <span className="hint">A PDF, or photos of the pages in order — up to 40 pages.</span>
+        </div>
+        <Checkbox checked={auto} onChange={setAuto} label={`Read and mark automatically with Claude${ai ? ` (${ai.vision_model} / ${ai.eval_model})` : ''}`} />
+      </div>
+    </Modal>
   );
 }
 
