@@ -1,22 +1,22 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
  * workforce screens. Each route declares the permissions that may open it (any of);
  * the API enforces the same rule. Pages are lazy-loaded.
  */
-const WorkforcePage = lazy(() => import('./WorkforcePage'));
-const StaffListPage = lazy(() => import('./StaffListPage'));
-const StaffAttendancePage = lazy(() => import('./StaffAttendancePage'));
-const ShiftsPage = lazy(() => import('./ShiftsPage'));
-const LeavePage = lazy(() => import('./LeavePage'));
-const OvertimePage = lazy(() => import('./OvertimePage'));
-const WorkloadPage = lazy(() => import('./WorkloadPage'));
-const CpdPage = lazy(() => import('./CpdPage'));
-const PayrollPage = lazy(() => import('./PayrollPage'));
-const PayslipsPage = lazy(() => import('./PayslipsPage'));
-const PayslipPrintPage = lazy(() => import('./PayslipPrintPage'));
-const StaffSelfPage = lazy(() => import('./StaffSelfPage'));
+const WorkforcePage = page(() => import('./WorkforcePage'));
+const StaffListPage = page(() => import('./StaffListPage'));
+const StaffAttendancePage = page(() => import('./StaffAttendancePage'));
+const ShiftsPage = page(() => import('./ShiftsPage'));
+const LeavePage = page(() => import('./LeavePage'));
+const OvertimePage = page(() => import('./OvertimePage'));
+const WorkloadPage = page(() => import('./WorkloadPage'));
+const CpdPage = page(() => import('./CpdPage'));
+const PayrollPage = page(() => import('./PayrollPage'));
+const PayslipsPage = page(() => import('./PayslipsPage'));
+const PayslipPrintPage = page(() => import('./PayslipPrintPage'));
+const StaffSelfPage = page(() => import('./StaffSelfPage'));
 
 export const routes: AppRoute[] = [
   { path: '/workforce', perm: ['hr.read'], element: <WorkforcePage /> },

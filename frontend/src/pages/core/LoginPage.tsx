@@ -124,7 +124,7 @@ export default function LoginPage() {
       <div className="home__body">
         <div className="home__left">
           <div className="shot">
-            <img src="/homescreen.png" alt="Holy Sai International campus: students walking to the entrance, with Student Success, Connected Parents, Safer Campus and Smarter Operations highlighted." />
+            <img src="/homescreen.webp" width={1448} height={1086} fetchPriority="high" decoding="async" alt="Holy Sai International campus: students walking to the entrance, with Student Success, Connected Parents, Safer Campus and Smarter Operations highlighted." />
           </div>
           <div className="herofallback">
             <p className="hero__eyebrow">A Brighter Tomorrow Begins Here</p>

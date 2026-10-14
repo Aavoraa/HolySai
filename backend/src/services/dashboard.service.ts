@@ -24,7 +24,7 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
                 count(s.id)::int AS total
            FROM students s LEFT JOIN attendance_records a ON a.student_id = s.id AND a.attendance_date = current_date
           WHERE s.deleted_at IS NULL AND s.status = 'active' AND ($1::uuid IS NULL OR s.campus_id = $1)`, [c]),
-    many(`SELECT to_char(a.attendance_date, 'Dy DD') AS label, a.attendance_date AS date,
+    many(`SELECT to_char(a.attendance_date, 'Dy DD') AS label, a.attendance_date AS date, to_char(a.attendance_date, 'YYYY-MM-DD') AS day,
                  round(100.0 * count(*) FILTER (WHERE a.status IN ('present', 'late')) / NULLIF(count(*), 0), 1)::float AS value
             FROM attendance_records a JOIN students s ON s.id = a.student_id
            WHERE a.attendance_date > current_date - 21 AND ($1::uuid IS NULL OR s.campus_id = $1)
@@ -83,6 +83,33 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
     staff,
   };
 
+  // History behind the dashboard sparklines: month-end headcounts for the last
+  // seven months (current students and staff by admission / joining date) and
+  // staff attendance on the same school days as the student trend.
+  const history = async () => {
+  const [growth, staffDays] = await Promise.all([
+    many(`WITH m AS (SELECT (date_trunc('month', current_date) - make_interval(months => n) + interval '1 month - 1 day')::date AS month_end
+                       FROM generate_series(0, 6) n)
+          SELECT to_char(m.month_end, 'Mon') AS label,
+                 (SELECT count(*)::int FROM students s
+                   WHERE s.deleted_at IS NULL AND s.status = 'active' AND COALESCE(s.admitted_on, s.created_at::date) <= m.month_end
+                     AND ($1::uuid IS NULL OR s.campus_id = $1)) AS students,
+                 (SELECT count(*)::int FROM employees e
+                   WHERE e.deleted_at IS NULL AND e.employment_status = 'active' AND COALESCE(e.join_date, e.created_at::date) <= m.month_end
+                     AND ($1::uuid IS NULL OR e.campus_id = $1)) AS staff
+            FROM m ORDER BY m.month_end`, [c]),
+    many(`SELECT to_char(sa.attendance_date, 'YYYY-MM-DD') AS day,
+                 round(100.0 * count(*) FILTER (WHERE sa.status IN ('Present', 'Late', 'Half Day')) / NULLIF(count(*), 0), 1)::float AS value
+            FROM staff_attendance sa JOIN employees e ON e.id = sa.employee_id
+           WHERE sa.attendance_date > current_date - 21 AND ($1::uuid IS NULL OR e.campus_id = $1)
+           GROUP BY sa.attendance_date`, [c]),
+  ]);
+  const staffByDay = new Map(staffDays.map((r) => [r.day, r.value as number]));
+  (out.attendance as { staffTrend?: (number | null)[] }).staffTrend = trend.map((t) => staffByDay.get(t.day) ?? null);
+  out.history = { months: growth.map((g) => g.label), students: growth.map((g) => g.students), staff: growth.map((g) => g.staff) };
+  };
+
+  const admissions = async () => {
   if (perms.has('admissions.read')) {
     const [funnel, adm, sources, overdueFollowUps] = await Promise.all([
       many(`SELECT stage AS label, count(*)::int AS value FROM enquiries
@@ -120,8 +147,11 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
       overdueFollowUps: overdueFollowUps?.n ?? 0,
     };
   }
+  };
 
-  if (perms.has('finance.read')) {
+  const finance = async () => {
+  if (!perms.has('finance.read')) return;
+  {
     out.finance = await one(
       `SELECT COALESCE(sum(f.amount_due - f.concession_amount), 0)::numeric AS billed,
               COALESCE(sum(f.amount_paid), 0)::numeric AS collected,
@@ -135,8 +165,23 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
         WHERE ($1::uuid IS NULL OR s.campus_id = $1)`, [c]);
     const fin = out.finance as any;
     fin.collectionPct = fin.billed ? Math.round((fin.collected / fin.billed) * 1000) / 10 : 0;
+    // Collection progress at each month end of the current academic year (successful payments to date / billed).
+    const monthly = await many(
+      `WITH ay AS (SELECT starts_on FROM academic_years WHERE is_current LIMIT 1),
+            m AS (SELECT (date_trunc('month', current_date) - make_interval(months => n) + interval '1 month - 1 day')::date AS month_end
+                    FROM generate_series(0, 6) n)
+       SELECT to_char(m.month_end, 'Mon') AS label,
+              COALESCE((SELECT sum(p.amount) FROM fee_payments p JOIN students s ON s.id = p.student_id
+                         WHERE p.status = 'Success' AND p.paid_at::date >= ay.starts_on AND p.paid_at::date <= m.month_end
+                           AND ($1::uuid IS NULL OR s.campus_id = $1)), 0)::float AS collected
+         FROM m, ay WHERE m.month_end >= ay.starts_on ORDER BY m.month_end`, [c]);
+    // Payments give the shape over time; scaled so the latest month equals the headline collection rate.
+    const latest = monthly.length ? monthly[monthly.length - 1].collected : 0;
+    fin.monthly = monthly.map((r) => ({ label: r.label, pct: latest ? Math.round(fin.collectionPct * (r.collected / latest) * 10) / 10 : 0 }));
   }
+  };
 
+  const earlyWarning = async () => {
   if (perms.has('earlywarning.read')) {
     out.earlyWarning = await one(
       `SELECT count(*) FILTER (WHERE e.closed_at IS NULL)::int AS open,
@@ -146,18 +191,19 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
          FROM early_warning_signals e JOIN students s ON s.id = e.student_id
         WHERE ($1::uuid IS NULL OR s.campus_id = $1)`, [c]);
   }
+  };
 
   // Parent engagement: average engagement score and unanswered queries.
-  out.parentEngagement = await one(
+  const engagement = async () => { out.parentEngagement = await one(
     `SELECT round(avg(p.engagement_score))::int AS score,
             (SELECT count(*) FROM communications cm WHERE cm.needs_reply AND cm.replied_at IS NULL)::int AS unanswered,
             (SELECT min(cm.occurred_at) FROM communications cm WHERE cm.needs_reply AND cm.replied_at IS NULL) AS "oldestUnanswered"
        FROM parents p
       WHERE p.deleted_at IS NULL AND ($1::uuid IS NULL OR EXISTS (
-            SELECT 1 FROM student_guardians sg JOIN students s ON s.id = sg.student_id WHERE sg.parent_id = p.id AND s.campus_id = $1))`, [c]);
+            SELECT 1 FROM student_guardians sg JOIN students s ON s.id = sg.student_id WHERE sg.parent_id = p.id AND s.campus_id = $1))`, [c]); };
 
   // Academic performance: latest-term mean per grade.
-  out.academic = {
+  const academic = async () => { out.academic = {
     byGrade: await many(
       `WITH latest AS (
          SELECT r.student_id, r.score, r.term_order, max(r.term_order) OVER (PARTITION BY r.student_id) AS mx
@@ -167,10 +213,11 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
          JOIN sections sec ON sec.id = s.section_id JOIN classes c ON c.id = sec.class_id
         WHERE l.term_order = l.mx AND ($1::uuid IS NULL OR s.campus_id = $1)
         GROUP BY c.name, c.grade_level ORDER BY c.grade_level`, [c]),
-  };
+  }; };
 
   // Pending approvals across modules.
-  const approvals = await one(
+  let approvals: any;
+  const pending = async () => { approvals = await one(
     `SELECT
        (SELECT count(*) FROM expenses WHERE status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR campus_id = $1))::int AS expenses,
        (SELECT count(*) FROM leave_requests lr JOIN employees e ON e.id = lr.employee_id
@@ -181,21 +228,39 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
        (SELECT count(*) FROM reimbursements WHERE status IN ('Submitted', 'Under Review'))::int AS reimbursements,
        (SELECT count(*) FROM certificates WHERE status IN ('Submitted', 'Under Review'))::int AS certificates,
        (SELECT count(*) FROM payroll_runs WHERE status = 'Under Review')::int AS payroll`, [c]);
-  out.approvals = { ...approvals, total: Object.values(approvals ?? {}).reduce((a: number, b) => a + Number(b), 0) };
+  out.approvals = { ...approvals, total: Object.values(approvals ?? {}).reduce((a: number, b) => a + Number(b), 0) }; };
 
-  if (perms.has('tracking.read_all') || perms.has('tracking.read_assigned')) {
-    out.tracking = await trackingSummary(user, c ?? undefined);
-  }
+  const tracking = async () => {
+    if (perms.has('tracking.read_all') || perms.has('tracking.read_assigned')) out.tracking = await trackingSummary(user, c ?? undefined);
+  };
 
   // Today's attention panel — derived, each item links to its module.
-  const compliance = await one(
+  let compliance: any;
+  let busDelays: any[] = [];
+  const operations = async () => { [compliance, busDelays] = await Promise.all([one(
     `SELECT count(*) FILTER (WHERE due_on < current_date AND status <> 'Completed')::int AS overdue,
             count(*) FILTER (WHERE due_on BETWEEN current_date AND current_date + 14 AND status <> 'Completed')::int AS "dueSoon",
             (SELECT item FROM compliance_items WHERE due_on < current_date AND status <> 'Completed' AND ($1::uuid IS NULL OR campus_id = $1) ORDER BY due_on LIMIT 1) AS "firstOverdue"
-       FROM compliance_items WHERE ($1::uuid IS NULL OR campus_id = $1)`, [c]);
-  const busDelays = await many(
+       FROM compliance_items WHERE ($1::uuid IS NULL OR campus_id = $1)`, [c]),
+    many(
     `SELECT tr.name, tr.delay_minutes AS delay FROM transport_routes tr
-      WHERE tr.run_status = 'Delayed' AND ($1::uuid IS NULL OR tr.campus_id = $1) ORDER BY tr.delay_minutes DESC`, [c]);
+      WHERE tr.run_status = 'Delayed' AND ($1::uuid IS NULL OR tr.campus_id = $1) ORDER BY tr.delay_minutes DESC`, [c])]); };
+
+  // Live activity feed from the audit trail and gate.
+  const activity = async () => { out.activity = await many(
+    `SELECT * FROM (
+       SELECT created_at AS at, description AS text, module, user_name AS "by", 'activity' AS icon
+         FROM audit_logs WHERE action NOT IN ('view', 'login', 'logout', 'login_failed')
+       UNION ALL
+       SELECT g.occurred_at, s.full_name || ' ' || CASE g.direction WHEN 'in' THEN 'entered' ELSE 'left' END || ' — ' || g.gate || ' (' || g.method || ')',
+              'safety', 'Smart Gate', 'door'
+         FROM gate_events g JOIN students s ON s.id = g.student_id
+        WHERE g.occurred_at >= current_date - 1 AND ($1::uuid IS NULL OR g.campus_id = $1)
+     ) x ORDER BY at DESC LIMIT 12`, [c]); };
+
+  // Independent blocks run side by side: one database round trip of wall time instead of a dozen.
+  await Promise.all([history(), admissions(), finance(), earlyWarning(), engagement(), academic(), pending(), tracking(), operations(), activity()]);
+
   const attention: any[] = [];
   const ew = out.earlyWarning as any;
   if (ew?.open) attention.push({ tone: 'critical', icon: 'userCheck', title: `${ew.open} students have open Early Warning signals`, meta: `${ew.awaitingReview} awaiting teacher review · ${ew.inIntervention} in intervention`, route: '/early-warning', count: ew.open });
@@ -210,18 +275,6 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
   if (pe?.unanswered) attention.push({ tone: 'info', icon: 'message', title: `${pe.unanswered} parent queries unanswered`, meta: 'Parent Communication', route: '/parent-communication', count: pe.unanswered });
   out.attention = attention;
   out.compliance = compliance;
-
-  // Live activity feed from the audit trail and gate.
-  out.activity = await many(
-    `SELECT * FROM (
-       SELECT created_at AS at, description AS text, module, user_name AS "by", 'activity' AS icon
-         FROM audit_logs WHERE action NOT IN ('view', 'login', 'logout', 'login_failed')
-       UNION ALL
-       SELECT g.occurred_at, s.full_name || ' ' || CASE g.direction WHEN 'in' THEN 'entered' ELSE 'left' END || ' — ' || g.gate || ' (' || g.method || ')',
-              'safety', 'Smart Gate', 'door'
-         FROM gate_events g JOIN students s ON s.id = g.student_id
-        WHERE g.occurred_at >= current_date - 1 AND ($1::uuid IS NULL OR g.campus_id = $1)
-     ) x ORDER BY at DESC LIMIT 12`, [c]);
 
   return out;
 }

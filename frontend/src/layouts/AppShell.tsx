@@ -1,15 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { preloadRoute } from '@/pages/registry';
 import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
-import { Avatar, Badge, Button, Dropdown, Empty, Icon, Lotus, Modal, useConfirm, useToast } from '@/components/ui';
+import { Avatar, Badge, Button, Dropdown, Empty, Icon, Lotus, Modal, useConfirm, useToast, LotusMark } from '@/components/ui';
 import { NAV, mobileNavFor, type NavItem } from './nav';
 import { routeMeta } from './routeMeta';
 import { useSchool } from './SchoolContext';
 import { fmt } from '@/lib/format';
-import { useTheme } from '@/theme/theme';
 
 interface Counts { unread: number; alerts: number; openTasks: number }
 
@@ -87,9 +87,9 @@ export function AppShell() {
 
   return (
     <div className="app" data-rail={String(rail)} data-drawer={String(drawer)} data-search={String(mobileSearch)}>
-      <a href="#main" className="sr-only">Skip to content</a>
+      <a href="#main" className="skiplink">Skip to main content</a>
       <button className="sidebar__scrim" aria-label="Close navigation" tabIndex={-1} onClick={() => setDrawer(false)} />
-      <aside className="sidebar" id="sidebar">
+      <aside className="sidebar" id="sidebar" aria-label="Main menu">
         <Sidebar rail={rail} onToggleRail={() => setRail((r) => !r)} onExpand={() => setRail(false)} counts={counts.data} />
       </aside>
       <div className="main">
@@ -184,7 +184,8 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
     const at = ql ? label.toLowerCase().indexOf(ql) : -1;
     const count = badgeFor(i);
     return (
-      <Link key={i.label + i.to} className="navitem" to={target} aria-current={owns && matches(i) ? 'page' : undefined} title={label} onClick={() => setQ('')}>
+      <Link key={i.label + i.to} className="navitem" to={target} aria-current={owns && matches(i) ? 'page' : undefined} title={label} onClick={() => setQ('')}
+        onMouseEnter={() => preloadRoute(target)} onFocus={() => preloadRoute(target)}>
         <span className="navitem__ico"><Icon name={i.icon} size={17} /></span>
         <span className="navitem__label">
           {at > -1 ? (
@@ -234,9 +235,10 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
           </span>
         </Link>
         <button className="iconbtn none sidebar__railbtn" onClick={onToggleRail} aria-label={rail ? 'Expand navigation' : 'Collapse navigation'} title={rail ? 'Expand navigation' : 'Collapse navigation'}>
-          <Icon name="menu" size={19} />
+          <Icon name="chevronsLeft" size={15} />
         </button>
       </div>
+      <LotusMark className="sidebar__lotus" />
       <nav className="sidebar__scroll" aria-label="Main navigation" ref={listRef}>
         {model.map((g) => {
           let items = g.items;
@@ -301,7 +303,7 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
             <span className="navitem__label">{t('Settings')}</span>
           </Link>
           <button className="iconbtn iconbtn--onnavy none sidebar__logout" aria-label={t('Sign out')} title={t('Sign out')} onClick={signOut}>
-            <Icon name="logout" size={17} />
+            <Icon name="logout" size={14} />
           </button>
         </div>
       </div>
@@ -361,7 +363,6 @@ function Topbar({ onMenu, mobileSearch, onToggleSearch, alertCount }: { onMenu: 
   const navigate = useNavigate();
   const { logout } = useAuth();
   const confirm = useConfirm();
-  const { theme, toggle } = useTheme();
 
   const showCampus = can('dashboard.group') || (can('students.read') && !user?.parentId);
 
@@ -413,14 +414,6 @@ function Topbar({ onMenu, mobileSearch, onToggleSearch, alertCount }: { onMenu: 
         <button className="iconbtn iconbtn--onnavy" title={t('Notifications')} aria-label={`${t('Notifications')}${alertCount ? ` (${alertCount} need attention)` : ''}`} onClick={() => navigate('/notifications')}>
           <Icon name="bell" size={18} />
           {alertCount ? <span className="iconbtn__dot">{alertCount > 99 ? '99+' : alertCount}</span> : null}
-        </button>
-        <button
-          className="iconbtn iconbtn--onnavy themetoggle"
-          onClick={toggle}
-          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-          title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
-        >
-          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
         </button>
       </div>
       <span className="topbar__sep topbar__hideSm" aria-hidden="true" />

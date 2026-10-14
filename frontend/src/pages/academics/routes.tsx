@@ -1,23 +1,23 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
  * academics screens. Each route declares the permissions that may open it (any of);
  * the API enforces the same rule. Paths and permissions match layouts/nav.ts.
  */
-const TeacherDashboardPage = lazy(() => import('./TeacherDashboardPage'));
-const AttendancePage = lazy(() => import('./AttendancePage'));
-const AcademicPerformancePage = lazy(() => import('./AcademicPerformancePage'));
-const AssessmentsPage = lazy(() => import('./AssessmentsPage'));
-const CurriculumPage = lazy(() => import('./CurriculumPage'));
-const ClassesPage = lazy(() => import('./ClassesPage'));
-const SubjectsPage = lazy(() => import('./SubjectsPage'));
-const TimetablePage = lazy(() => import('./TimetablePage'));
-const LessonPlansPage = lazy(() => import('./LessonPlansPage'));
-const HomeworkPage = lazy(() => import('./HomeworkPage'));
-const QuestionBankPage = lazy(() => import('./QuestionBankPage'));
-const ReportCardsPage = lazy(() => import('./ReportCardsPage'));
-const ObjectivesPage = lazy(() => import('./ObjectivesPage'));
+const TeacherDashboardPage = page(() => import('./TeacherDashboardPage'));
+const AttendancePage = page(() => import('./AttendancePage'));
+const AcademicPerformancePage = page(() => import('./AcademicPerformancePage'));
+const AssessmentsPage = page(() => import('./AssessmentsPage'));
+const CurriculumPage = page(() => import('./CurriculumPage'));
+const ClassesPage = page(() => import('./ClassesPage'));
+const SubjectsPage = page(() => import('./SubjectsPage'));
+const TimetablePage = page(() => import('./TimetablePage'));
+const LessonPlansPage = page(() => import('./LessonPlansPage'));
+const HomeworkPage = page(() => import('./HomeworkPage'));
+const QuestionBankPage = page(() => import('./QuestionBankPage'));
+const ReportCardsPage = page(() => import('./ReportCardsPage'));
+const ObjectivesPage = page(() => import('./ObjectivesPage'));
 
 export const routes: AppRoute[] = [
   { path: '/teacher', perm: ['attendance.mark'], element: <TeacherDashboardPage /> },

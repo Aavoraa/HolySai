@@ -1,6 +1,9 @@
 /* ==========================================================================
    HOLY SAI SMART SCHOOL 360 — DESIGN TOKENS
-   Modern layout on the Holy Sai brand palette (unchanged colours).
+   Official Holy Sai palette (brand guide): Holy Sai Magenta #990033, Deep
+   Magenta #B30042, Warm Golden Yellow #FFDB6E, Charcoal #171717, White.
+   Deep maroon navigation, warm-white workspace, white cards, gold accents.
+   Every text and focus colour meets WCAG 2.2 AA contrast.
    One source of truth for colour, type, space, radius, elevation, motion.
    Token names are stable; every component reads them, so the light and
    dark themes only change values here.
@@ -10,20 +13,21 @@
   color-scheme: light;
 
   /* ---- Brand palette (sampled from the approved dashboard reference) ----- */
-  --brand:           #8F0A40;   /* Holy Sai Magenta */
-  --brand-hover:     #A3154F;
-  --brand-strong:    #6A0032;   /* Sidebar brand block */
-  --brand-tint:      #F6E9EE;   /* Active menu / soft rose */
-  --brand-tint-2:    #EFD8E1;
-  --brand-line:      #E6C3D1;
-  --brand-ring:      rgba(143, 10, 64, .22);
-  --accent:          #F0B020;   /* Gold */
-  --accent-strong:   #A87400;   /* Gold text on light surfaces */
-  --accent-tint:     #FDF6E3;
-  --accent-line:     #F4DFA3;
+  --brand:           #990033;   /* Holy Sai Magenta */
+  --brand-hover:     #B30042;   /* Deep Magenta */
+  --brand-strong:    #4A0A22;   /* Deep maroon: sidebar */
+  --brand-tint:      #F9ECF0;   /* Soft rose */
+  --brand-tint-2:    #F2D7E0;
+  --brand-line:      #EBCAD5;
+  --brand-ring:      rgba(153, 0, 51, .22);
+  --accent:          #FFDB6E;   /* Warm Golden Yellow */
+  --accent-strong:   #8F6400;   /* Gold text on light surfaces (5.3:1) */
+  --accent-tint:     #FFF8E6;
+  --accent-line:     #EFD48A;
+  --gold-deep-fill:  #E3B04B;   /* Active navigation gradient end */
   --violet:          #5F37A6;   /* Purple tiles */
   --indigo:          #5048A8;
-  --green:           #178F66;
+  --green:           #0F7A55;
   --orange:          #F5822F;
   --sky:             #1098E0;
 
@@ -44,18 +48,18 @@
   --navy-deep:       var(--magenta-deep);
   --amber:           #C27E0A;
   --amber-hover:     #A56A04;
-  --teal:            #178F66;
-  --teal-hover:      #117551;
-  --charcoal:        #111529;
+  --teal:            #0F7A55;   /* white text 5.3:1 */
+  --teal-hover:      #0B6346;
+  --charcoal:        #171717;
   --charcoal-light:  #2D3748;
   --charcoal-muted:  #5B6475;
   --charcoal-faint:  #9AA1AC;
 
   /* ---- Surfaces --------------------------------------------------------- */
-  --bg:              #F7F6F5;
-  --bg-sunken:       #F1F2F4;
+  --bg:              #FAF8F6;   /* warm white */
+  --bg-sunken:       #F3F0EE;
   --surface:         #FFFFFF;
-  --surface-alt:     #F8F9FB;
+  --surface-alt:     #FBF9F8;
   --surface-raised:  #FFFFFF;
   --surface-navy:    #FFFFFF;
   --surface-brand:   var(--brand);
@@ -64,45 +68,46 @@
   --hero-grad:       #6A0032;
 
   /* ---- Text ------------------------------------------------------------- */
-  --text:            #2D3748;
-  --text-strong:     #111529;
-  --text-muted:      #5B6475;
-  --text-faint:      #9AA1AC;
+  --text:            #2F3447;
+  --text-strong:     #1B1E33;   /* dark navy-charcoal */
+  --text-muted:      #5A6070;   /* 6.0:1 on white */
+  --text-faint:      #676D7C;   /* 5.2:1 on white, 4.9:1 on cream */
   --text-invert:     #FFFFFF;
   --text-on-navy:    #F6E9EE;
 
   /* ---- Lines ------------------------------------------------------------ */
-  --border:          #EAEBEF;
-  --border-strong:   #D6D9E0;
-  --border-soft:     #F1F2F5;
+  --border:          #ECE7E4;
+  --border-strong:   #D3C9C5;
+  --control-border:  #8E8A92;   /* inputs, selects, switches: 3.4:1 against white (WCAG 1.4.11) */
+  --border-soft:     #F3EFEC;
   --border-navy:     #F1F2F5;
   --border-gold:     rgba(240, 176, 32, .4);
 
   /* ---- Shell ------------------------------------------------------------ */
-  --sidebar-bg:          #FFFFFF;
-  --sidebar-border:      #EEEFF3;
-  --sidebar-text:        #30364B;
-  --sidebar-text-strong: #111529;
-  --sidebar-muted:       #7C8295;
-  --sidebar-hover:       #F6F7F9;
-  --sidebar-active-bg:   var(--brand-tint);
-  --sidebar-active-text: var(--brand);
+  --sidebar-bg:          #4A0A22;
+  --sidebar-border:      rgba(255, 255, 255, .08);
+  --sidebar-text:        rgba(255, 255, 255, .9);
+  --sidebar-text-strong: #FFFFFF;
+  --sidebar-muted:       #D9AFC0;   /* section captions: 7.6:1 on the sidebar */
+  --sidebar-hover:       rgba(255, 255, 255, .08);
+  --sidebar-active-bg:   linear-gradient(90deg, #FFDB6E, #E3B04B);
+  --sidebar-active-text: #171717;
   --topbar-bg:           #FFFFFF;
-  --topbar-border:       #F0F0F3;
+  --topbar-border:       #EFEAE7;
 
   /* ---- Status (semantic) ------------------------------------------------ */
-  --critical: #E0243F;  --critical-tint: #FDEFF1;  --critical-line: #F8C7CF;  --critical-text: #A3162B;
+  --critical: #D21F3A;  --critical-tint: #FDEFF1;  --critical-line: #F8C7CF;  --critical-text: #A3162B;
   --warning:  #E07A1F;  --warning-tint:  #FEF4EA;  --warning-line:  #F7D7B4;  --warning-text:  #8A4A0C;
   --caution:  #B98A00;  --caution-tint:  #FDF8E6;  --caution-line:  #F1E2A8;  --caution-text:  #6E5200;
   --info:     #8F0A40;  --info-tint:     #F6E9EE;  --info-line:     #E6C3D1;  --info-text:     #750834;
-  --success:  #178F66;  --success-tint:  #E7F6EF;  --success-line:  #B6E3CF;  --success-text:  #0D6347;
+  --success:  #0F7A55;  --success-tint:  #E7F6EF;  --success-line:  #B6E3CF;  --success-text:  #0D6347;
   --neutral:  #6B7280;  --neutral-tint:  #F3F4F6;  --neutral-line:  #DDE0E5;  --neutral-text:  #374151;
 
   /* ---- Data-viz series (reference palette) ------------------------------ */
-  --viz-1: #8F0A40;
+  --viz-1: #990033;
   --viz-2: #B8326A;
-  --viz-3: #F0B020;
-  --viz-4: #178F66;
+  --viz-3: #E8A93A;
+  --viz-4: #0F7A55;
   --viz-5: #5F37A6;
   --viz-6: #F01840;
   --viz-7: #F5822F;
@@ -111,20 +116,21 @@
   --viz-axis: #D6D9E0;
 
   /* ---- Typography ------------------------------------------------------- */
-  --font-display: "Plus Jakarta Sans", "Inter", "Noto Sans Tamil", "Noto Sans Devanagari", system-ui, sans-serif;
-  --font-ui: "Inter", "Noto Sans Tamil", "Noto Sans Devanagari", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-brand: "Cinzel", "Plus Jakarta Sans", serif;   /* wordmark only */
+  --font-display: "Montserrat", "Noto Sans Tamil", "Noto Sans Devanagari", system-ui, sans-serif;
+  --font-ui: "Montserrat", "Noto Sans Tamil", "Noto Sans Devanagari", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Libre Baskerville", Georgia, "Times New Roman", serif;   /* greeting, headline figures, quotes */
+  --font-brand: var(--font-display);
   --font-script: "Caveat", cursive;
-  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-mono: ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 
   --fs-display: 26px;
   --fs-h1:      22px;
-  --fs-h2:      15.5px;
-  --fs-h3:      14.5px;
-  --fs-body:    14px;
-  --fs-sm:      13.5px;
-  --fs-xs:      12.5px;
-  --fs-micro:   11.5px;
+  --fs-h2:      15px;
+  --fs-h3:      14px;
+  --fs-body:    13.5px;
+  --fs-sm:      13px;
+  --fs-xs:      12px;
+  --fs-micro:   11px;
 
   --lh-tight: 1.2;
   --lh-snug:  1.35;
@@ -138,26 +144,26 @@
   --s-9: 48px;  --s-10: 64px;
 
   /* ---- Radius ----------------------------------------------------------- */
-  --r-xs: 6px;  --r-sm: 8px;  --r-md: 10px;  --r-lg: 14px;  --r-xl: 18px;  --r-pill: 999px;
+  --r-xs: 6px;  --r-sm: 8px;  --r-md: 10px;  --r-lg: 12px;  --r-xl: 16px;  --r-pill: 999px;
 
   /* ---- Elevation (soft, wine-tinted) ------------------------------------ */
-  --sh-1: 0 1px 2px rgba(62, 0, 19, .035);
-  --sh-2: 0 1px 2px rgba(62, 0, 19, .04), 0 6px 16px -6px rgba(62, 0, 19, .1);
-  --sh-3: 0 4px 8px -2px rgba(62, 0, 19, .05), 0 16px 36px -8px rgba(62, 0, 19, .14);
+  --sh-1: 0 1px 2px rgba(40, 10, 20, .04), 0 2px 8px -2px rgba(40, 10, 20, .04);
+  --sh-2: 0 2px 4px rgba(40, 10, 20, .05), 0 10px 24px -10px rgba(40, 10, 20, .14);
+  --sh-3: 0 4px 10px -2px rgba(62, 0, 19, .06), 0 22px 44px -12px rgba(62, 0, 19, .2);
   --sh-4: 0 24px 64px -16px rgba(45, 0, 15, .3);
   --sh-gold: 0 4px 14px rgba(254, 219, 110, .35);
   --sh-brand: 0 6px 18px -6px rgba(153, 0, 51, .45);
-  --sh-focus: 0 0 0 3px var(--brand-ring);
+  --sh-focus: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand);
 
   /* ---- Layout ----------------------------------------------------------- */
-  --sidebar-w: 260px;
+  --sidebar-w: 270px;
   --sidebar-w-collapsed: 72px;
-  --topbar-h: 64px;
+  --topbar-h: 68px;
   --content-max: 1440px;
-  --page-x: 28px;          /* horizontal page gutter */
-  --page-y: 24px;          /* top padding of a page */
+  --page-x: 24px;          /* horizontal page gutter */
+  --page-y: 16px;          /* top padding of a page */
   --control-h: 38px;       /* default button / input height */
-  --control-h-sm: 32px;
+  --control-h-sm: 32px;    /* toolbars and filters; above the 24px WCAG 2.2 target minimum */
 
   /* ---- Motion ----------------------------------------------------------- */
   --t-fast: 150ms cubic-bezier(.4, 0, .2, 1);
@@ -211,19 +217,20 @@
   --text:            #D6CDD0;
   --text-strong:     #F7F2F4;
   --text-muted:      #A89CA1;
-  --text-faint:      #78696F;
+  --text-faint:      #9D9095;   /* 5.3:1 on the dark surface */
   --text-on-navy:    #FCE4EC;
 
   --border:          #2E2227;
   --border-strong:   #3F3036;
+  --control-border:  #7A6870;
   --border-soft:     #231A1E;
   --border-navy:     #231A1E;
 
-  --sidebar-bg:          #150E11;
+  --sidebar-bg:          #2A0614;
   --sidebar-border:      #2A1F24;
   --sidebar-text:        #B3A7AC;
   --sidebar-text-strong: #F7F2F4;
-  --sidebar-muted:       #78696F;
+  --sidebar-muted:       #C49AAB;
   --sidebar-hover:       #22181C;
   --topbar-bg:           rgba(17, 11, 13, .82);
   --topbar-border:       #2A1F24;

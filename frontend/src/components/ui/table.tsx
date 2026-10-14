@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { cx, fmt } from '@/lib/format';
 import { Button, Icon } from './primitives';
+import { LotusArt } from './LotusArt';
 import type { PageMeta } from '@/api/client';
 
 export interface Column<T> {
@@ -130,7 +131,7 @@ export function DataTable<T>({
               })}
         </tbody>
       </table>
-      {!loading && !data.length && <div className="table__empty"><Icon name="search" size={20} />{emptyText}</div>}
+      {!loading && !data.length && <div className="table__empty"><span className="empty__art empty__art--sm"><LotusArt /><span className="empty__badge"><Icon name="search" size={12} /></span></span>{emptyText}</div>}
     </div>
   );
 }

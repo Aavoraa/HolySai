@@ -1,9 +1,9 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const StudentTrackingPage = lazy(() => import('./StudentTrackingPage'));
-const DevicesPage = lazy(() => import('./DevicesPage'));
-const DeviceAssignmentsPage = lazy(() => import('./DeviceAssignmentsPage'));
+const StudentTrackingPage = page(() => import('./StudentTrackingPage'));
+const DevicesPage = page(() => import('./DevicesPage'));
+const DeviceAssignmentsPage = page(() => import('./DeviceAssignmentsPage'));
 const PERM = ['tracking.read_all', 'tracking.read_assigned'];
 const DEVICE_PERM = ['tracking.read_all', 'tracking.manage'];
 

@@ -5,16 +5,23 @@ How screens are built. Every colour comes from a token in
 
 ## Principles
 
-Consistency first. Clarity second. Colour with purpose. No unnecessary decoration.
+Match the approved dashboard reference. Brand first, clarity in data, gold as an accent only.
 
-* **One brand colour** (`--brand`) for navigation, primary buttons, links, active states and icons.
-* **Semantic colours only for meaning:** `--success` (on track, paid, present), `--accent` / `--warning`
-  (attention, developing, late), `--critical` (overdue, at risk, absent, errors), `--caution`
-  (half day, partial). Status is never shown by colour alone — always with a label or icon.
-* **Neutral surfaces:** white cards on the light ground, 1px `--border`, one subtle elevation
-  (`--sh-1`), 12px corners.
-* No gradients, glows, per-module colours or decorative illustrations. The campus photo on the
-  dashboards and the sign-in screen is the one deliberate image.
+* **Official palette** (brand guide): Holy Sai Magenta `#990033` (`--brand`), Deep Magenta
+  `#B30042` (`--brand-hover`), Warm Golden Yellow `#FFDB6E` (`--accent`), Charcoal `#171717`, White.
+* **Deep maroon navigation** (`--sidebar-bg` `#4A0A22`) with white outline icons; the active page is a
+  golden-yellow bar with dark text (`--sidebar-active-bg`).
+* **Warm-white workspace** (`--bg`), white cards, thin `--border`, 10px corners, very subtle shadow (`--sh-1`).
+* **Magenta primary actions**; secondary actions are white with a thin border (gold on the dashboard banner).
+* **Gold is an accent**: active navigation, small rules under rail titles, first-place medals, the banner line.
+* **Semantic colours only for meaning:** `--success`, `--warning`, `--critical`, `--caution`. Status is
+  never shown by colour alone — always with a label or icon.
+* **Type:** Montserrat for the interface (brand guide). Libre Baskerville (`--font-serif`) for the dashboard
+  greeting, headline figures and quotes. Cinzel from the brand guide has capitals only, so it is not used
+  for the mixed-case greeting the reference shows.
+* **Lotus decorations** are faint and sparing: sidebar corner, banner, metric cards, quote card.
+* **Accessibility (WCAG 2.2 AA):** every text colour meets 4.5:1, controls 3:1 (`--control-border`),
+  a solid 2px focus ring, a visible skip link, targets of at least 24px (44px on phones).
 
 ## Subtle hues (`styles/hues.css`)
 
@@ -22,8 +29,8 @@ A muted secondary palette used **only behind icons**, as a soft tint with a matc
 brand, blue, plum, sage, amber, teal, indigo, rose, terracotta, steel (`--hue-*`, `--hue-*-tint`,
 with dark-theme equivalents). Any element with `data-hue="blue"` (etc.) exposes `--h` / `--h-tint`.
 
-* Each module has a hue (`hue` in `layouts/nav.ts`): its sidebar icon chips, nested icons and the
-  small tile beside every page title use it (Students brand, Admissions blue, Academics plum,
+* Each module has a hue (`hue` in `layouts/nav.ts`): the
+  small tile beside every page title uses it (Students brand, Admissions blue, Academics plum,
   Parent Experience rose, GPS & Safety terracotta, Finance sage, Staff amber, Operations steel,
   Intelligence teal, Group indigo).
 * Untoned KPIs, card-header icon chips, quick actions, activity items and avatars rotate through
@@ -73,24 +80,24 @@ never as another override file.
 
 ## Shell
 
-* **Sidebar:** wine brand block with the lotus logo; menu grouped under uppercase captions
-  (`section` in `layouts/nav.ts`, display name `label`, direct links `quick`). Grey 18px icons,
-  13.5px labels, 36px rows; the active page is a rose-tint pill with brand text. Nested items are
-  indented with a hairline and 15px icons. Collapses to a 72px rail; a drawer below 1024px.
+* **Sidebar (270px):** deep maroon with the lotus logo, white outline icons (19px), 12.5px labels,
+  34px rows, uppercase captions (`section` in `layouts/nav.ts`), red count badges and a faint lotus in the
+  lower corner. The active page is a golden-yellow bar with dark text. Collapses (double-chevron button)
+  to a 72px rail; a drawer below 1024px.
 * **Top bar (64px):** search left; academic year, campus, alerts, theme and the user menu right.
   AI Assistant and language live in the user menu.
 
 ## Dashboards
 
-* `<CampusBanner title sub actions />` first: greeting or page title, then the campus photo at its
-  natural size (no overlay or zoom). Full width by default; `bleed={false}` for portal layouts
-  (Parent 360, My Profile). To change the photo, replace `frontend/public/images/campus-hero.png`
-  (at least 1600px wide recommended).
-* Then `<DashLayout rail={<DashRail actions={…} />}>`: main column + right rail (Quick Actions,
-  Recent Notifications, Upcoming Events). Quick actions are neutral; only an emergency action is red.
-* Charts come from `components/ui/dashboardWidgets.tsx`: `SchoolPulse` for school-wide roles, or
-  `TrendCard`, `DonutCard`, `RankCard` fed with role-scoped data. Line series use `--brand`; bands
-  use success / accent / critical (+ caution or brand for a fourth band).
+* `<CampusBanner title sub actions />` first: serif greeting with a gold rule, summary, date and actions on the
+  left; the campus photo (`/images/campus-banner.webp`) fades in on the right with the school's line.
+* Then `<DashLayout rail={<DashRail actions={…} />}>`: main column + 276px rail (Quick Actions, Recent
+  Notifications, optional Upcoming Events, the quote card).
+* `<SchoolPulse metrics />` (`components/ui/dashboardWidgets.tsx`) gives the reference layout from live data:
+  four `MetricCard`s with sparklines (students, staff, attendance, fee collection — history from
+  `/dashboard/command-center`), the attendance `LineChart` (students and, when recorded, staff) beside the
+  performance `Donut`, then Top Performers. Without `metrics` it renders the charts only.
+* Charts in `components/ui/dashboardViz.tsx` are React SVG with text summaries for screen readers.
 
 ## Cards and KPIs
 

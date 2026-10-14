@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
@@ -6,8 +6,8 @@ import type { AppRoute } from '../registry';
  * which only Super Admin and School Admin hold; the API enforces the same rule and
  * additionally reserves the System group for Super Admin.
  */
-const ReportCenterPage = lazy(() => import('./ReportCenterPage'));
-const ReportViewerPage = lazy(() => import('./ReportViewerPage'));
+const ReportCenterPage = page(() => import('./ReportCenterPage'));
+const ReportViewerPage = page(() => import('./ReportViewerPage'));
 
 export const routes: AppRoute[] = [
   { path: '/admin/reports', perm: ['users.manage'], element: <ReportCenterPage /> },

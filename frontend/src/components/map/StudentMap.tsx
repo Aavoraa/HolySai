@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo } from 'react';
 import { Circle, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import L, { type LatLngExpression } from 'leaflet';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
@@ -38,6 +39,9 @@ export function studentPin(initials: string, status: LocationStatus | null, opts
   });
 }
 
+
+/** Gives a map marker an accessible name (Leaflet renders it as a focusable button). */
+const named = (label: string) => ({ add: (e: L.LeafletEvent) => (e.target as L.Marker).getElement()?.setAttribute('aria-label', label) });
 const campusIcon = L.divIcon({
   className: '',
   html: `<div class="campus-pin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconPaths.building ?? ''}</svg></div>`,
@@ -129,7 +133,7 @@ export function StudentMap({
         {campuses.map((c) => (
           <span key={c.id}>
             {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ className: 'st-geofence', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
-            <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
+            <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon} eventHandlers={named(`Campus: ${c.name}`)}>
               <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
             </Marker>
           </span>
@@ -142,7 +146,7 @@ export function StudentMap({
               <Marker
                 position={pos}
                 icon={studentPin(fmt.initials(s.fullName), s.locationStatus, { stale: s.isStale, selected: s.studentId === selectedId })}
-                eventHandlers={{ click: () => onSelect?.(s.studentId) }}
+                eventHandlers={{ ...named(`${s.fullName}, ${s.locationStatus}`), click: () => onSelect?.(s.studentId) }}
                 zIndexOffset={s.studentId === selectedId ? 1000 : 0}
               >
                 <Tooltip direction="right">{s.fullName}</Tooltip>
@@ -204,7 +208,7 @@ export function HistoryMap({ points, selectedId, onSelect, campuses = [] }: { po
         <FitBounds points={path.length ? path : campuses.map((c) => [Number(c.latitude), Number(c.longitude)] as [number, number])} maxZoom={17} />
         <FlyTo target={selected ? [Number(selected.latitude), Number(selected.longitude)] : null} />
         {campuses.map((c) => (
-          <Marker key={c.id} position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
+          <Marker key={c.id} position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon} eventHandlers={named(`Campus: ${c.name}`)}>
             <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
           </Marker>
         ))}
@@ -212,7 +216,7 @@ export function HistoryMap({ points, selectedId, onSelect, campuses = [] }: { po
         {points.map((p, i) => {
           const kind = i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'mid';
           return (
-            <Marker key={p.id} position={[Number(p.latitude), Number(p.longitude)]} icon={dot(kind)} eventHandlers={{ click: () => onSelect?.(p.id) }}
+            <Marker key={p.id} position={[Number(p.latitude), Number(p.longitude)]} icon={dot(kind)} eventHandlers={{ ...named(`Location at ${fmt.time(p.recordedAt)}`), click: () => onSelect?.(p.id) }}
               zIndexOffset={kind === 'end' ? 900 : p.id === selectedId ? 1000 : 0}>
               <Tooltip direction="top">
                 {fmt.time(p.recordedAt)} · {p.locationStatusLabel}

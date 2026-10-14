@@ -1,11 +1,11 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const GroupDashboardPage = lazy(() => import('./GroupDashboardPage'));
-const CampusComparisonPage = lazy(() => import('./CampusComparisonPage'));
-const CampusesPage = lazy(() => import('./CampusesPage'));
-const TransfersPage = lazy(() => import('./TransfersPage'));
-const GroupPoliciesPage = lazy(() => import('./GroupPoliciesPage'));
+const GroupDashboardPage = page(() => import('./GroupDashboardPage'));
+const CampusComparisonPage = page(() => import('./CampusComparisonPage'));
+const CampusesPage = page(() => import('./CampusesPage'));
+const TransfersPage = page(() => import('./TransfersPage'));
+const GroupPoliciesPage = page(() => import('./GroupPoliciesPage'));
 
 /**
  * Group management (multi-campus) screens. The API enforces the same permissions.

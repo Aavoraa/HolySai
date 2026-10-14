@@ -4,6 +4,7 @@
  */
 import { useEffect, useMemo } from 'react';
 import { Circle, MapContainer, Marker, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/api/client';
@@ -42,6 +43,9 @@ function busIcon(label: string, status: string, selected: boolean, alert: boolea
   });
 }
 
+
+/** Gives a map marker an accessible name (Leaflet renders it as a focusable button). */
+const named = (label: string) => ({ add: (e: L.LeafletEvent) => (e.target as L.Marker).getElement()?.setAttribute('aria-label', label) });
 const campusIcon = L.divIcon({
   className: '',
   html: `<div class="campus-pin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${iconPaths.building ?? ''}</svg></div>`,
@@ -104,7 +108,7 @@ export function BusFleetMap({ routes, campuses, selectedId, onSelect, trail = []
         {campuses.map((c) => (
           <span key={c.id}>
             {c.radiusM ? <Circle center={[Number(c.latitude), Number(c.longitude)]} radius={c.radiusM} pathOptions={{ className: 'st-geofence', weight: 1.5, fillOpacity: 0.06, dashArray: '4 4' }} /> : null}
-            <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
+            <Marker position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon} eventHandlers={named(`Campus: ${c.name}`)}>
               <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
             </Marker>
           </span>
@@ -116,7 +120,7 @@ export function BusFleetMap({ routes, campuses, selectedId, onSelect, trail = []
           <Polyline positions={trail.map((p) => [Number(p.latitude), Number(p.longitude)] as [number, number])} pathOptions={{ className: 'st-path-trail', weight: 4, opacity: 0.85 }} />
         )}
         {selected && stopMarkers.map((s, i) => (
-          <Marker key={`${s.name}-${i}`} position={[Number(s.latitude), Number(s.longitude)]} icon={stopIcon(i + 1, 'done' in s ? !!s.done : false)}>
+          <Marker key={`${s.name}-${i}`} position={[Number(s.latitude), Number(s.longitude)]} icon={stopIcon(i + 1, 'done' in s ? !!s.done : false)} eventHandlers={named(`Stop ${i + 1}: ${s.name}`)}>
             <Tooltip direction="top" offset={[0, -8]}>{s.name} · {s.pickupTime}</Tooltip>
           </Marker>
         ))}
@@ -126,7 +130,7 @@ export function BusFleetMap({ routes, campuses, selectedId, onSelect, trail = []
             <Marker key={r.id} position={[r.location!.latitude, r.location!.longitude]}
               icon={busIcon(r.busNo ?? r.code, r.runStatus, r.id === selectedId, alert)}
               zIndexOffset={r.id === selectedId ? 1000 : alert ? 500 : 0}
-              eventHandlers={{ click: () => onSelect?.(r.id) }}>
+              eventHandlers={{ ...named(`Bus ${r.busNo ?? r.code}`), click: () => onSelect?.(r.id) }}>
               <Tooltip direction="right">
                 <strong>{r.busNo ?? r.code}</strong> · {r.name} · {r.runStatus}
                 <br />
@@ -174,17 +178,17 @@ export function RouteStopsMap({ stops, campuses = [], pending, onPick }: {
         <FitBounds points={fit} maxZoom={15} />
         <ClickCapture onClick={onPick} />
         {campuses.map((c) => (
-          <Marker key={c.id} position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon}>
+          <Marker key={c.id} position={[Number(c.latitude), Number(c.longitude)]} icon={campusIcon} eventHandlers={named(`Campus: ${c.name}`)}>
             <Tooltip direction="top" offset={[0, -14]}>{c.name}</Tooltip>
           </Marker>
         ))}
         {pts.length > 1 && <Polyline positions={pts} pathOptions={{ className: 'st-path-planned', weight: 3, opacity: 0.6 }} />}
         {stops.map((s, i) => (
-          <Marker key={s.id} position={pts[i]} icon={stopIcon(i + 1, false)}>
+          <Marker key={s.id} position={pts[i]} icon={stopIcon(i + 1, false)} eventHandlers={named(`Stop ${i + 1}: ${s.name}`)}>
             <Tooltip direction="top" offset={[0, -8]}>{s.name} · {s.pickupTime}</Tooltip>
           </Marker>
         ))}
-        {pending && <Marker position={[pending.latitude, pending.longitude]} icon={stopIcon(stops.length + 1, true, true)} />}
+        {pending && <Marker position={[pending.latitude, pending.longitude]} icon={stopIcon(stops.length + 1, true, true)} eventHandlers={named(`New stop ${stops.length + 1}`)} />}
       </MapContainer>
       {onPick && (
         <div className="mapbox__overlay" role="note"><span>Click the map to place a new stop</span></div>

@@ -1,14 +1,14 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const AssetsPage = lazy(() => import('./AssetsPage'));
-const FacilitiesPage = lazy(() => import('./FacilitiesPage'));
-const MaintenancePage = lazy(() => import('./MaintenancePage'));
-const InventoryPage = lazy(() => import('./InventoryPage'));
-const DocumentsPage = lazy(() => import('./DocumentsPage'));
-const CertificatesPage = lazy(() => import('./CertificatesPage'));
-const CompliancePage = lazy(() => import('./CompliancePage'));
-const AuditPage = lazy(() => import('./AuditPage'));
+const AssetsPage = page(() => import('./AssetsPage'));
+const FacilitiesPage = page(() => import('./FacilitiesPage'));
+const MaintenancePage = page(() => import('./MaintenancePage'));
+const InventoryPage = page(() => import('./InventoryPage'));
+const DocumentsPage = page(() => import('./DocumentsPage'));
+const CertificatesPage = page(() => import('./CertificatesPage'));
+const CompliancePage = page(() => import('./CompliancePage'));
+const AuditPage = page(() => import('./AuditPage'));
 
 /**
  * Operations screens. Each route declares the permissions that may open it (any of);

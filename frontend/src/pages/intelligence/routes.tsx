@@ -1,22 +1,22 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
  * intelligence screens. Each route declares the permissions that may open it (any of);
  * the API enforces the same rule. Pages are lazy-loaded.
  */
-const EarlyWarningPage = lazy(() => import('./EarlyWarningPage'));
-const TalentPage = lazy(() => import('./TalentPage'));
-const WellbeingPage = lazy(() => import('./WellbeingPage'));
-const PortfolioPage = lazy(() => import('./PortfolioPage'));
-const CopilotPage = lazy(() => import('./CopilotPage'));
-const KnowledgePage = lazy(() => import('./KnowledgePage'));
-const AnalyticsPage = lazy(() => import('./AnalyticsPage'));
-const ReportsPage = lazy(() => import('./ReportsPage'));
-const DayInLifePage = lazy(() => import('./DayInLifePage'));
-const AutomationsPage = lazy(() => import('./AutomationsPage'));
-const WhatsappAiPage = lazy(() => import('./WhatsappAiPage'));
-const DesignSystemPage = lazy(() => import('./DesignSystemPage'));
+const EarlyWarningPage = page(() => import('./EarlyWarningPage'));
+const TalentPage = page(() => import('./TalentPage'));
+const WellbeingPage = page(() => import('./WellbeingPage'));
+const PortfolioPage = page(() => import('./PortfolioPage'));
+const CopilotPage = page(() => import('./CopilotPage'));
+const KnowledgePage = page(() => import('./KnowledgePage'));
+const AnalyticsPage = page(() => import('./AnalyticsPage'));
+const ReportsPage = page(() => import('./ReportsPage'));
+const DayInLifePage = page(() => import('./DayInLifePage'));
+const AutomationsPage = page(() => import('./AutomationsPage'));
+const WhatsappAiPage = page(() => import('./WhatsappAiPage'));
+const DesignSystemPage = page(() => import('./DesignSystemPage'));
 
 const STAFF_STUDENTS = ['students.read', 'students.read_assigned'];
 

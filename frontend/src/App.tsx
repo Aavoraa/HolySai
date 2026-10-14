@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { AppShell, Protected } from '@/layouts/AppShell';
 import { SchoolContextProvider } from '@/layouts/SchoolContext';
-import { PageSkeleton } from '@/components/ui';
+import { LotusArt, PageSkeleton } from '@/components/ui';
 import { APP_ROUTES } from '@/pages/registry';
 import LoginPage from '@/pages/core/LoginPage';
 import NotFoundPage from '@/pages/core/NotFoundPage';
@@ -14,7 +14,7 @@ function Splash() {
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'var(--bg)' }} aria-busy="true">
       <div className="col center g-3">
-        <span className="skeleton" style={{ width: 56, height: 56, borderRadius: 16 }} />
+        <LotusArt className="splash__lotus" />
         <span className="t-sm t-muted">Opening Holy Sai Smart School 360…</span>
       </div>
     </div>

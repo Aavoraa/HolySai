@@ -95,7 +95,7 @@
 .hero__lede { margin-top: var(--s-5); font-size: 16px; line-height: 1.65; color: #F5D2DB; max-width: 44ch; }
 
 /* ---- Campus artwork ------------------------------------------------------
-   homescreen.png is a complete 1448 x 1086 hero (headline and stats baked in),
+   homescreen.webp is a complete 1448 x 1086 hero (headline and stats baked in),
    so it is shown whole, never cropped, filling the full column width.
    -------------------------------------------------------------------------- */
 .home__left { display: flex; flex-direction: column; min-width: 0; }
