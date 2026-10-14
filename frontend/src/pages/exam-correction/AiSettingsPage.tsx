@@ -51,18 +51,28 @@ export default function AiSettingsPage() {
   };
   const num = (v: string | boolean) => (v === '' ? null : Number(v));
 
-  const submit = () => save.mutate({
+  // A browser may autofill a saved sign-in password here; only accept something shaped like a Claude key.
+  const keyError = key && !key.trim().startsWith('sk-ant-') ? 'This is not a Claude API key — they start with "sk-ant-". Clear the field if your browser filled in a password.' : '';
+  const dirty = !!key || Object.entries(f).some(([k, v]) => {
+    const cur = (c as unknown as Record<string, unknown>)[k];
+    return typeof v === 'boolean' ? v !== !!cur : v !== String(cur ?? '');
+  });
+  const changes = () => ({
     changes: {
       claude_enabled: f.claude_enabled, claude_vision_model: f.claude_vision_model, claude_eval_model: f.claude_eval_model, claude_effort: f.claude_effort,
       claude_timeout: num(f.claude_timeout), max_retries: num(f.max_retries), claude_refusal_fallback: f.claude_refusal_fallback,
       external_processing_acknowledged: f.external_processing_acknowledged, redact_top_percent: num(f.redact_top_percent),
-      ...(key ? { claude_api_key: key } : {}),
+      ...(key ? { claude_api_key: key.trim() } : {}),
     },
   });
+  const submit = () => { if (!keyError) save.mutate(changes()); };
   const runTest = async (target: 'reading' | 'marking', sample = false) => {
+    if (keyError) return;
     setTest('running');
-    try { setTest((await api.postLong<TestResult>(`${EV}/settings/ai/test/${target}${sample ? '?sample=true' : ''}`)).data); }
-    catch (e) { setTest({ ok: false, target, detail: errorMessage(e) }); }
+    try {
+      if (dirty) await save.mutateAsync(changes()); // tests use the saved configuration
+      setTest((await api.postLong<TestResult>(`${EV}/settings/ai/test/${target}${sample ? '?sample=true' : ''}`)).data);
+    } catch (e) { setTest({ ok: false, target, detail: errorMessage(e) }); }
   };
 
   return (
@@ -74,8 +84,10 @@ export default function AiSettingsPage() {
         <Card icon="sparkle" title="Claude (Anthropic)">
           <div className="col g-3">
             <Switch checked={!!f.claude_enabled} onChange={set('claude_enabled')} label="Enabled" />
-            <TextField label="Claude API key" type="password" autoComplete="off" value={key} onChange={setKey}
-              placeholder={c.claude_api_key ? `set (${c.claude_api_key}) — type to replace` : 'not set'} hint="Stored encrypted; never sent back to the browser." />
+            <TextField label="Claude API key" type="password" name="claude-api-key" autoComplete="new-password" value={key}
+              onChange={(v) => { setKey(v); if (v && !f.claude_enabled) set('claude_enabled')(true); }} error={keyError || undefined}
+              placeholder={c.claude_api_key ? `set (${c.claude_api_key}) — type to replace` : 'not set'}
+              hint="Stored encrypted; never sent back to the browser. On Render's free plan it is lost when the service sleeps — set EXAM_CLAUDE_API_KEY on the service instead." />
             <SelectField label="Model for reading sheets" value={f.claude_vision_model as string} onChange={set('claude_vision_model')} options={models(c.claude_vision_model)} />
             <SelectField label="Model for marking answers" value={f.claude_eval_model as string} onChange={set('claude_eval_model')} options={models(c.claude_eval_model)} />
             <div className="grid g-2col g-3">
@@ -100,7 +112,7 @@ export default function AiSettingsPage() {
         </Card>
       </Grid>
       <div className="mt-4">
-        <Card icon="activity" title="Test the connection" sub="Save first; tests use the saved configuration.">
+        <Card icon="activity" title="Test the connection" sub="Unsaved changes are saved first.">
           <div className="row g-2 wrap">
             <Button disabled={test === 'running'} onClick={() => runTest('marking')}>Test marking model</Button>
             <Button disabled={test === 'running'} onClick={() => runTest('reading')}>Test reading model</Button>
