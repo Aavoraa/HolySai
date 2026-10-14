@@ -4,7 +4,7 @@ import { useApiMutation } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, SectionHead, SelectField, Status, TextArea, TextField, useConfirm,
+  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, SelectField, Status, TextArea, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import { FormModal, useFieldErrors } from './LeadForms';
@@ -35,7 +35,7 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
   if (!app) {
     const closed = ['Enrolled', 'Lost'].includes(lead.stage);
     return (
-      <Card title="Application" tight>
+      <Card icon="grid" title="Application" tight>
         <Empty icon="fileText" title="No application yet"
           sub={closed ? 'This lead is closed.' : 'Opening an application requests the standard documents and moves the lead to Application.'}
           action={manage && !closed ? <Button variant="primary" icon="plus" loading={open.isPending} onClick={() => open.mutate({ enquiryId: lead.id })}>Open application</Button> : undefined} />
@@ -63,7 +63,7 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
   if (!terminal) actions.push({ label: 'Withdraw', to: 'Withdrawn' });
 
   return (
-    <Card title={`Application ${app.applicationNo}`} sub={`Opened ${fmt.date(app.createdAt)}${app.decidedBy ? ` · last decision by ${app.decidedBy}` : ''}`} tight
+    <Card icon="grid" title={`Application ${app.applicationNo}`} sub={`Opened ${fmt.date(app.createdAt)}${app.decidedBy ? ` · last decision by ${app.decidedBy}` : ''}`} tight
       actions={<Status value={app.status} />}>
       {!['Rejected', 'Withdrawn'].includes(app.status) && (
         <div className="mb-4">
@@ -109,17 +109,17 @@ export function DocumentsCard({ app }: { app: Application | null }) {
     body: (x) => ({ status: x.status }), invalidate: INVALIDATE,
   });
   if (!app) {
-    return <Card title="Documents" tight><p className="t-sm t-muted">Birth certificate, previous report card, address proof and a photograph are requested when the application opens.</p></Card>;
+    return <Card icon="folder" title="Documents" tight><p className="t-sm t-muted">Birth certificate, previous report card, address proof and a photograph are requested when the application opens.</p></Card>;
   }
   return (
-    <Card title="Documents" sub={app.documentsComplete ? 'All documents verified' : `${app.documents.filter((d) => d.status !== 'Verified').length} outstanding`} tight>
+    <Card icon="folder" title="Documents" sub={app.documentsComplete ? 'All documents verified' : `${app.documents.filter((d) => d.status !== 'Verified').length} outstanding`} tight>
       <DataTable compact stack={false} rows={app.documents} rowKey={(d) => d.id}
         columns={[
           { key: 'name', label: 'Document' },
           { key: 'status', label: 'Status', render: (d) => <Status value={d.status} /> },
           ...(manage ? [{
             key: 'act', label: '', className: 'num', render: (d: Application['documents'][number]) => (
-              <span className="row g-1" style={{ justifyContent: 'flex-end' }}>
+              <span className="adm-actions">
                 {d.status !== 'Verified' && (
                   <Button size="sm" icon="check" loading={save.isPending && save.variables?.docId === d.id}
                     onClick={() => save.mutate({ docId: d.id, status: 'Verified' })}>Verify</Button>
@@ -253,9 +253,9 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
   return (
     <FormModal title="Enrol student" sub={`${app.applicationNo} · ${app.grade} · creates the Student Master record`} size="wide"
       onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors} submitLabel="Enrol" submitIcon="userCheck" formId="enrol-form">
-      <form id="enrol-form" onSubmit={submit} noValidate className="col g-5">
-        <div>
-          <SectionHead title="Student" />
+      <form id="enrol-form" onSubmit={submit} noValidate>
+        <div className="formsection">
+          <div className="formsection__title">Student</div>
           <div className="form-grid">
             <TextField label="First name" required value={v.firstName} onChange={(x) => set('firstName', x)} error={fe.errors.firstName} maxLength={60} autoFocus />
             <TextField label="Last name" required value={v.lastName} onChange={(x) => set('lastName', x)} error={fe.errors.lastName} maxLength={60} />
@@ -264,8 +264,9 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
               options={[{ value: 'F', label: 'Female' }, { value: 'M', label: 'Male' }, { value: 'O', label: 'Other' }]} />
           </div>
         </div>
-        <div>
-          <SectionHead title="Placement" sub={`${lead.campusName} · ${app.grade}`} />
+        <div className="formsection">
+          <div className="formsection__title">Placement</div>
+          <p className="formsection__sub">{`${lead.campusName} · ${app.grade}`}</p>
           <div className="form-grid">
             <SelectField label="Section" required value={v.sectionId} onChange={(x) => set('sectionId', x)} error={fe.errors.sectionId}
               placeholder={cls ? 'Select…' : 'No class for this grade on the campus'} disabled={!cls} options={sectionOptions(cls?.id)} />
@@ -275,8 +276,9 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
             <TextField label="PIN code" value={v.pincode} onChange={(x) => set('pincode', x)} error={fe.errors.pincode} maxLength={6} />
           </div>
         </div>
-        <div>
-          <SectionHead title="Primary guardian" sub="An existing parent with the same phone number is linked instead of creating a duplicate." />
+        <div className="formsection">
+          <div className="formsection__title">Primary guardian</div>
+          <p className="formsection__sub">An existing parent with the same phone number is linked instead of creating a duplicate.</p>
           <div className="form-grid">
             <TextField label="Full name" required value={v.guardianName} onChange={(x) => set('guardianName', x)} error={fe.errors['guardian.fullName']} maxLength={120} />
             <SelectField label="Relationship" value={v.relationship} onChange={(x) => set('relationship', x)} options={['Father', 'Mother', 'Guardian']} />
@@ -284,8 +286,9 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
             <TextField label="Email" type="email" value={v.guardianEmail} onChange={(x) => set('guardianEmail', x)} error={fe.errors['guardian.email']} />
           </div>
         </div>
-        <div>
-          <SectionHead title="Transport" sub="GPS tracking starts disabled; it is enabled when the ID tag is issued with the guardian's consent." />
+        <div className="formsection">
+          <div className="formsection__title">Transport</div>
+          <p className="formsection__sub">GPS tracking starts disabled; it is enabled when the ID tag is issued with the guardian's consent.</p>
           <div className="col g-3">
             <Checkbox checked={v.useTransport} onChange={(x) => set('useTransport', x)} label={`School transport${lead.transportRequired ? ' (requested on the enquiry)' : ''}`} disabled={!routes.length} />
             {v.useTransport && (
@@ -298,7 +301,7 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
             )}
           </div>
         </div>
-        {!app.feePaid && <p className="t-xs t-muted"><Badge tone="warning">Fee not marked paid</Badge> Enrolment can still proceed.</p>}
+        {!app.feePaid && <p className="t-xs t-muted mt-4"><Badge tone="warning">Fee not marked paid</Badge> Enrolment can still proceed.</p>}
       </form>
     </FormModal>
   );

@@ -4,8 +4,8 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Button, Card, Chart, DataTable, Dl, Empty, ErrorState, FilterSelect, Flow, InlineError, Legend, Modal, Page, PageHead,
-  Pagination, SearchInput, SelectField, Status, TextArea, TextField, charts,
+  Badge, Banner, Button, Card, Chart, charts, DataTable, Dl, Empty, ErrorState, FilterSelect, Flow, InlineError, Legend, Modal,
+  Page, PageHead, Pagination, SearchInput, SelectField, Skeleton, Status, TextArea, TextField, Toolbar,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { COVER_OPTIONS, EmpLink, LeaveApplyModal, TYPE_LABEL, useEmployeeModal } from './shared';
@@ -25,6 +25,7 @@ export default function LeavePage() {
   const [decision, setDecision] = useState<Decision | null>(null);
   const review = useApiMutation<string>('post', (id) => `/workforce/leave-requests/${id}/review`, { invalidate: ['/workforce'], body: () => ({}) });
   const s = summary.data;
+  const awaiting = (s?.counts.submitted ?? 0) + (s?.counts.underReview ?? 0);
   const mix = (s?.typeMix ?? []).map((t, i) => ({ ...t, color: TYPE_COLORS[i % TYPE_COLORS.length] }));
 
   return (
@@ -40,27 +41,30 @@ export default function LeavePage() {
             { label: 'Approved', meta: `${s.counts.approvedThisWeek} this week` },
             { label: 'Rejected', meta: 'Returned with a reason' },
           ]} />
-        ) : summary.error ? <InlineError error={summary.error} /> : <span className="skeleton" style={{ display: 'block', height: 56 }} />}
+        ) : summary.error ? <InlineError error={summary.error} /> : <Skeleton height={56} />}
       </Card>
 
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee or reference" />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)}
-          options={[{ value: 'open', label: 'Awaiting decision' }, 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Cancelled']} />
-        <FilterSelect label="Type" value={list.filters.leaveTypeId} onChange={(v) => list.setFilter('leaveTypeId', v)}
-          options={(s?.types ?? []).map((t) => ({ value: t.id, label: t.name }))} />
-        <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
-          options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear</Button>}
-        <div className="spacer" />
-        {s && s.counts.noCover > 0 && <Badge tone="critical">{s.counts.noCover} open request{s.counts.noCover === 1 ? '' : 's'} without cover</Badge>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee or reference" />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)}
+            options={[{ value: 'open', label: 'Awaiting decision' }, 'Submitted', 'Under Review', 'Approved', 'Rejected', 'Cancelled']} />
+          <FilterSelect label="Type" value={list.filters.leaveTypeId} onChange={(v) => list.setFilter('leaveTypeId', v)}
+            options={(s?.types ?? []).map((t) => ({ value: t.id, label: t.name }))} />
+          <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
+            options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          {awaiting > 0 && list.filters.status !== 'open' && (
+            <Button size="sm" icon="clock" onClick={() => list.setFilter('status', 'open')}>Awaiting decision <Badge tone="warning">{awaiting}</Badge></Button>
+          )}
+          {s && s.counts.noCover > 0 && <Badge tone="critical">{s.counts.noCover} open request{s.counts.noCover === 1 ? '' : 's'} without cover</Badge>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             emptyText={list.hasFilters ? 'No leave requests match these filters.' : 'No leave requests yet.'}
             columns={[
-              { key: 'code', label: 'Reference', render: (r) => <><span className="t-bold">{r.code}</span><div className="t-micro t-muted">{r.leaveType}</div></> },
+              { key: 'code', label: 'Reference', render: (r) => <><span className="t-bold t-num">{r.code}</span><div className="t-micro t-muted">{r.leaveType}</div></> },
               { key: 'name', label: 'Employee', render: (r) => <EmpLink name={r.employeeName} meta={TYPE_LABEL[r.employeeType]} onOpen={() => openEmployee(r.employeeId)} /> },
               { key: 'from', label: 'From', render: (r) => fmt.dateShort(r.fromDate) },
               { key: 'to', label: 'To', render: (r) => fmt.dateShort(r.toDate) },
@@ -68,16 +72,16 @@ export default function LeavePage() {
               { key: 'cover', label: 'Cover', sortable: false, render: (r) => {
                 const body = r.coverArrangement ? <span>{r.coverArrangement}</span> : <Badge tone="critical">Not assigned</Badge>;
                 return can('hr.manage') && !['Rejected', 'Cancelled'].includes(r.status)
-                  ? <button type="button" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', textAlign: 'left' }} title="Change cover"
+                  ? <button type="button" className="fw-linkbtn" title="Change cover"
                       onClick={() => setDecision({ row: r, kind: 'cover' })}>{body}</button>
                   : body;
               } },
               { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => can('hr.approve') && ['Submitted', 'Under Review'].includes(r.status) ? (
-                <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                <div className="row g-2 end wrap">
                   {r.status === 'Submitted' && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
-                  <Button size="sm" variant="teal" onClick={() => setDecision({ row: r, kind: 'approve' })}>Approve</Button>
-                  <Button size="sm" onClick={() => setDecision({ row: r, kind: 'reject' })}>Reject</Button>
+                  <Button size="sm" variant="teal" icon="check" onClick={() => setDecision({ row: r, kind: 'approve' })}>Approve</Button>
+                  <Button size="sm" icon="x" onClick={() => setDecision({ row: r, kind: 'reject' })}>Reject</Button>
                 </div>
               ) : r.decidedBy ? <span className="t-micro t-muted">{r.decidedBy}</span> : null },
             ]} />
@@ -86,18 +90,18 @@ export default function LeavePage() {
       </Card>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card title="Leave taken by month" sub="Approved days, by start month">
+        <Card icon="calendar" title="Leave taken by month" sub="Approved days, by start month">
           {s ? (s.byMonth.some((m) => m.value) ? (
             <Chart svg={charts.bar({ labels: s.byMonth.map((m) => m.label), series: [{ name: 'Days', values: s.byMonth.map((m) => m.value), color: 'var(--navy)' }], height: 210 })} />
-          ) : <Empty title="No approved leave in the last six months" icon="calendar" />) : <span className="skeleton" style={{ display: 'block', height: 210 }} />}
+          ) : <Empty title="No approved leave in the last six months" icon="calendar" />) : <Skeleton height={210} />}
         </Card>
-        <Card title="Leave type mix" sub="Approved days this academic year">
+        <Card icon="calendar" title="Leave type mix" sub="Approved days this academic year">
           {s ? (mix.length ? (
             <>
               <Chart svg={charts.donut({ size: 170, thickness: 24, center: fmt.n(s.totalDays), centerSub: 'days this year', data: mix })} />
               <div className="mt-4"><Legend items={mix.map((m) => ({ label: `${m.label.replace(' leave', '')} (${m.value})`, color: m.color }))} /></div>
             </>
-          ) : <Empty title="No leave taken this year" icon="calendar" />) : <span className="skeleton" style={{ display: 'block', height: 210 }} />}
+          ) : <Empty title="No leave taken this year" icon="calendar" />) : <Skeleton height={210} />}
         </Card>
       </div>
       {applying && <LeaveApplyModal mode="hr" onClose={() => setApplying(false)} />}
@@ -141,7 +145,7 @@ function DecisionModal({ row, kind, onClose }: Decision & { onClose: () => void 
       ]} />
       {kind === 'approve' && (
         <>
-          {row.balance < row.days && <div className="banner banner--critical mt-3">Balance is lower than the days requested — approval will be refused.</div>}
+          {row.balance < row.days && <div className="mt-3"><Banner tone="critical" icon="alert">Balance is lower than the days requested — approval will be refused.</Banner></div>}
           <p className="t-xs t-muted mt-3">Approving deducts {row.days} day(s) from the balance, marks attendance as On Leave for those dates, flags any roster lines for cover and notifies {row.employeeName.split(' ')[0]}.</p>
           <div className="mt-3"><TextArea label="Note to the employee (optional)" rows={2} value={note} onChange={setNote} maxLength={500} /></div>
         </>

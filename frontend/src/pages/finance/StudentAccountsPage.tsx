@@ -7,11 +7,11 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { fmt } from '@/lib/format';
 import {
-  Button, Card, DataTable, Dl, Empty, ErrorState, FilterSelect, Modal, Page, PageHead, PageSkeleton, Pagination,
-  SearchInput, SelectField, Status, StudentLink, TextField,
+  Avatar, Badge, Button, Card, DataTable, Dl, Empty, Icon, ErrorState, FilterSelect, Modal, Page, PageHead, PageSkeleton, Pagination, SearchInput,
+  SelectField, Status, StudentLink, TextField, Toolbar,
 } from '@/components/ui';
 import type { Account, AccountRow } from './types';
-import { fieldErrors, isMoney, Money, PaymentModal, ReceiptModal, StudentPicker, todayIso, useFinanceLookups } from './shared';
+import { fieldErrors, isMoney, ListCount, Money, PaymentModal, ReceiptModal, StudentPicker, TotalsBar, todayIso, useFinanceLookups } from './shared';
 
 export default function StudentAccountsPage() {
   const [sp, setSp] = useSearchParams();
@@ -36,19 +36,19 @@ function AccountList({ onOpen }: { onOpen: (id: string) => void }) {
   const q = usePagedQuery<AccountRow>('/finance/accounts', { ...list.query, ...campusParam });
   return (
     <>
-      <div className="filterbar">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search a student by name or admission ID" />
-        <FilterSelect label="Fees" value={list.filters.feeStatus} onChange={(v) => list.setFilter('feeStatus', v)} options={['Overdue', 'Partial', 'Pending', 'Paid']} />
-        <FilterSelect label="Class" value={list.filters.classId} onChange={(v) => list.setFilter('classId', v)} options={classOptions(campusParam.campusId)} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
-        <div className="spacer" />
-        <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} accounts` : ''}</span>
-      </div>
       <Card flush>
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search a student by name or admission ID" />
+          <FilterSelect label="Fees" value={list.filters.feeStatus} onChange={(v) => list.setFilter('feeStatus', v)} options={['Overdue', 'Partial', 'Pending', 'Paid']} />
+          <FilterSelect label="Class" value={list.filters.classId} onChange={(v) => list.setFilter('classId', v)} options={classOptions(campusParam.campusId)} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="accounts" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || q.isPlaceholderData} rowKey={(r) => r.id}
             sort={list.sort} onSort={list.setSort} onRowClick={(r) => onOpen(r.id)}
-            emptyText={list.hasFilters ? 'No accounts match the current filters.' : 'No student accounts yet.'}
+            emptyText={list.hasFilters ? 'No accounts match the current filters.' : 'No student accounts yet. Accounts are created when a fee structure is applied to enrolled students.'}
             columns={[
               { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={r.admissionNo} /> },
               { key: 'grade', label: 'Grade', render: (r) => `${r.grade ?? '—'} ${r.section ?? ''} · ${r.campus}` },
@@ -81,33 +81,56 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
   const s = a.student;
   const approved = a.concessions.filter((c) => c.status === 'Approved');
   const pendingC = a.concessions.filter((c) => ['Submitted', 'Under Review'].includes(c.status));
+  const overdue = a.summary.overdue;
 
   return (
     <>
-      <div className="row between wrap g-3 mb-4">
+      <div className="fw-ledger-nav">
         <Button icon="arrowLeft" onClick={onBack}>All accounts</Button>
-        <div className="grow" style={{ maxWidth: 420 }}><StudentPicker onPick={(x) => onSwitch(x.id)} campusId={campusParam.campusId} placeholder="Open another student's ledger" /></div>
+        <div className="fw-ledger-nav__search"><StudentPicker onPick={(x) => onSwitch(x.id)} campusId={campusParam.campusId} placeholder="Open another student's ledger" /></div>
       </div>
-      <div className="grid g-main">
-        <Card title={`${s.fullName} · ${s.grade ?? ''}${s.section ?? ''}`} sub={`${s.admissionNo} · ${s.campus}${s.parentName ? ` · Parent: ${s.parentName}` : ''}`} flush
-          actions={<>
-            {can('finance.manage') && <Button size="sm" icon="plus" onClick={() => setCharging(true)}>Raise charge</Button>}
-            <Button size="sm" icon="user" onClick={() => navigate(`/student-360/${s.id}`)}>Open Student 360</Button>
-          </>}
-          foot={
-            <div className="row between wrap g-3">
-              <span className="row g-4 wrap">
-                <span>Billed <strong className="t-num">{fmt.money(a.summary.billed)}</strong></span>
-                {a.summary.concession > 0 && <span>Concession <strong className="t-num">{fmt.money(a.summary.concession)}</strong></span>}
-                <span>Paid <strong className="t-num">{fmt.money(a.summary.paid)}</strong></span>
-                <span>Balance <strong className={`t-num ${a.summary.outstanding ? 't-critical' : ''}`}>{fmt.money(a.summary.outstanding)}</strong></span>
-              </span>
-              {can('finance.manage') && (
-                <Button variant="teal" icon="creditCard" disabled={!a.summary.outstanding} onClick={() => setPaying(true)}>Take payment</Button>
-              )}
+      <section className="card profilehead mb-4" aria-label="Account summary">
+        <div className="profilehead__main">
+          <Avatar name={s.fullName} size="xl" />
+          <div className="profilehead__id">
+            <div className="row g-2 wrap">
+              <h2 className="profilehead__name">{s.fullName}</h2>
+              <Status value={a.summary.outstanding ? (overdue ? 'Overdue' : 'Pending') : 'Paid'} label={a.summary.outstanding ? (overdue ? 'Overdue' : 'Balance due') : 'Fully paid'} dot />
+              {pendingC.length > 0 && <Badge tone="warning">{pendingC.length} concession pending</Badge>}
             </div>
-          }>
-          <DataTable rows={a.lines} rowKey={(r) => r.id} emptyText="No charges have been raised for this student this year."
+            <p className="profilehead__meta">
+              <span className="t-strong t-semi">{s.admissionNo}</span> · {s.grade ?? ''}{s.section ?? ''} · {s.campus}
+            </p>
+            <div className="profilehead__facts">
+              <span title="Parent"><Icon name="user" size={14} />{s.parentName ?? 'No parent linked'}</span>
+              {a.summary.nextDue && <span title="Next instalment"><Icon name="calendar" size={14} />Next due {fmt.date(a.summary.nextDue)}{a.summary.nextDueAmount ? ` · ${fmt.money(a.summary.nextDueAmount)}` : ''}</span>}
+              <span title="Payments"><Icon name="receipt" size={14} />{a.payments.length} payment{a.payments.length === 1 ? '' : 's'} this year</span>
+            </div>
+          </div>
+          <div className="profilehead__actions">
+            <Button size="sm" icon="user" onClick={() => navigate(`/student-360/${s.id}`)}>Student 360</Button>
+            {can('finance.manage') && <Button size="sm" icon="plus" onClick={() => setCharging(true)}>Raise charge</Button>}
+            {can('finance.manage') && (
+              <Button size="sm" variant="primary" icon="creditCard" disabled={!a.summary.outstanding} onClick={() => setPaying(true)}>Take payment</Button>
+            )}
+          </div>
+        </div>
+        <dl className="profilehead__stats">
+          <div><dt>Billed</dt><dd>{fmt.money(a.summary.billed, { compact: true })}</dd><span>this academic year</span></div>
+          {a.summary.concession > 0 && <div><dt>Concession</dt><dd className="t-success">{fmt.money(a.summary.concession, { compact: true })}</dd><span>{approved.length} approved</span></div>}
+          <div><dt>Paid</dt><dd>{fmt.money(a.summary.paid, { compact: true })}</dd><span>{a.summary.billed ? `${Math.round((a.summary.paid / a.summary.billed) * 100)}% of billed` : '—'}</span></div>
+          <div><dt>Balance</dt><dd className={a.summary.outstanding ? 't-critical' : 't-success'}>{a.summary.outstanding ? fmt.money(a.summary.outstanding, { compact: true }) : 'Cleared'}</dd><span>{overdue ? `${fmt.money(overdue, { compact: true })} overdue` : a.summary.outstanding ? 'not yet overdue' : 'nothing outstanding'}</span></div>
+        </dl>
+      </section>
+      <div className="grid g-main">
+        <Card icon="grid" title="Charges" sub="Every line raised on this account this year" flush
+          foot={a.lines.length ? <TotalsBar items={[
+            { label: 'Billed', value: fmt.money(a.summary.billed) },
+            ...(a.summary.concession > 0 ? [{ label: 'Concession', value: fmt.money(-a.summary.concession), tone: 'success' as const }] : []),
+            { label: 'Paid', value: fmt.money(a.summary.paid) },
+            { label: 'Balance', value: fmt.money(a.summary.outstanding), tone: a.summary.outstanding ? 'critical' as const : undefined },
+          ]} /> : undefined}>
+          <DataTable rows={a.lines} rowKey={(r) => r.id} emptyText="No charges have been raised for this student this year. Raise a charge or apply a fee structure."
             columns={[
               { key: 'head', label: 'Charge', render: (r) => <><span className="t-bold">{r.description}</span><div className="t-micro t-muted">{r.head}</div></> },
               { key: 'due', label: 'Amount', className: 'num', render: (r) => <Money v={r.amountDue} /> },
@@ -119,7 +142,7 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
             ]} />
         </Card>
         <div className="col g-4">
-          <Card title="Concession applied">
+          <Card icon="grid" title="Concession applied">
             {approved.length ? approved.map((c) => (
               <Dl key={c.id} items={[
                 ['Type', c.type],
@@ -130,7 +153,7 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
             )) : <Empty icon="percent" title="No concession" sub={pendingC.length ? `${pendingC.length} request awaiting approval` : 'Full fees apply to this account.'}
               action={can('finance.manage') ? <Button size="sm" to="/concessions">Request a concession</Button> : undefined} />}
           </Card>
-          <Card title="Payment history" flush>
+          <Card icon="wallet" title="Payment history" sub="Receipts can be reprinted or re-sent" flush>
             <DataTable compact rows={a.payments} rowKey={(r) => r.id} emptyText="No payments yet."
               columns={[
                 { key: 'date', label: 'Date', render: (r) => fmt.date(r.paidAt) },

@@ -1,0 +1,147 @@
+/* Module styles: admissions-parents. Uses tokens from tokens.css only — no new colours. */
+
+/* ==========================================================================
+   Admissions & CRM
+   ========================================================================== */
+
+/* Next action cell (lead tables) — the one thing a counsellor scans for. */
+.adm-next { display: flex; flex-direction: column; gap: 2px; min-width: 0; max-width: 260px; }
+.adm-next__what { font-size: var(--fs-sm); color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-next__when { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: var(--fs-micro); color: var(--text-muted); }
+.adm-next--none .adm-next__what { color: var(--warning-text); font-weight: 600; }
+.table tbody tr.adm-row--overdue td:first-child { box-shadow: inset 3px 0 0 var(--critical); }
+
+/* Pipeline (kanban) cards */
+.adm-pipecard { display: flex; flex-direction: column; gap: 4px; }
+.adm-pipecard--overdue { border-left: 3px solid var(--critical); }
+.adm-pipecard__head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; }
+.adm-pipecard__score { font-size: var(--fs-micro); font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.adm-pipecard__score--hot { color: var(--success-text); }
+.adm-pipecard__score--cold { color: var(--critical-text); }
+.adm-pipecard__meta { display: block; font-size: var(--fs-micro); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-pipecard__next {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--border-soft);
+  font-size: var(--fs-micro); color: var(--text);
+}
+.adm-pipecard__next > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.adm-pipecard__next svg { color: var(--text-faint); flex: none; }
+.adm-pipecard__next--overdue, .adm-pipecard__next--overdue svg { color: var(--critical-text); font-weight: 600; }
+.adm-pipecard__next--today, .adm-pipecard__next--today svg { color: var(--warning-text); font-weight: 600; }
+.adm-pipecard__foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-top: 4px; }
+.adm-pipecard__owner { font-size: var(--fs-micro); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adm-pipecard__owner--none { color: var(--critical-text); font-weight: 700; }
+.adm-pipeline__empty { padding: var(--s-4) 0; text-align: center; font-size: var(--fs-micro); color: var(--text-muted); }
+
+/* Dashboard insight tiles + automation list */
+.adm-insight { padding: var(--s-3) var(--s-4); min-width: 0; }
+.adm-auto__num { background: var(--navy); color: var(--text-invert); }
+.adm-auto__num--auto { background: var(--teal); }
+
+/* Lead profile (inside the full-screen modal) */
+.adm-profile { margin-bottom: var(--s-5); }
+.adm-profile .profilehead__stats dd { font-size: var(--fs-h3); }
+.adm-profile .profilehead__stats dd.adm-due--overdue { color: var(--critical); }
+.adm-profile .profilehead__stats dd.adm-due--today { color: var(--warning-text); }
+.adm-profile__stepper { padding: var(--s-4) var(--s-6); border-top: 1px solid var(--border-soft); overflow-x: auto; }
+.adm-profile a.adm-tel { color: inherit; }
+.adm-profile a.adm-tel:hover { color: var(--brand); }
+
+/* Follow-up tasks inside the lead profile */
+.adm-task { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-2) 0; border-bottom: 1px solid var(--border-soft); }
+.adm-task:last-child { border-bottom: 0; }
+.adm-task__body { flex: 1 1 200px; min-width: 0; font-size: var(--fs-sm); }
+.adm-task__meta { display: block; font-size: var(--fs-micro); color: var(--text-muted); }
+.adm-task__actions { display: flex; align-items: center; gap: var(--s-1); flex-wrap: wrap; }
+.adm-task--overdue .adm-task__body strong { color: var(--critical-text); }
+
+/* Lead / parent pickers inside forms */
+.adm-picked { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-2) var(--s-3); }
+.adm-picklist { display: flex; flex-direction: column; gap: 2px; margin-top: var(--s-2); max-height: 260px; overflow-y: auto; }
+.adm-picklist .btn { justify-content: flex-start; height: auto; min-height: var(--control-h-sm); padding-top: 6px; padding-bottom: 6px; white-space: normal; text-align: left; }
+
+/* Unassigned host select in the visits table */
+.adm-host--none .select { border-color: var(--critical); color: var(--critical-text); }
+
+.adm-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--s-1); flex-wrap: wrap; }
+
+/* ==========================================================================
+   Parent Experience
+   ========================================================================== */
+
+/* Inbox list (unanswered queue + app threads) */
+.pe-inbox { max-height: 560px; overflow-y: auto; }
+.pe-inbox__item.is-active { background: var(--brand-tint); }
+.pe-inbox__main { flex: 1 1 auto; min-width: 0; }
+.pe-inbox__title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pe-inbox__title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pe-inbox__item--unread .pe-inbox__title { font-weight: 700; color: var(--text-strong); }
+.pe-inbox__meta { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pe-inbox__side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; font-size: var(--fs-micro); color: var(--text-muted); }
+
+/* Conversation pane */
+.pe-chat { max-height: 420px; overflow-y: auto; padding-right: 4px; }
+.pe-bubble--focus { outline: 2px solid var(--warning); outline-offset: 2px; }
+.pe-composer__bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-3); }
+
+/* History table subject cell */
+.pe-subject { display: flex; flex-direction: column; min-width: 0; max-width: 360px; }
+.pe-chips { padding: 0 var(--s-4) var(--s-3); }
+
+/* Parent profile children rows */
+.pe-child { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; padding: var(--s-2) var(--s-4); }
+
+/* PTM slot grid */
+.pe-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--s-2); }
+.pe-slot { padding: var(--s-2) var(--s-3); min-width: 0; }
+.pe-slot--booked { background: var(--surface-alt); }
+.pe-slot .select { height: var(--control-h-sm); margin-top: var(--s-2); width: 100%; }
+.pe-addslots { display: flex; align-items: flex-end; gap: var(--s-2); flex-wrap: wrap; }
+.pe-addslots .field { flex: 0 1 160px; margin-bottom: 0; }
+
+/* Circular body preview */
+.pe-circular-body { padding: var(--s-4); white-space: pre-wrap; }
+
+/* Event cards */
+.pe-event { display: flex; align-items: flex-start; gap: var(--s-4); min-width: 0; }
+.pe-event--cancelled { opacity: .6; }
+.pe-event--cancelled .pe-event__title { text-decoration: line-through; }
+.pe-event__date {
+  flex: none; width: 62px; padding: var(--s-2); border-radius: var(--r-md); background: var(--surface-alt);
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+}
+.pe-event__day { font-family: var(--font-display); font-size: 22px; font-weight: 600; line-height: 1.2; color: var(--text-strong); }
+.pe-event__body { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+
+/* Month calendar */
+.pe-cal { overflow-x: auto; }
+.pe-cal__grid { display: grid; grid-template-columns: repeat(7, minmax(92px, 1fr)); gap: 4px; min-width: 660px; }
+.pe-cal__dow { padding: 2px 6px; font-size: var(--fs-micro); font-weight: 700; color: var(--text-muted); }
+.pe-cal__day { min-height: 92px; padding: 6px; border-radius: var(--r-sm); border: 1px solid var(--border-soft); min-width: 0; }
+.pe-cal__day--today { background: var(--surface-alt); outline: 2px solid var(--brand); outline-offset: -1px; }
+.pe-cal__add { font-size: var(--fs-micro); color: var(--text-faint); padding: 0 4px; border-radius: var(--r-xs); }
+.pe-cal__add:hover { color: var(--brand); background: var(--brand-tint); }
+.pe-cal__ev {
+  display: block; width: 100%; text-align: left; margin-top: 3px; padding: 2px 6px; border-radius: var(--r-xs);
+  font-size: var(--fs-micro); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text);
+  background: var(--surface-alt);
+}
+.pe-cal__ev--info { background: var(--info-tint); }
+.pe-cal__ev--success { background: var(--success-tint); }
+.pe-cal__ev--caution { background: var(--caution-tint); }
+.pe-cal__ev--warning { background: var(--warning-tint); }
+.pe-cal__ev--critical { background: var(--critical-tint); }
+.pe-cal__ev--draft { opacity: .7; }
+.pe-cal__ev--cancelled { text-decoration: line-through; }
+
+.pe-fetching { opacity: .7; transition: opacity var(--t-fast); }
+
+@media (max-width: 767px) {
+  .adm-next { max-width: none; }
+  .pe-inbox { max-height: 360px; }
+  .pe-chat { max-height: 360px; }
+  .pe-subject { max-width: none; }
+}
+
+.pe-quote { max-width: 100%; }
+.adm-picklist.card { padding: var(--s-1); max-height: 220px; }

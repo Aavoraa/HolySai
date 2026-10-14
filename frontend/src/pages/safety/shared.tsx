@@ -22,6 +22,14 @@ export const runTone = (s?: string | null): Tone =>
 
 export const severityTone = (s?: string | null): Tone => (s === 'Critical' ? 'critical' : s === 'Attention' ? 'warning' : 'info');
 
+/** Incident severity: Critical carries an alert icon so it reads without colour; routine levels stay quiet. */
+export function SeverityBadge({ value }: { value: string }) {
+  return <Badge tone={severityTone(value)} icon={value === 'Critical' ? 'alert' : undefined} dot={value !== 'Critical'}>{value}</Badge>;
+}
+
+/** Highlights open critical incidents in tables (left critical stripe). */
+export const incidentRowClass = (r: { severity: string; status: string }) => (r.severity === 'Critical' && r.status !== 'Closed' ? 'st-row--critical' : undefined);
+
 export const gradeOf = (g?: string | null, s?: string | null) => (g ? `${g}${s ?? ''}` : '');
 
 /** YYYY-MM-DD for today in the school timezone. */
@@ -102,7 +110,7 @@ export function StudentPicker({ value, onChange, label = 'Student', required, er
     <div className="field">
       <label className="label" htmlFor={id}>{label}{required && <span className="req"> *</span>}</label>
       {value ? (
-        <div className="row g-3 card card--tint" style={{ padding: '8px 12px' }}>
+        <div className="st-picked">
           <Avatar name={value.fullName} size="sm" />
           <span className="col grow" style={{ minWidth: 0 }}>
             <span className="t-sm t-bold t-clip">{value.fullName}</span>
@@ -115,18 +123,17 @@ export function StudentPicker({ value, onChange, label = 'Student', required, er
           <div className="input-icon">
             <Icon name="search" size={15} />
             <input id={id} className="input" type="search" placeholder="Search by name or admission number" value={text}
-              aria-invalid={!!error || undefined} style={error ? { borderColor: 'var(--critical)' } : undefined}
-              onChange={(e) => setText(e.target.value)} autoComplete="off" />
+              aria-invalid={!!error || undefined} onChange={(e) => setText(e.target.value)} autoComplete="off" />
           </div>
-          <div className="card" style={{ marginTop: 6, maxHeight: 208, overflowY: 'auto', padding: 4 }} role="listbox" aria-label="Matching students">
-            {res.isLoading ? <div className="t-xs t-muted" style={{ padding: 8 }}>Searching…</div>
-              : res.error ? <div className="t-xs t-critical" style={{ padding: 8 }}>Could not search students</div>
-              : !res.data?.length ? <div className="t-xs t-muted" style={{ padding: 8 }}>No students match “{q}”.</div>
+          <div className="st-results" role="listbox" aria-label="Matching students">
+            {res.isLoading ? <div className="st-results__msg">Searching…</div>
+              : res.error ? <div className="st-results__msg t-critical">Could not search students</div>
+              : !res.data?.length ? <div className="st-results__msg">No students match “{q}”.</div>
               : res.data.map((s) => (
-                <button key={s.id} type="button" role="option" aria-selected={false} className="person person--link"
-                  style={{ width: '100%', padding: '6px 8px', borderRadius: 8 }} onClick={() => onChange(s)}>
+                <button key={s.id} type="button" role="option" aria-selected={false} className="person person--link st-results__opt"
+                  onClick={() => onChange(s)}>
                   <Avatar name={s.fullName} size="xs" />
-                  <span className="col" style={{ minWidth: 0, textAlign: 'left' }}>
+                  <span className="col">
                     <span className="person__name t-clip">{s.fullName}</span>
                     <span className="person__meta t-clip">{[s.admissionNo, gradeOf(s.grade, s.section), s.routeCode && `Route ${s.routeCode}`].filter(Boolean).join(' · ')}</span>
                   </span>
@@ -135,9 +142,15 @@ export function StudentPicker({ value, onChange, label = 'Student', required, er
           </div>
         </>
       )}
-      {error ? <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span> : hint ? <span className="hint">{hint}</span> : null}
+      <FieldError error={error} hint={hint} />
     </div>
   );
+}
+
+/** Field-level error (or hint) in the kit's style, for custom fields such as pickers and checkbox groups. */
+export function FieldError({ error, hint }: { error?: string; hint?: ReactNode }) {
+  if (error) return <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{error}</span>;
+  return hint ? <span className="hint">{hint}</span> : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -237,20 +250,32 @@ export function IncidentModal({ onClose, defaultType = 'Safeguarding' }: { onClo
     <FormModal title={f.incidentType === 'Safeguarding' ? 'Log a concern' : 'Log an incident'} size="wide"
       sub="Logged the same day, in the system — not on paper. The Designated Safeguarding Lead is notified."
       onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors} onSubmit={submit} submitLabel="Log incident" submitIcon="shield">
-      <div className="form-grid">
-        <SelectField label="Type" required value={f.incidentType} onChange={set('incidentType')} options={INCIDENT_TYPES} />
-        <SelectField label="Severity" required value={f.severity} onChange={set('severity')} options={SEVERITIES} />
-        <TextField className="span-2" label="Summary" required value={f.summary} onChange={set('summary')} maxLength={200} error={fe.errors.summary} />
-        <TextArea className="span-2" label="Details" rows={4} value={f.details} onChange={set('details')} maxLength={4000}
-          placeholder="What was observed, by whom, and what was done immediately." />
-        <div className="span-2"><StudentPicker label="Student involved (optional)" value={student} onChange={setStudent} /></div>
-        <TextField label="Date" type="date" required value={f.occurredOn} max={todayIso()} onChange={set('occurredOn')} error={fe.errors.occurredOn} />
-        <SelectField label="Owner" value={f.ownerId} onChange={set('ownerId')} placeholder="Me"
-          options={(lookups?.staff ?? []).map((s) => ({ value: s.id, label: `${s.fullName} — ${s.designation}` }))} />
-        <div className="span-2">
-          <Checkbox checked={f.isConfidential} onChange={set('isConfidential')}
-            label="Confidential — only the Designated Safeguarding Lead, the Principal and the counsellor can open it" />
+      {f.severity === 'Critical' && (
+        <div className="mb-4"><Banner tone="critical" icon="alert">Critical incidents alert the Designated Safeguarding Lead and the Principal immediately. Make sure the child is safe first.</Banner></div>
+      )}
+      <div className="formsection">
+        <div className="formsection__title">What happened</div>
+        <div className="form-grid">
+          <SelectField label="Type" required value={f.incidentType} onChange={set('incidentType')} options={INCIDENT_TYPES} />
+          <SelectField label="Severity" required value={f.severity} onChange={set('severity')} options={SEVERITIES} />
+          <TextField className="span-2" label="Summary" required value={f.summary} onChange={set('summary')} maxLength={200} error={fe.errors.summary} />
+          <TextArea className="span-2" label="Details" rows={4} value={f.details} onChange={set('details')} maxLength={4000}
+            placeholder="What was observed, by whom, and what was done immediately." />
+          <TextField label="Date" type="date" required value={f.occurredOn} max={todayIso()} onChange={set('occurredOn')} error={fe.errors.occurredOn} />
         </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">People</div>
+        <div className="form-grid">
+          <div className="span-2"><StudentPicker label="Student involved (optional)" value={student} onChange={setStudent} /></div>
+          <SelectField label="Owner" value={f.ownerId} onChange={set('ownerId')} placeholder="Me"
+            options={(lookups?.staff ?? []).map((s) => ({ value: s.id, label: `${s.fullName} — ${s.designation}` }))} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Access</div>
+        <Checkbox checked={f.isConfidential} onChange={set('isConfidential')}
+          label="Confidential — only the Designated Safeguarding Lead, the Principal and the counsellor can open it" />
       </div>
     </FormModal>
   );

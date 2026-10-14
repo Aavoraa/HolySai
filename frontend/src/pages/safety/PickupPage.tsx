@@ -55,10 +55,10 @@ export default function PickupPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="Authorised persons" value={fmt.n(s?.authorisedPersons ?? 0)} foot={s ? `Average ${s.averagePerStudent} per child · ${s.pendingConfirmation} pending` : undefined} />
-          <Kpi loading={!s} label="Verified by QR" value={fmt.pct(s?.verifiedByQrPct ?? 0)} tone="teal" foot="Of verified persons" />
-          <Kpi loading={!s} label="OTP verifications today" value={fmt.n(s?.otpVerificationsToday ?? 0)} tone="amber" foot={s ? `${s.collectedToday} collections recorded today` : undefined} />
-          <Kpi loading={!s} label="Held collections today" value={fmt.n(s?.heldToday ?? 0)} tone="critical"
+          <Kpi icon="activity" loading={!s} label="Authorised persons" value={fmt.n(s?.authorisedPersons ?? 0)} foot={s ? `Average ${s.averagePerStudent} per child · ${s.pendingConfirmation} pending` : undefined} />
+          <Kpi icon="activity" loading={!s} label="Verified by QR" value={fmt.pct(s?.verifiedByQrPct ?? 0)} tone="teal" foot="Of verified persons" />
+          <Kpi icon="activity" loading={!s} label="OTP verifications today" value={fmt.n(s?.otpVerificationsToday ?? 0)} tone="amber" foot={s ? `${s.collectedToday} collections recorded today` : undefined} />
+          <Kpi icon="wallet" loading={!s} label="Held collections today" value={fmt.n(s?.heldToday ?? 0)} tone="critical"
             foot={s ? (s.heldToday ? `${s.heldResolved} resolved` : 'None today') : undefined} />
         </Grid>
       )}
@@ -98,7 +98,7 @@ export default function PickupPage() {
                 ...(manage ? [{
                   key: 'actions', label: '', sortable: false, className: 'num',
                   render: (r: PickupAuth) => r.status === 'Revoked' ? null : (
-                    <span className="row g-1" style={{ justifyContent: 'flex-end' }}>
+                    <span className="row g-1 end">
                       {r.status === 'Pending'
                         ? <Button size="sm" icon="key" onClick={() => setModal({ kind: 'otp', auth: r })}>Verify</Button>
                         : <Button size="sm" icon="userCheck" onClick={() => setModal({ kind: 'collect', auth: r })}>Release</Button>}
@@ -118,7 +118,23 @@ export default function PickupPage() {
             {!s ? <Skeleton height={80} /> : !s.recentEvents.length
               ? <Empty icon="userCheck" title="No collections yet today" sub="Released and held collections appear here." />
               : (
-                <Timeline items={s.recentEvents.map((e) => ({
+                <>
+                {/* Held collections still awaiting a parent are critical: pinned above the routine timeline. */}
+                {s.recentEvents.some((e) => e.outcome === 'held' && !e.resolved) && (
+                  <div className="st-critical-list" role="region" aria-label="Held collections awaiting a parent">
+                    {s.recentEvents.filter((e) => e.outcome === 'held' && !e.resolved).map((e) => (
+                      <div className="st-alertrow" key={e.id}>
+                        <Icon name="alert" size={16} />
+                        <div className="st-alertrow__body">
+                          <strong>Held:</strong> {e.personName} for {e.studentName}
+                          <div className="st-alertrow__meta">{[e.gate, e.incidentCode, 'awaiting parent'].filter(Boolean).join(' · ')}</div>
+                        </div>
+                        <span className="st-alertrow__time">{fmt.time(e.occurredAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Timeline items={s.recentEvents.filter((e) => !(e.outcome === 'held' && !e.resolved)).map((e) => ({
                   time: fmt.time(e.occurredAt),
                   tone: e.outcome === 'held' ? (e.resolved ? 'amber' : 'critical') : 'teal',
                   title: e.outcome === 'held' ? `Held: ${e.personName} for ${e.studentName}` : `${e.studentName} collected by ${e.personName}`,
@@ -126,9 +142,10 @@ export default function PickupPage() {
                     ? `${e.gate} · ${e.incidentCode ?? ''}${e.resolved ? ' · resolved' : ' · awaiting parent'}`
                     : `${e.gate}${e.method ? ` · ${e.method}` : ''}`,
                 }))} />
+                </>
               )}
           </Card>
-          <Card title="Verification methods">
+          <Card icon="creditCard" title="Verification methods">
             <div className="col g-4">
               {METHODS.map(([t, d, i]) => (
                 <div className="row-top g-3" key={t}>
@@ -174,13 +191,23 @@ function AddPersonModal({ onClose, onAdded }: { onClose: () => void; onAdded: (s
   return (
     <FormModal title="Add authorised person" sub="The person stays 'Pending' until verified by OTP or confirmed by a parent."
       onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors} onSubmit={submit} submitLabel="Add person" submitIcon="plus">
-      <div className="col g-4">
+      <div className="formsection">
+        <div className="formsection__title">Child</div>
         <StudentPicker value={student} onChange={(s) => { setStudent(s); fe.clear('studentId'); }} required error={fe.errors.studentId} />
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Authorised person</div>
         <div className="form-grid">
           <TextField label="Full name" required value={f.personName} onChange={set('personName')} maxLength={120} error={fe.errors.personName} />
           <TextField label="Relationship" required value={f.relation} onChange={set('relation')} maxLength={40} placeholder="Grandfather, driver…" error={fe.errors.relation} />
-          <TextField label="Phone" type="tel" value={f.phone} onChange={set('phone')} maxLength={16} placeholder="+91 98400 00000" error={fe.errors.phone} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Verification</div>
+        <div className="form-grid">
           <SelectField label="Verification method" required value={f.method} onChange={set('method')} options={PICKUP_METHODS} />
+          <TextField label="Phone" type="tel" value={f.phone} onChange={set('phone')} maxLength={16} placeholder="+91 98400 00000" error={fe.errors.phone}
+            required={/OTP/.test(f.method)} hint={/OTP/.test(f.method) ? 'Needed to send the one-time code' : undefined} />
         </div>
       </div>
     </FormModal>
@@ -223,7 +250,7 @@ function OtpModal({ auth, onClose }: { auth: PickupAuth; onClose: () => void }) 
         ) : (
           <Banner tone={sent ? 'warning' : 'neutral'} icon="clock">{sent ? 'The code has expired. Send a new one.' : 'No code has been sent yet.'}</Banner>
         )}
-        <div className="row g-3 wrap" style={{ alignItems: 'flex-end' }}>
+        <div className="st-scanrow g-3">
           <TextField label="6-digit code" value={code} maxLength={6} autoComplete="one-time-code" pattern="[0-9]*"
             onChange={(v) => { setCode(v.replace(/\D/g, '')); fe.clear('code'); }} error={fe.errors.code} disabled={!sent || left === 0} style={{ maxWidth: 200 }} />
           <Button icon="send" onClick={() => send.mutate()} loading={send.isPending}>{sent ? 'Send a new code' : 'Send code to parent'}</Button>

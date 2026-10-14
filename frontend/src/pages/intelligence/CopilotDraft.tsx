@@ -19,6 +19,8 @@ export interface Draft {
 }
 
 const levelTone = (l: string) => (l === 'Foundation' ? 'info' : l === 'Core' ? 'neutral' : 'success');
+/** Readable line length for generated prose. */
+const PROSE = { maxWidth: '72ch' } as const;
 const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
 
 function statusBadge(d: Draft) {
@@ -101,7 +103,7 @@ export function DraftCard({ draft, onClosed }: { draft: Draft; onClosed?: () => 
                 <Button variant="primary" icon="save" loading={save.isPending} onClick={() => save.mutate({ output: work })}>Save edits</Button>
               </> : <>
                 <Button icon="edit" onClick={() => setEditing(true)}>Edit</Button>
-                <Button onClick={doDiscard} loading={discard.isPending}>Discard</Button>
+                <Button icon="trash" onClick={doDiscard} loading={discard.isPending}>Discard</Button>
                 <Button variant="primary" icon="check" loading={approve.isPending} onClick={doApprove}>Approve and publish</Button>
               </>}
             </div>
@@ -121,7 +123,7 @@ function Body({ type, o, editing, set }: { type: Draft['type']; o: Record<string
     <>
       <div className="mt-5">
         <Eyebrow>Learning objective</Eyebrow>
-        {editing ? <TextArea value={o.objective} onChange={(v) => set({ objective: v })} rows={3} maxLength={600} /> : <p className="t-sm">{o.objective}</p>}
+        {editing ? <TextArea value={o.objective} onChange={(v) => set({ objective: v })} rows={3} maxLength={600} /> : <p className="t-sm" style={PROSE}>{o.objective}</p>}
       </div>
       <div className="mt-5">
         <Eyebrow className="mb-3">Lesson plan{o.lessonMinutes ? ` · ${o.lessonMinutes} minutes` : ''}</Eyebrow>
@@ -164,14 +166,14 @@ function Body({ type, o, editing, set }: { type: Draft['type']; o: Record<string
       <QuestionList title="Quiz" items={o.quiz ?? []} textKey="q" editing={editing} onChange={(quiz) => set({ quiz })} empty="No approved question-bank items were available for the exit quiz." />
       <div className="mt-5">
         <Eyebrow>Homework</Eyebrow>
-        {editing ? <TextArea value={o.homework} onChange={(v) => set({ homework: v })} rows={2} maxLength={600} /> : <p className="t-sm">{o.homework}</p>}
+        {editing ? <TextArea value={o.homework} onChange={(v) => set({ homework: v })} rows={2} maxLength={600} /> : <p className="t-sm" style={PROSE}>{o.homework}</p>}
       </div>
     </>
   );
 
   if (type === 'worksheet') return (
     <>
-      {o.objective && <div className="mt-5"><Eyebrow>Learning objective</Eyebrow><p className="t-sm">{o.objective}</p></div>}
+      {o.objective && <div className="mt-5"><Eyebrow>Learning objective</Eyebrow><p className="t-sm" style={PROSE}>{o.objective}</p></div>}
       {(o.sections ?? []).map((s: any, i: number) => (
         <div className="mt-5" key={s.level}>
           <div className="row g-2 mb-2"><Badge tone={levelTone(s.level)}>{s.level}</Badge>
@@ -206,7 +208,7 @@ function Body({ type, o, editing, set }: { type: Draft['type']; o: Record<string
               </span>
             </div>
             {editing ? <div className="mt-2"><TextArea value={c.comment} onChange={(v) => upd('comments', i, { comment: v })} rows={3} maxLength={800} /></div>
-              : <p className="t-sm mt-2">{c.comment}</p>}
+              : <p className="t-sm mt-2" style={PROSE}>{c.comment}</p>}
           </div>
         ))}
       </div>

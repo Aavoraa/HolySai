@@ -17,6 +17,14 @@ import './styles/layout.css';
 import './styles/home.css';
 import './styles/responsive.css';
 import './styles/app.css';
+import './styles/modules/admissions-parents.css';
+import './styles/modules/academics.css';
+import './styles/modules/finance-workforce.css';
+import './styles/modules/safety-tracking.css';
+import './styles/modules/portals.css';
+import './styles/modules/operations-intel.css';
+import './styles/system.css';
+import './styles/hues.css';
 
 initTheme();
 

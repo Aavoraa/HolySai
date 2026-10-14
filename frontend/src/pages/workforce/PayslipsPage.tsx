@@ -4,10 +4,11 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Page, PageHead, Pagination, SearchInput, useConfirm,
+  Badge, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Page, PageHead, Pagination, SearchInput, Toolbar,
+  useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { EmpLink, PayslipModal, TypeBadge, useEmployeeModal } from './shared';
+import { EmpLink, ListCount, PayslipModal, TypeBadge, useEmployeeModal } from './shared';
 import type { PayslipRow, RunStatus } from './types';
 
 interface Summary {
@@ -45,26 +46,30 @@ export default function PayslipsPage() {
         )} />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={summary.isLoading} label="Released this year" value={fmt.n(summary.data?.kpis.releasedThisYear)} tone="teal" />
-          <Kpi loading={summary.isLoading} label={`${month ?? 'Current'} status`} value={run ? (run.status === 'Released' || run.status === 'Paid' ? 'Released' : 'Pending') : '—'}
+          <Kpi loading={summary.isLoading} icon="receipt" label="Released this year" value={fmt.n(summary.data?.kpis.releasedThisYear)} tone="teal" />
+          <Kpi loading={summary.isLoading} icon="send" label={`${month ?? 'Current'} status`} value={run ? (run.status === 'Released' || run.status === 'Paid' ? 'Released' : 'Pending') : '—'}
             tone={run && ['Released', 'Paid'].includes(run.status) ? 'teal' : 'amber'}
             foot={run ? (['Released', 'Paid'].includes(run.status) ? `Run ${run.status.toLowerCase()}` : run.status === 'Approved' ? 'Approved — ready to release' : `Awaiting payroll approval (${run.status})`) : undefined}
             to="/payroll" />
-          <Kpi loading={summary.isLoading} label="Employees in run" value={fmt.n(run?.employeeCount ?? 0)} foot={scope === 'group' ? run?.campusName ?? undefined : undefined} />
-          <Kpi loading={summary.isLoading} label="Net pay" value={fmt.money(run?.net ?? 0, { compact: true })} tone="info" />
+          <Kpi loading={summary.isLoading} icon="users" label="Employees in run" value={fmt.n(run?.employeeCount ?? 0)} foot={scope === 'group' ? run?.campusName ?? undefined : undefined} />
+          <Kpi loading={summary.isLoading} icon="wallet" label="Net pay" value={fmt.money(run?.net ?? 0, { compact: true })} tone="info" />
         </Grid>
       )}
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee" />
-        <FilterSelect label="Month" allLabel={null} value={run?.id ?? ''} onChange={(v) => list.setFilter('run', v)}
-          options={runs.map((r) => ({ value: r.id, label: `${r.monthLabel}${scope === 'group' && r.campusName ? ` · ${r.campusName}` : ''} (${r.status})` }))} />
-        <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
-          options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
-        <FilterSelect label="Payslip" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={[{ value: 'Released', label: 'Released' }, { value: 'Draft', label: 'Pending' }]} />
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search employee" />
+          <FilterSelect label="Month" allLabel={null} value={run?.id ?? ''} onChange={(v) => list.setFilter('run', v)}
+            options={runs.map((r) => ({ value: r.id, label: `${r.monthLabel}${scope === 'group' && r.campusName ? ` · ${r.campusName}` : ''} (${r.status})` }))} />
+          <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
+            options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
+          <FilterSelect label="Payslip" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={[{ value: 'Released', label: 'Released' }, { value: 'Draft', label: 'Pending' }]} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="payslips" />
+        </Toolbar>
         {!summary.isLoading && !runs.length ? (
-          <Empty icon="receipt" title="No payroll runs yet" sub="Payslips appear here once a run is calculated." />
+          <Empty icon="receipt" title="No payroll runs yet" sub="Payslips appear here once a payroll run is calculated."
+            action={can('payroll.read') ? <Button icon="wallet" to="/payroll">Open payroll</Button> : undefined} />
         ) : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading || summary.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
             onRowClick={(r) => setSlip(r.id)} emptyText="No payslips match these filters."
@@ -73,7 +78,7 @@ export default function PayslipsPage() {
               { key: 'category', label: 'Category', render: (r) => <TypeBadge type={r.employeeType} /> },
               { key: 'prev', label: 'Previous month', sortable: false, render: (r) => slipBadge(r.previousStatus) },
               { key: 'status', label: month ?? 'This month', render: (r) => slipBadge(r.status) },
-              { key: 'net', label: 'Net pay', className: 'num', render: (r) => fmt.money(r.net) },
+              { key: 'net', label: 'Net pay', className: 'num', render: (r) => <span className="t-num t-bold">{fmt.money(r.net)}</span> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => <Button size="sm" icon="receipt" onClick={(e) => { e.stopPropagation(); setSlip(r.id); }}>View</Button> },
             ]} />
         )}

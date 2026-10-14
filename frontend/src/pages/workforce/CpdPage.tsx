@@ -5,11 +5,11 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Button, Card, Checkbox, DataTable, ErrorState, FilterSelect, Grid, InlineError, Kpi, Meter, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Status, TextField, useConfirm,
+  Badge, Button, Card, Checkbox, DataTable, ErrorState, FilterSelect, Grid, InlineError, Kpi, Meter, Modal, Page, PageHead,
+  Pagination, SearchInput, SelectField, Status, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
-import { EmpLink, fieldErrors, useEmployeeModal } from './shared';
+import { EmpLink, ListCount, fieldErrors, useEmployeeModal } from './shared';
 import type { CpdRow, CpdSummary } from './types';
 
 export default function CpdPage() {
@@ -30,11 +30,11 @@ export default function CpdPage() {
         actions={can('hr.manage') && <Button variant="primary" icon="plus" onClick={() => setScheduling(true)}>Schedule training</Button>} />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={summary.isLoading} label="Hours logged" value={fmt.n(k?.hoursLogged)} tone="teal" />
-          <Kpi loading={summary.isLoading} label="Average per teacher" value={k?.avgPerTeacher ?? '—'} unit="hours" foot={k && `Target ${k.targetTeaching} hours`} />
-          <Kpi loading={summary.isLoading} label="Below target" value={fmt.n(k?.belowTarget)} unit="staff" tone="amber"
+          <Kpi loading={summary.isLoading} icon="clock" label="Hours logged" value={fmt.n(k?.hoursLogged)} tone="teal" />
+          <Kpi loading={summary.isLoading} icon="graduation" label="Average per teacher" value={k?.avgPerTeacher ?? '—'} unit="hours" foot={k && `Target ${k.targetTeaching} hours`} />
+          <Kpi loading={summary.isLoading} icon="alertCircle" label="Below target" value={fmt.n(k?.belowTarget)} unit="staff" tone="amber"
             foot={k && `Non-teaching target ${k.targetNonTeaching} h`} onClick={() => list.setFilter('band', 'below')} />
-          <Kpi loading={summary.isLoading} label="Mandatory training complete" value={k?.mandatoryPct != null ? `${k.mandatoryPct}%` : '—'} tone="teal"
+          <Kpi loading={summary.isLoading} icon="shieldCheck" label="Mandatory training complete" value={k?.mandatoryPct != null ? `${k.mandatoryPct}%` : '—'} tone="teal"
             foot={k ? (k.mandatoryOutstanding ? `${k.mandatoryOutstanding} outstanding${nextMandatory ? ' · refresher scheduled' : ''}` : 'Everyone is up to date') : undefined} />
         </Grid>
       )}
@@ -45,18 +45,20 @@ export default function CpdPage() {
         </div>
       )}
 
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search name or ID" />
-        <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
-          options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
-        <FilterSelect label="Against target" value={list.filters.band} onChange={(v) => list.setFilter('band', v)}
-          options={[{ value: 'met', label: 'Target met' }, { value: 'near', label: 'Close (60%+)' }, { value: 'below', label: 'Below 60%' }]} />
-        {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search name or ID" />
+          <FilterSelect label="Category" value={list.filters.employeeType} onChange={(v) => list.setFilter('employeeType', v)}
+            options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
+          <FilterSelect label="Against target" value={list.filters.band} onChange={(v) => list.setFilter('band', v)}
+            options={[{ value: 'met', label: 'Target met' }, { value: 'near', label: 'Close (60%+)' }, { value: 'below', label: 'Below 60%' }]} />
+          {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
+          <div className="spacer" />
+          <ListCount total={q.data?.meta.total} noun="employees" />
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
-            onRowClick={(r) => setRecordsFor(r)} emptyText="No employees match these filters."
+            onRowClick={(r) => setRecordsFor(r)} emptyText={list.hasFilters ? 'No employees match these filters.' : 'No employees on this campus yet.'}
             columns={[
               { key: 'name', label: 'Employee', render: (r) => <EmpLink name={r.fullName} meta={r.designation} onOpen={() => openEmployee(r.id)} /> },
               { key: 'department', label: 'Department' },
@@ -115,16 +117,16 @@ function ScheduleModal({ onClose }: { onClose: () => void }) {
         <SelectField label="Status" value={f.status} onChange={(v) => set('status', v)} options={['Planned', 'In Progress', 'Completed']} />
         {f.status === 'Completed' && <TextField label="Completed on" type="date" required max={todayKey()} value={f.completedOn} onChange={(v) => set('completedOn', v)} error={err('completedOn')} />}
       </div>
-      <div className="row between mt-4 mb-2">
+      <div className="row between wrap g-2 mt-4 mb-2">
         <span className="label">Employees <span className="req">*</span> <span className="t-muted">({ids.size} selected)</span></span>
-        <div className="row g-2">
+        <div className="row g-2 wrap">
           <FilterSelect label="Category" value={filter} onChange={setFilter} options={[{ value: 'teaching', label: 'Teaching' }, { value: 'non_teaching', label: 'Non-Teaching' }]} />
           <Button size="sm" onClick={() => setIds(new Set(staff.map((s) => s.id)))}>Select all</Button>
           <Button size="sm" variant="quiet" onClick={() => setIds(new Set())}>None</Button>
         </div>
       </div>
-      {err('employeeIds') && <div className="hint mb-2" style={{ color: 'var(--critical)' }}>{err('employeeIds')}</div>}
-      <div className="grid g-2col g-2" style={{ maxHeight: 260, overflow: 'auto', border: '1px solid var(--border-soft)', borderRadius: 10, padding: 10 }}>
+      {err('employeeIds') && <div className="hint hint--error mb-2" role="alert">{err('employeeIds')}</div>}
+      <div className="grid g-2col g-2 fw-checklist">
         {staff.map((s) => <Checkbox key={s.id} checked={ids.has(s.id)} onChange={() => toggle(s.id)} label={<span className="t-sm">{s.fullName} <span className="t-micro t-muted">{s.designation}</span></span>} />)}
       </div>
     </Modal>
@@ -143,7 +145,7 @@ function RecordsModal({ row, onClose }: { row: CpdRow; onClose: () => void }) {
     <Modal open onClose={onClose} size="wide" title={`CPD — ${row.fullName}`} sub={`${row.hours} of ${row.target} hours this year`}
       foot={<Button onClick={onClose}>Close</Button>}>
       {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
-        <DataTable compact rows={q.data} loading={q.isLoading} rowKey={(r) => r.id} emptyText="No training recorded."
+        <DataTable compact rows={q.data} loading={q.isLoading} rowKey={(r) => r.id} emptyText="No training recorded yet. Use Schedule training to plan or log a programme."
           columns={[
             { key: 'programme', label: 'Programme', render: (r) => <><span className="t-bold">{r.programme}</span><div className="t-micro t-muted">{r.provider}</div></> },
             { key: 'hours', label: 'Hours', className: 'num' },

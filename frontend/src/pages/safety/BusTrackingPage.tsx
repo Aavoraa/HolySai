@@ -4,15 +4,18 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import {
-  Badge, Banner, Button, Card, Checkbox, DataTable, Empty, ErrorState, Icon, Page, PageHead, PageSkeleton, SelectField,
+  Badge, Banner, Button, Card, Checkbox, DataTable, Empty, ErrorState, Grid, Icon, Kpi, Page, PageHead, PageSkeleton, SelectField,
   Skeleton, StudentLink, TextArea, TextField, Timeline,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
+import { LastSeen } from '@/components/tracking/devices';
 import { BusFleetMap } from './BusMap';
 import { FormModal, gradeOf, LiveBadge, POLL_MS, runTone, TimeCell, TRANSPORT_KEYS, useFieldErrors } from './shared';
 import { RUN_STATUSES, type RouteDetail, type RouteRow, type RoutesResponse } from './types';
 
 const busLabel = (r: Pick<RouteRow, 'busNo' | 'code'>) => r.busNo ?? r.code;
+
+const ALERT_RANK = (r: RouteRow) => (r.alerts.some((a) => a.tone === 'critical') ? 0 : r.runStatus === 'Maintenance' ? 1 : r.runStatus === 'Delayed' || r.alerts.length ? 2 : 3);
 
 export default function BusTrackingPage() {
   const { can } = useAuth();
@@ -32,6 +35,10 @@ export default function BusTrackingPage() {
 
   const d = detail.data?.id === selected?.id ? detail.data : undefined;
   const totalStudents = routes.reduce((a, r) => a + r.students, 0);
+  // Buses that need attention first (critical alert, out of service, delayed), then the rest in their usual order.
+  const ordered = routes.map((r, i) => ({ r, i })).sort((a, b) => ALERT_RANK(a.r) - ALERT_RANK(b.r) || a.i - b.i).map((x) => x.r);
+  const critical = routes.filter((r) => r.alerts.some((a) => a.tone === 'critical'));
+  const sum = list.data?.summary;
 
   return (
     <Page>
@@ -40,118 +47,157 @@ export default function BusTrackingPage() {
         sub="Live location, ETA, onboard count and deviation alerts. Parents see the same position for their own child's bus."
         actions={
           <>
+            {list.data && <span className="illustrative"><span className="dot dot--success dot--pulse" />Updated {fmt.time(list.data.generatedAt)}</span>}
+            <Button icon="refresh" onClick={() => { list.refetch(); if (selected) detail.refetch(); }} loading={list.isFetching}>Refresh</Button>
             <Button icon="route" to="/routes">Route planner</Button>
             {manage && selected && <Button variant="primary" icon="megaphone" onClick={() => setModal('notify')}>Notify route parents</Button>}
           </>
         }
       />
-      {list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.isLoading ? <PageSkeleton kpis={0} /> : !routes.length ? (
+      {list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.isLoading ? <PageSkeleton kpis={4} /> : !routes.length ? (
         <Card><Empty icon="bus" title="No routes for this campus" sub="Add a route in the route planner to start tracking buses." action={<Button to="/routes" icon="route">Open route planner</Button>} /></Card>
       ) : (
-        <div className="grid g-side">
-          <Card title="Routes" sub={`${routes.length} buses · ${totalStudents} students`} flush actions={<LiveBadge at={list.data?.generatedAt} />}>
-            <div>
-              {routes.map((x) => {
-                const tone = x.alerts.some((a) => a.tone === 'critical') ? 'critical' : runTone(x.runStatus);
-                const itemTone = tone === 'neutral' ? 'info' : tone;
-                return (
-                  <button key={x.id} type="button" className={`alert-item alert-item--${itemTone}`} onClick={() => select(x.id)}
-                    aria-pressed={x.id === selected?.id} style={x.id === selected?.id ? { background: 'var(--surface-alt)' } : undefined}>
-                    <span className={`alert-item__ico alert-item__ico--${itemTone}`}><Icon name="bus" size={16} /></span>
-                    <span className="grow" style={{ minWidth: 0 }}>
-                      <span className="alert-item__title" style={{ display: 'block' }}>{busLabel(x)} · {x.area}</span>
-                      <span className="alert-item__meta" style={{ display: 'block' }}>
-                        {x.onboardNow || x.boardedToday}/{x.students} {x.onboardNow ? 'onboard' : 'boarded'} · {x.eta ?? '—'}
-                        {x.alerts.length ? ` · ${x.alerts[0].message}` : ''}
-                      </span>
-                    </span>
-                    <Badge tone={runTone(x.runStatus)}>{x.runStatus}</Badge>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-
-          {selected && (
-            <div className="col g-4">
-              <Card
-                title={`${busLabel(selected)}${selected.registrationNo ? ` · ${selected.registrationNo}` : ''}`}
-                sub={`${selected.name} · ${selected.area} · ${selected.stops} stops · driver ${selected.driverName ?? 'unassigned'} · attendant ${selected.attendantName ?? 'none'}`}
-                actions={
-                  <>
-                    <Badge tone={runTone(selected.runStatus)} dot>{selected.runStatus}</Badge>
-                    {manage && <Button size="sm" icon="edit" onClick={() => setModal('status')}>Update status</Button>}
-                  </>
-                }
-              >
-                <div style={{ position: 'relative' }}>
-                  <BusFleetMap routes={routes} campuses={list.data!.campuses} selectedId={selected.id} onSelect={select}
-                    trail={d?.trail ?? []} stops={d?.stopList} />
-                  {selected.alerts.filter((a) => a.type !== 'delay').map((a) => (
-                    <div key={a.type} style={{ position: 'absolute', left: 16, top: 16, zIndex: 600 }}>
-                      <Badge tone={a.tone} dot lg>{a.message}</Badge>
-                    </div>
+        <>
+          {critical.length > 0 && (
+            <div className="mb-4">
+              <Banner tone="critical" icon="alert">
+                <strong>{critical.length === 1 ? '1 bus needs attention now' : `${critical.length} buses need attention now`}</strong>
+                <ul className="st-banner-list">
+                  {critical.map((r) => (
+                    <li key={r.id}>
+                      <button type="button" className="st-linkbtn" onClick={() => select(r.id)}>{busLabel(r)} · {r.area}</button>
+                      {' — '}{r.alerts.filter((a) => a.tone === 'critical').map((a) => a.message).join(' · ')}
+                    </li>
                   ))}
-                </div>
-                <div className="grid g-4col g-3 mt-4">
-                  <Stat label="Onboard" value={`${selected.onboardNow || selected.boardedToday}/${selected.students}`} />
-                  <Stat label="ETA" value={selected.eta ?? '—'} />
-                  <Stat label="Stops done" value={`${selected.stopsDone}/${selected.stops}`} />
-                  <Stat label="Delay" value={selected.delayMinutes ? `+${selected.delayMinutes} min` : 'On time'} critical={selected.delayMinutes > 0} />
-                </div>
-                {selected.location && (
-                  <p className="t-micro t-muted mt-2">
-                    Last GPS {fmt.relative(selected.location.recordedAt)}{selected.location.speedKmph != null ? ` · ${selected.location.speedKmph} km/h` : ''} · <span className="coord">{fmt.coord(selected.location.latitude)}, {fmt.coord(selected.location.longitude)}</span>
-                  </p>
-                )}
-              </Card>
-
-              <div className="grid g-2col g-4">
-                <Card title="Stop sequence" sub="Morning run" flush>
-                  <div className="card__body">
-                    {detail.error ? <ErrorState error={detail.error} onRetry={() => detail.refetch()} />
-                      : !d ? <Skeleton height={160} />
-                      : !d.stopList.length ? <Empty icon="mapPin" title="No stops yet" sub="Add stops in the route planner." />
-                      : <Timeline items={d.stopList.map((s) => ({
-                        time: s.pickupTime, title: s.name, tone: s.done ? 'teal' : 'muted',
-                        body: s.students ? `${s.boarded}/${s.students} boarded here` : '',
-                      }))} />}
-                  </div>
-                </Card>
-                <Card title="Boarding and de-boarding" sub="Confirmed by the attendant device" flush
-                  actions={<Button size="sm" variant="quiet" to={`/boarding?route=${selected.code}`}>Open</Button>}>
-                  {!d ? <div className="card__body"><Skeleton height={160} /></div> : (
-                    <DataTable
-                      compact
-                      rows={d.students}
-                      rowKey={(r) => r.id}
-                      emptyText="No students assigned to this route."
-                      columns={[
-                        { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={[gradeOf(r.grade, r.section), r.stopName].filter(Boolean).join(' · ')} /> },
-                        { key: 'board', label: 'Boarded', render: (r) => r.boardedAt ? <Badge tone="success" icon="check">{fmt.time(r.boardedAt)}</Badge> : <span className="t-faint">—</span> },
-                        { key: 'off', label: 'De-boarded', render: (r) => r.deboardedAt ? <Badge tone="success" icon="check">{fmt.time(r.deboardedAt)}</Badge> : <TimeCell value={null} /> },
-                      ]}
-                    />
-                  )}
-                </Card>
-              </div>
+                </ul>
+              </Banner>
             </div>
           )}
-        </div>
+
+          {sum && (
+            <>
+              <Grid cols="g-4col">
+                <Kpi label="Buses moving" value={fmt.n(sum.moving)} unit={`/ ${fmt.n(sum.buses)}`} tone="info" icon="bus" foot={`${sum.atCampus} at campus`} />
+                <Kpi label="Students onboard" value={fmt.n(sum.onboardNow)} tone="teal" icon="users" foot={`${fmt.n(sum.students)} students on routes`} />
+                <Kpi label="Delayed" value={fmt.n(sum.delayed)} tone="amber" icon="clock" foot={sum.delayed ? 'Parents can be notified per route' : 'All running buses on time'} />
+                <Kpi label="Alerts" value={fmt.n(sum.alerts)} tone={sum.alerts ? 'critical' : 'teal'} icon="alert" foot={sum.alerts ? 'Deviation, speed or delay alerts' : 'No active alerts'} />
+              </Grid>
+              <div className="statgrid statgrid--card mt-3 mb-4">
+                <Kpi size="compact" label="At campus" value={fmt.n(sum.atCampus)} />
+                <Kpi size="compact" label="Out of service" value={fmt.n(sum.maintenance)} tone={sum.maintenance ? 'critical' : undefined} />
+                <Kpi size="compact" label="Buses on file" value={fmt.n(sum.buses)} />
+              </div>
+            </>
+          )}
+
+          <div className="st-split">
+            <Card icon="bus" title="Buses" sub={`${routes.length} buses · ${totalStudents} students · attention first`} flush actions={<LiveBadge at={list.data?.generatedAt} />}>
+              <ul className="st-list" aria-label="Buses">
+                {ordered.map((x) => {
+                  const crit = x.alerts.some((a) => a.tone === 'critical');
+                  const tone = crit ? 'critical' : x.runStatus === 'Delayed' || x.runStatus === 'Maintenance' ? 'warning' : '';
+                  return (
+                    <li key={x.id} className={`st-item${tone ? ` st-item--${tone}` : ''}`} aria-current={x.id === selected?.id || undefined}>
+                      <button type="button" className="st-item__main" onClick={() => select(x.id)}>
+                        <span className="st-item__top">
+                          <span className="st-item__name">{busLabel(x)}<span className="st-item__sub">{x.area}</span></span>
+                          {x.location ? <LastSeen at={x.location.recordedAt} /> : <span className="st-seen">No GPS yet</span>}
+                        </span>
+                        <span className="st-item__meta">
+                          <Badge tone={runTone(x.runStatus)} dot>{x.runStatus}</Badge>
+                          <span className="t-num">{x.onboardNow || x.boardedToday}/{x.students} {x.onboardNow ? 'onboard' : 'boarded'}</span>
+                          {x.eta && <span>ETA {x.eta}</span>}
+                        </span>
+                        {x.alerts.length > 0 && (
+                          <span className={crit ? 'st-item__alert' : 'st-item__meta'}>
+                            {crit && <Icon name="alert" size={12} />} {x.alerts.map((a) => a.message).join(' · ')}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
+
+            {selected && (
+              <div className="st-split__map col g-4">
+                <Card
+                  title={`${busLabel(selected)}${selected.registrationNo ? ` · ${selected.registrationNo}` : ''}`}
+                  sub={`${selected.name} · ${selected.area} · ${selected.stops} stops · driver ${selected.driverName ?? 'unassigned'} · attendant ${selected.attendantName ?? 'none'}`}
+                  actions={
+                    <>
+                      <Badge tone={runTone(selected.runStatus)} dot>{selected.runStatus}</Badge>
+                      {manage && <Button size="sm" icon="edit" onClick={() => setModal('status')}>Update status</Button>}
+                    </>
+                  }
+                >
+                  <div className="st-mapwrap">
+                    <BusFleetMap routes={routes} campuses={list.data!.campuses} selectedId={selected.id} onSelect={select}
+                      trail={d?.trail ?? []} stops={d?.stopList} />
+                    {selected.alerts.some((a) => a.type !== 'delay') && (
+                      <div className="st-mapalerts" role="status">
+                        {selected.alerts.filter((a) => a.type !== 'delay').map((a) => (
+                          <Badge key={a.type} tone={a.tone} icon={a.tone === 'critical' ? 'alert' : undefined} dot={a.tone !== 'critical'} lg>{a.message}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <dl className="st-facts">
+                    <div><dt>Onboard</dt><dd>{`${selected.onboardNow || selected.boardedToday}/${selected.students}`}</dd></div>
+                    <div><dt>ETA</dt><dd>{selected.eta ?? '—'}</dd></div>
+                    <div><dt>Stops done</dt><dd>{`${selected.stopsDone}/${selected.stops}`}</dd></div>
+                    <div><dt>Delay</dt><dd className={selected.delayMinutes > 0 ? 't-critical' : undefined}>{selected.delayMinutes ? `+${selected.delayMinutes} min` : 'On time'}</dd></div>
+                  </dl>
+                  <div className="st-ping">
+                    {selected.location ? (
+                      <>
+                        <span className="row g-1"><Icon name="navigation" size={12} /><LastSeen at={selected.location.recordedAt} prefix="Last GPS ping" /></span>
+                        {selected.location.speedKmph != null && <span>{selected.location.speedKmph} km/h</span>}
+                        <span className="coord">{fmt.coord(selected.location.latitude)}, {fmt.coord(selected.location.longitude)}</span>
+                      </>
+                    ) : <span>No GPS position received yet for this bus.</span>}
+                  </div>
+                </Card>
+
+                <div className="grid g-2col g-4">
+                  <Card icon="grid" title="Stop sequence" sub="Morning run" flush>
+                    <div className="card__body">
+                      {detail.error ? <ErrorState error={detail.error} onRetry={() => detail.refetch()} />
+                        : !d ? <Skeleton height={160} />
+                        : !d.stopList.length ? <Empty icon="mapPin" title="No stops yet" sub="Add stops in the route planner." />
+                        : <Timeline items={d.stopList.map((s) => ({
+                          time: s.pickupTime, title: s.name, tone: s.done ? 'teal' : 'muted',
+                          body: s.students ? `${s.boarded}/${s.students} boarded here` : '',
+                        }))} />}
+                    </div>
+                  </Card>
+                  <Card icon="grid" title="Boarding and de-boarding" sub="Confirmed by the attendant device" flush
+                    actions={<Button size="sm" variant="quiet" to={`/boarding?route=${selected.code}`}>Open</Button>}>
+                    {!d ? <div className="card__body"><Skeleton height={160} /></div> : (
+                      <DataTable
+                        compact
+                        rows={d.students}
+                        rowKey={(r) => r.id}
+                        emptyText="No students assigned to this route."
+                        columns={[
+                          { key: 'student', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={[gradeOf(r.grade, r.section), r.stopName].filter(Boolean).join(' · ')} /> },
+                          { key: 'board', label: 'Boarded', render: (r) => r.boardedAt ? <Badge tone="success" icon="check">{fmt.time(r.boardedAt)}</Badge> : <span className="t-faint">—</span> },
+                          { key: 'off', label: 'De-boarded', render: (r) => r.deboardedAt ? <Badge tone="success" icon="check">{fmt.time(r.deboardedAt)}</Badge> : <TimeCell value={null} /> },
+                        ]}
+                      />
+                    )}
+                  </Card>
+                </div>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {modal === 'status' && selected && <RunStatusModal route={selected} onClose={() => setModal(null)} />}
       {modal === 'notify' && selected && <NotifyModal route={selected} onClose={() => setModal(null)} />}
     </Page>
-  );
-}
-
-function Stat({ label, value, critical }: { label: string; value: string; critical?: boolean }) {
-  return (
-    <div className="statstrip__item" style={{ border: 0, padding: 0 }}>
-      <div className="statstrip__label">{label}</div>
-      <div className={`statstrip__value${critical ? ' t-critical' : ''}`}>{value}</div>
-    </div>
   );
 }
 

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
-import { BrandDivider, Button, Icon, Lotus, Modal, Svg, useToast } from '@/components/ui';
+import { BrandDivider, Button, Icon, Lotus, Modal, Svg, useToast, CAMPUS_PHOTO } from '@/components/ui';
 import { fmt } from '@/lib/format';
 
 interface PublicConfig {
@@ -93,6 +93,7 @@ export default function LoginPage() {
 
   return (
     <section className="home" aria-label="Holy Sai Smart School 360 — welcome and sign in">
+      <div className="home__photo" style={{ backgroundImage: `url(${CAMPUS_PHOTO})` }} aria-hidden="true" />
       <header className="home__nav">
         <div className="home__brand">
           <Lotus size={46} />

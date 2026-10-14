@@ -6,7 +6,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   Badge, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Icon, Kpi, Modal, Page, PageHead, Pagination, Person,
-  SearchInput, Segment, SelectField, TextField, useConfirm,
+  SearchInput, Segment, SelectField, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { FormModal, localInputIn, localToIso, PHONE_RE, SAFETY_KEYS, todayIso, useFieldErrors } from './shared';
@@ -51,22 +51,22 @@ export default function VisitorsPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="On site now" value={fmt.n(s?.onSite ?? 0)} tone="info" onClick={() => list.setFilter('status', 'Inside')} />
-          <Kpi loading={!s} label="Today" value={fmt.n(s?.today ?? 0)} foot={s ? `${s.checkedOutToday} checked out${s.deniedToday ? ` · ${s.deniedToday} denied` : ''}` : undefined} />
-          <Kpi loading={!s} label="Pre-approved" value={fmt.n(s?.preApproved ?? 0)} tone="teal" foot="Expected today or later" onClick={() => list.setFilter('status', 'Expected')} />
-          <Kpi loading={!s} label="Not checked out" value={fmt.n(s?.notCheckedOut ?? 0)} tone={s?.notCheckedOut ? 'critical' : 'teal'}
+          <Kpi icon="activity" loading={!s} label="On site now" value={fmt.n(s?.onSite ?? 0)} tone="info" onClick={() => list.setFilter('status', 'Inside')} />
+          <Kpi icon="activity" loading={!s} label="Today" value={fmt.n(s?.today ?? 0)} foot={s ? `${s.checkedOutToday} checked out${s.deniedToday ? ` · ${s.deniedToday} denied` : ''}` : undefined} />
+          <Kpi icon="activity" loading={!s} label="Pre-approved" value={fmt.n(s?.preApproved ?? 0)} tone="teal" foot="Expected today or later" onClick={() => list.setFilter('status', 'Expected')} />
+          <Kpi icon="activity" loading={!s} label="Not checked out" value={fmt.n(s?.notCheckedOut ?? 0)} tone={s?.notCheckedOut ? 'critical' : 'teal'}
             foot={s?.notCheckedOut ? 'Still inside from a previous day — reconcile now' : 'Reconciled at 17:30 daily'} />
         </Grid>
       )}
 
-      <div className="filterbar mt-4">
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search visitor, badge or purpose" />
-        <input className="input" type="date" aria-label="Date" value={date} style={{ width: 'auto' }}
-          onChange={(e) => list.setFilter('date', e.target.value === todayIso() ? '' : e.target.value)} />
-        <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Inside', 'Completed', 'Expected', 'Denied']} />
-        {list.hasFilters && <Button variant="quiet" size="sm" onClick={list.clear}>Clear</Button>}
-      </div>
-      <Card flush>
+      <Card flush className="mt-4">
+        <Toolbar>
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search visitor, badge or purpose" />
+          <input className="input st-date" type="date" aria-label="Date" value={date}
+            onChange={(e) => list.setFilter('date', e.target.value === todayIso() ? '' : e.target.value)} />
+          <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Inside', 'Completed', 'Expected', 'Denied']} />
+          {list.hasFilters && <Button variant="quiet" size="sm" onClick={list.clear}>Clear</Button>}
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={q.data?.rows}
@@ -85,7 +85,7 @@ export default function VisitorsPage() {
               {
                 key: 'a', label: '', sortable: false, className: 'num',
                 render: (r) => (
-                  <span className="row g-1" style={{ justifyContent: 'flex-end' }}>
+                  <span className="row g-1 end">
                     {r.status !== 'Denied' && <Button size="sm" variant="quiet" icon="printer" onClick={() => setBadge(r)} aria-label={`Badge ${r.badgeNo}`} />}
                     {manage && r.status === 'Inside' && <Button size="sm" onClick={() => run(r, 'check-out')} loading={act.isPending && act.variables?.id === r.id}>Check out</Button>}
                     {manage && r.status === 'Expected' && (
@@ -140,9 +140,16 @@ function CheckInModal({ onClose, onDone }: { onClose: () => void; onDone: (v: Vi
       <div className="mb-4">
         <Segment<'now' | 'later'> items={[{ id: 'now', label: 'Arriving now' }, { id: 'later', label: 'Pre-approve for later' }]} active={mode} onChange={setMode} />
       </div>
+      <div className="formsection">
+        <div className="formsection__title">Visitor</div>
+        <div className="form-grid">
+          <TextField label="Visitor name" required value={f.fullName} onChange={set('fullName')} maxLength={120} error={fe.errors.fullName} />
+          <TextField label="Phone" type="tel" value={f.phone} onChange={set('phone')} maxLength={16} error={fe.errors.phone} />
+        </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Visit</div>
       <div className="form-grid">
-        <TextField label="Visitor name" required value={f.fullName} onChange={set('fullName')} maxLength={120} error={fe.errors.fullName} />
-        <TextField label="Phone" type="tel" value={f.phone} onChange={set('phone')} maxLength={16} error={fe.errors.phone} />
         <SelectField label="Purpose" required value={f.purpose} onChange={set('purpose')} options={VISIT_PURPOSES} />
         <SelectField label="Host" required value={f.hostEmployeeId} onChange={set('hostEmployeeId')} placeholder="Choose a staff member" error={fe.errors.hostEmployeeId}
           options={(lookups?.staff ?? []).map((s) => ({ value: s.id, label: `${s.fullName} — ${s.designation}` }))} />
@@ -152,7 +159,8 @@ function CheckInModal({ onClose, onDone }: { onClose: () => void; onDone: (v: Vi
           <TextField label="Expected at" type="datetime-local" required value={f.expectedAt} onChange={set('expectedAt')} error={fe.errors.expectedAt} />
         )}
       </div>
-      <div className="mt-4 card card--tint row g-3" style={{ padding: 14 }}>
+      </div>
+      <div className="mt-4 st-note">
         <Icon name="camera" size={20} />
         <span className="col"><span className="t-sm t-bold">ID capture</span><span className="t-micro t-muted">Check a photo ID at the desk. The host is notified as soon as the visitor is checked in.</span></span>
       </div>
@@ -164,7 +172,7 @@ function BadgeModal({ visitor, onClose }: { visitor: Visitor; onClose: () => voi
   return (
     <Modal open onClose={onClose} title={`Visitor badge ${visitor.badgeNo}`}
       foot={<><Button onClick={onClose}>Close</Button><Button variant="primary" icon="printer" onClick={() => window.print()}>Print badge</Button></>}>
-      <div className="card" style={{ padding: 20, textAlign: 'center', borderWidth: 2 }}>
+      <div className="st-badgecard">
         <div className="eyebrow">Holy Sai International School · Visitor</div>
         <div className="h1 mt-2 t-num">{visitor.badgeNo}</div>
         <div className="h3 mt-2">{visitor.fullName}</div>

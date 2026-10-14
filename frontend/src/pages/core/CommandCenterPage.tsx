@@ -1,13 +1,13 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  AiNotice, AlertItem, Badge, Button, Card, Chart, charts, Empty, ErrorState, Feed, Funnel, Grid, Kpi, Meter, Page,
-  PageSkeleton, Segment,
+  AiNotice, AlertItem, Badge, Button, CampusBanner, Card, CardLink, Chart, charts, Empty, ErrorState, Feed, Funnel, greeting, Icon, Kpi, Meter, Page,
+  PageSkeleton, QuickActions, RecentNotifications, Ring, SchoolPulse, SectionHead,
 } from '@/components/ui';
+import type { FeeDashboard } from '@/pages/finance/types';
 import { fmt } from '@/lib/format';
 
 interface Dashboard {
@@ -38,235 +38,241 @@ interface Dashboard {
   activity: { at: string; text: string; module: string; by: string; icon: string }[];
 }
 
-type AttTab = 'trend' | 'grade' | 'late' | 'pattern';
+
 const SOURCE_COLORS = ['var(--teal)', 'var(--navy)', 'var(--viz-4)', 'var(--amber)', 'var(--viz-5)', 'var(--viz-7)', 'var(--viz-6)', 'var(--viz-8)'];
+const HONORIFICS = new Set(['dr', 'dr.', 'mr', 'mr.', 'mrs', 'mrs.', 'ms', 'ms.', 'prof', 'prof.']);
+
+function firstName(full?: string) {
+  // Service accounts (e.g. System Administrator) are greeted by their full name.
+  if (!full || /administrat/i.test(full)) return full ?? '';
+  const parts = full.split(/\s+/).filter(Boolean);
+  return parts.find((p) => !HONORIFICS.has(p.toLowerCase()) && p.replace('.', '').length > 1) ?? parts[0] ?? '';
+}
 
 export default function CommandCenterPage() {
   const { user, can } = useAuth();
   const { t } = useI18n();
   const school = useSchool();
   const navigate = useNavigate();
-  const [attTab, setAttTab] = useState<AttTab>('trend');
   const q = useApiQuery<Dashboard>('/dashboard/command-center', { scope: school.scope, campusId: school.campusId }, { refetchInterval: 120_000 });
+  const fees = useApiQuery<FeeDashboard>(can('finance.read') ? '/finance/fees/summary' : null, school.campusParam);
 
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
-  const greet = hour < 12 ? t('Good Morning') : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-  const scopeLabel = school.scope === 'group' ? 'all campuses' : school.campus?.name ?? 'your campus';
+  const greet = greeting();
 
-  const head = (
-    <div className="pagehead">
-      <div className="grow">
-        <h1 className="display">{greet}, {user?.title?.split('·')[0].trim() || user?.fullName}</h1>
-        <p className="lede mt-2">{t("Here's your live school pulse")} — {scopeLabel}, {school.yearLabel}.</p>
-      </div>
-      <div className="pagehead__actions">
-        {q.data && <span className="illustrative"><span className="dot dot--success dot--pulse" />Live · updated {fmt.time(q.data.generatedAt)}</span>}
-        {can('prototype.view') && <Button icon="play" to="/day-in-life">Day in the life</Button>}
-        {can(['notifications.broadcast', 'safety.manage']) && <Button variant="danger" icon="megaphone" to="/emergency">Emergency broadcast</Button>}
-      </div>
-    </div>
+  const welcome = (
+    <CampusBanner title={<>{greet}, {firstName(user?.fullName)}</>} sub="Here's what's happening across your school today." />
   );
 
-  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={8} /></Page>;
-  if (q.error || !q.data) return <Page>{head}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
+  if (q.isLoading) return <Page>{welcome}<PageSkeleton kpis={4} /></Page>;
+  if (q.error || !q.data) return <Page>{welcome}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
   const d = q.data;
   const a = d.attendance;
-  const presentNow = a.today.present + a.today.late;
-
-  const kpis = [
-    <Kpi key="s" label={t('Total Students')} value={fmt.n(d.students.total)} foot={school.scope === 'group' ? 'All campuses' : school.campus?.place} to="/students" />,
-    <Kpi key="p" label={t('Present Today')} value={fmt.n(presentNow)} unit={a.todayPct != null ? `· ${fmt.pct(a.todayPct, 1)}` : undefined} tone="teal"
-      foot={`${fmt.n(a.today.marked)} of ${fmt.n(a.today.total)} marked`} to="/attendance" spark={a.trend.map((x) => x.value)} sparkColor="var(--teal)" />,
-    <Kpi key="a" label={t('Absent Today')} value={fmt.n(a.today.absent)} unit={`· ${a.today.late} late`} tone="critical" foot={`${a.repeatAbsentees} absent 3+ days in a row this month`} to="/attendance" />,
-    <Kpi key="st" label={t('Total Staff')} value={fmt.n(d.staff.total)} tone="info" foot={`${d.staff.present} present · ${d.staff.absent} absent · ${d.staff.onLeave} on leave`} to={can('hr.read') ? '/staff-attendance' : undefined} />,
-    <Kpi key="tt" label={t('Teaching Staff')} value={fmt.n(d.staff.teaching)} tone="teal"
-      foot={`${d.staff.teachingPresent} present today`} to={can('hr.read') ? '/teaching-staff' : undefined} />,
-    <Kpi key="nt" label={t('Non-Teaching Staff')} value={fmt.n(d.staff.nonTeaching)} tone="amber"
-      foot={`${d.staff.nonTeachingPresent} present today`} to={can('hr.read') ? '/non-teaching-staff' : undefined} />,
-  ];
-  if (d.admissions) {
-    kpis.push(
-      <Kpi key="ad" label={t('Admissions Pipeline')} value={fmt.n(d.admissions.funnel[1]?.value ?? 0)} unit="qualified" tone="amber"
-        foot={`${d.admissions.admitted} admitted · ${d.admissions.thisMonth} enquiries this month`} to="/admissions" />,
-    );
-  }
-  if (d.finance) {
-    kpis.push(
-      <Kpi key="fc" label={t('Fees Collected')} value={fmt.money(d.finance.collected, { compact: true })} unit={`· ${fmt.pct(d.finance.collectionPct, 1)}`} tone="teal"
-        foot={`Of ${fmt.money(d.finance.billed, { compact: true })} billed`} to="/fees" />,
-      <Kpi key="fo" label={t('Outstanding Fees')} value={fmt.money(d.finance.outstanding, { compact: true })} tone="critical"
-        foot={`${fmt.money(d.finance.overdue, { compact: true })} past due · ${d.finance.overdueAccounts} accounts`} to="/fees" />,
-    );
-  }
-  kpis.push(
-    <Kpi key="sr" label={t('Students Requiring Attention')} value={d.students.atRisk} unit={`+ ${d.students.developing} developing`} tone="critical"
-      foot={d.earlyWarning ? `${d.earlyWarning.awaitingReview} signals awaiting teacher review` : 'Risk bands from live data'} to={can('earlywarning.read') ? '/early-warning' : '/students?risk=At+Risk'} />,
-  );
-  if (d.tracking) {
-    kpis.push(
-      <Kpi key="tr" label="Student Tracking" value={`${d.tracking.active} / ${d.tracking.total}`} unit="live" tone="info"
-        foot={`${d.tracking.atSchool} on campus · ${d.tracking.offline} offline`} to="/student-tracking" />,
-    );
-  }
-  kpis.push(
-    <Kpi key="pe" label="Parent Engagement" value={d.parentEngagement.score != null ? `${d.parentEngagement.score}` : '—'} unit="/100"
-      foot={`${d.parentEngagement.unanswered} queries awaiting reply`} to={can('communication.read') ? '/parent-communication' : undefined} />,
-  );
-  if (d.approvals.total || kpis.length % 4) {
-    kpis.push(
-      <Kpi key="ap" label="Pending Approvals" value={d.approvals.total} tone="amber"
-        foot={`${d.approvals.leave} leave · ${d.approvals.expenses} expenses · ${d.approvals.certificates} certificates`} to="/my-tasks" />,
-    );
-  }
-
-  const attTabs: { id: AttTab; label: string }[] = [
-    { id: 'trend', label: 'Attendance trend' },
-    { id: 'grade', label: 'Class-wise' },
-    { id: 'late', label: 'Late arrivals' },
-    { id: 'pattern', label: 'Absence patterns' },
-  ];
-  let attChart = '';
-  if (attTab === 'trend' && a.trend.length) {
-    const min = Math.max(0, Math.floor(Math.min(...a.trend.map((x) => x.value)) / 5) * 5 - 5);
-    attChart = charts.line({ labels: a.trend.map((x) => x.label), series: [{ name: 'Attendance %', values: a.trend.map((x) => x.value), color: 'var(--teal)' }], yMin: min, yMax: 100, unit: '%', height: 232, label: 'Attendance trend over recent school days' });
-  } else if (attTab === 'grade' && a.byGrade.length) {
-    attChart = charts.bar({
-      labels: a.byGrade.map((g) => g.grade.replace('Grade ', 'G')),
-      series: [{ name: 'Present %', values: a.byGrade.map((g) => g.present), colors: a.byGrade.map((g) => (g.present < 85 ? 'var(--critical)' : g.present < 93 ? 'var(--amber)' : 'var(--teal)')) }],
-      yMax: 100, target: 93, targetLabel: 'Target 93%', height: 232, label: 'Attendance by grade, last 7 days',
-    });
-  } else if (attTab === 'late' && a.lateByTime.length) {
-    attChart = charts.bar({ labels: a.lateByTime.map((x) => x.label), series: [{ name: 'Late arrivals', values: a.lateByTime.map((x) => x.value), color: 'var(--navy)' }], height: 232, label: 'Late arrival times, last 30 days' });
-  } else if (attTab === 'pattern' && a.weekdayAbsences.length) {
-    attChart = charts.hbar({ rows: a.weekdayAbsences.map((w) => ({ label: w.day.trim(), value: w.absences, display: `${w.absences} absences` })), labelW: 120, rowH: 34, label: 'Absences by weekday, last 60 days' });
-  }
-
   const risk = d.students;
   const adm = d.admissions;
 
+  // Attendance rate: today's figure, or the latest school day when today is not yet marked.
+  const last = a.trend[a.trend.length - 1];
+  const prev = a.trend[a.trend.length - 2];
+  const attRate = a.todayPct ?? last?.value ?? null;
+  const attDelta = a.todayPct == null && last && prev ? Math.round((last.value - prev.value) * 10) / 10 : null;
+
+  const headline = [
+    <Kpi key="s" size="hero" icon="users" label={t('Total Students')} value={fmt.n(d.students.total)}
+      foot={`${fmt.n(risk.onTrack)} on track · ${school.scope === 'group' ? 'all campuses' : school.campus?.place ?? ''}`} to="/students" />,
+    <Kpi key="p" size="hero" icon="calendar" tone="amber" label="Attendance Rate" value={attRate != null ? fmt.pct(attRate, 1) : '—'}
+      delta={attDelta} deltaUnit=" pts"
+      foot={a.todayPct != null ? `${fmt.n(a.today.marked)} of ${fmt.n(a.today.total)} marked today` : last ? `vs. previous day · ${last.label}` : 'Not marked yet today'}
+      to="/attendance" />,
+    <Kpi key="st" size="hero" icon="user" tone="violet" label="Staff Present" value={fmt.n(d.staff.present)}
+      foot={`of ${fmt.n(d.staff.total)} staff · ${d.staff.onLeave} on leave`} to={can('hr.read') ? '/staff-attendance' : undefined} />,
+    <Kpi key="ap" size="hero" icon="fileText" tone="teal" label="Pending Actions" value={fmt.n(d.approvals.total)}
+      foot={`${d.approvals.leave} leave · ${d.approvals.expenses} expenses · ${d.approvals.certificates} certificates`} to="/my-tasks" />,
+  ];
+
+  const glance = [
+    <Kpi key="a" size="compact" label={t('Absent Today')} value={fmt.n(a.today.absent)} unit={`· ${a.today.late} late`} tone="critical"
+      foot={`${a.repeatAbsentees} absent 3+ days running`} to="/attendance" />,
+    <Kpi key="sr" size="compact" label={t('Students Requiring Attention')} value={risk.atRisk} unit={`+ ${risk.developing} developing`} tone="critical"
+      foot={d.earlyWarning ? `${d.earlyWarning.awaitingReview} signals awaiting review` : 'Risk bands from live data'} to={can('earlywarning.read') ? '/early-warning' : '/students?risk=At+Risk'} />,
+    <Kpi key="tt" size="compact" label={t('Teaching Staff')} value={fmt.n(d.staff.teaching)}
+      foot={`${d.staff.teachingPresent} present today`} to={can('hr.read') ? '/teaching-staff' : undefined} />,
+    <Kpi key="nt" size="compact" label={t('Non-Teaching Staff')} value={fmt.n(d.staff.nonTeaching)}
+      foot={`${d.staff.nonTeachingPresent} present today`} to={can('hr.read') ? '/non-teaching-staff' : undefined} />,
+  ];
+  if (d.finance) {
+    glance.push(
+      <Kpi key="fo" size="compact" label={t('Outstanding Fees')} value={fmt.money(d.finance.outstanding, { compact: true })} tone="critical"
+        foot={`${fmt.money(d.finance.overdue, { compact: true })} past due · ${d.finance.overdueAccounts} accounts`} to="/fees" />,
+    );
+  }
+  if (adm) {
+    glance.push(
+      <Kpi key="ad" size="compact" label={t('Admissions Pipeline')} value={fmt.n(adm.funnel[1]?.value ?? 0)} unit="qualified"
+        foot={`${adm.admitted} admitted · ${adm.thisMonth} enquiries this month`} to="/admissions" />,
+    );
+  }
+  if (d.tracking) {
+    glance.push(
+      <Kpi key="tr" size="compact" label="Student Tracking" value={`${d.tracking.active} / ${d.tracking.total}`} unit="live"
+        foot={`${d.tracking.atSchool} on campus · ${d.tracking.offline} offline`} to="/student-tracking" />,
+    );
+  }
+  glance.push(
+    <Kpi key="pe" size="compact" label="Parent Engagement" value={d.parentEngagement.score != null ? `${d.parentEngagement.score}` : '—'} unit="/100"
+      foot={`${d.parentEngagement.unanswered} queries awaiting reply`} to={can('communication.read') ? '/parent-communication' : undefined} />,
+  );
+
+  const grades = d.academic.byGrade;
+
+  const quick = [
+    { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
+    { label: 'Record Attendance', icon: 'calendar', to: '/attendance', show: can(['attendance.mark', 'attendance.read']) },
+    { label: 'Generate Report Card', icon: 'fileText', to: '/report-cards', show: can('academics.read') },
+    { label: 'Fee Collection', icon: 'wallet', to: '/fees', show: can('finance.read') },
+    { label: 'Send Notification', icon: 'send', to: '/circulars', show: can('communication.read') },
+    { label: 'Create Timetable', icon: 'calendar', to: '/timetable', show: can('academics.read') },
+    { label: 'Emergency Broadcast', icon: 'megaphone', tone: 'critical', to: '/emergency', show: can(['notifications.broadcast', 'safety.manage']) },
+  ].filter((x) => x.show);
+
+  const feeTrend = (fees.data?.trend ?? []).slice(-6);
+  const feeMax = Math.max(1, ...feeTrend.map((m) => m.billed));
+
   return (
     <Page>
-      {head}
-      <Grid cols="g-4col">{kpis}</Grid>
+      {welcome}
+      <div className="dash">
+        <div className="dash__main">
+          <div className="grid g-4col">{headline}</div>
 
-      <Grid cols="g-main mt-5">
-        <Card
-          title="Attendance analytics"
-          sub={`${a.todayPct != null ? fmt.pct(a.todayPct, 1) : '—'} present among marked · ${a.today.late} late · ${a.today.total - a.today.marked} not yet marked`}
-          actions={<Segment items={attTabs} active={attTab} onChange={setAttTab} />}
-        >
-          {attChart ? <Chart svg={attChart} /> : <Empty icon="chart" title="No attendance data yet" sub="Figures appear once attendance is marked." />}
-        </Card>
-        <Card
-          title={t("Today's Attention")}
-          sub="Ranked by urgency. Every row opens the screen where it is resolved."
-          actions={<Button size="sm" icon="checkSquare" to="/my-tasks">My tasks</Button>}
-          flush
-          foot={<span>Signals are advisory. Nothing is actioned automatically.</span>}
-        >
-          {d.attention.length ? (
-            <div>
-              {d.attention.map((i) => (
-                <AlertItem key={i.title} tone={i.tone} icon={i.icon} title={i.title} meta={i.meta} to={i.route} right={<Badge tone={i.tone}>{i.count}</Badge>} />
-              ))}
-            </div>
-          ) : (
-            <Empty icon="check" title="All clear" sub="Nothing needs attention right now." />
-          )}
-        </Card>
-      </Grid>
+          <SchoolPulse />
 
-      <Grid cols="g-main mt-5">
-        <Card
-          title="Student intelligence"
-          sub="Cohort standing from attendance, academic trend and participation"
-          actions={can('earlywarning.read') ? <Button size="sm" iconRight="arrowRight" to="/early-warning">Open Early Warning</Button> : undefined}
-        >
-          <div className="row g-5 wrap">
-            <div className="none">
-              <Chart svg={charts.donut({
-                size: 172, thickness: 24, center: fmt.n(risk.onTrack), centerSub: 'On Track',
-                data: [
-                  { label: 'On Track', value: risk.onTrack, color: 'var(--teal)' },
-                  { label: 'Developing Risk', value: risk.developing, color: 'var(--amber)' },
-                  { label: 'At Risk', value: risk.atRisk, color: 'var(--critical)' },
-                ],
-                label: 'Cohort risk distribution',
-              })} />
-            </div>
-            <div className="grow col g-3" style={{ minWidth: 260 }}>
-              {([
-                ['On Track', risk.onTrack, 'success', 'Attendance and academic trend within expected range', 'On Track'],
-                ['Developing Risk', risk.developing, 'warning', 'One indicator slipping — monitored, not labelled', 'Developing Risk'],
-                ['At Risk', risk.atRisk, 'critical', 'Two or more indicators declining — teacher review required', 'At Risk'],
-              ] as const).map(([label, n, tone, note, filter]) => (
-                <button key={label} type="button" className="row g-3 hoverable" style={{ textAlign: 'left', borderRadius: 8, padding: 4 }} onClick={() => navigate(`/students?risk=${encodeURIComponent(filter)}`)}>
-                  <span className={`dot dot--${tone}`} style={{ marginTop: 6 }} />
-                  <span className="grow">
-                    <span className="row between"><span className="t-sm t-bold">{label}</span><span className="t-sm t-bold t-num">{fmt.n(n)}</span></span>
-                    <span className="t-micro t-muted" style={{ display: 'block' }}>{note}</span>
-                  </span>
-                </button>
-              ))}
-              {d.earlyWarning && (
-                <>
-                  <div className="divider" style={{ margin: '8px 0' }} />
-                  <div className="grid g-2col g-3">
-                    <Meter label="Signals awaiting review" value={pctOf(d.earlyWarning.awaitingReview, d.earlyWarning.open)} right={`${d.earlyWarning.awaitingReview} open`} tone="amber" />
-                    <Meter label="Intervention active" value={pctOf(d.earlyWarning.inIntervention, d.earlyWarning.open)} right={`${d.earlyWarning.inIntervention} active`} tone="teal" />
-                    <Meter label="Repeat absentees" value={pctOf(a.repeatAbsentees, risk.total)} right={`${a.repeatAbsentees} students`} tone="critical" />
-                    <Meter label="Closed this term" value={pctOf(d.earlyWarning.closedThisTerm, d.earlyWarning.closedThisTerm + d.earlyWarning.open)} right={`${d.earlyWarning.closedThisTerm} closed`} tone="info" />
+          <div className={adm ? 'grid dash__bottom' : 'grid'}>
+            {adm && (
+              <section className="promo" aria-label="Admissions">
+                <span className="promo__ico"><Icon name="graduation" size={24} /></span>
+                <div className="grow" style={{ minWidth: 200 }}>
+                  <div className="promo__title">Admissions Open for {school.yearLabel}</div>
+                  <div className="promo__sub">
+                    {fmt.n(adm.thisMonth)} enquiries this month · {fmt.n(adm.admitted)} admitted · {adm.conversion}% conversion
+                    {adm.overdueFollowUps ? ` · ${adm.overdueFollowUps} follow-ups overdue` : ''}
                   </div>
+                </div>
+                <Button variant="primary" iconRight="chevronRight" to="/admissions">View Admissions</Button>
+              </section>
+            )}
+            <Card icon="clock" title="Recent Activity" actions={can('safety.read') ? <CardLink to="/smart-gate">View All</CardLink> : undefined}>
+              {d.activity.length ? (
+                <div className="actstrip">
+                  {d.activity.slice(0, 4).map((x, i) => (
+                    <div className="actstrip__item" key={i}>
+                      <span className="actstrip__ico"><Icon name={x.icon} size={14} /></span>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="actstrip__text t-clamp-2">{x.text}</div>
+                        <div className="actstrip__time">{fmt.time(x.at)} · {x.module}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="t-sm t-muted">No activity yet today.</p>
+              )}
+            </Card>
+          </div>
+        </div>
+
+        <aside className="dash__rail" aria-label="Shortcuts and updates">
+          <QuickActions items={quick} />
+          <RecentNotifications />
+
+          {d.finance && (
+            <Card icon="wallet" title="Fee Collection" actions={<CardLink to="/fees">View Report</CardLink>}>
+              <div className="feemini">
+                <Ring pct={d.finance.collectionPct} size={88} color="var(--brand)" text={`${Math.round(d.finance.collectionPct)}%`} />
+                <dl>
+                  <dt>Total Fees</dt><dd>{fmt.money(d.finance.billed, { compact: true })}</dd>
+                  <dt>Collected</dt><dd>{fmt.money(d.finance.collected, { compact: true })}</dd>
+                  <dt>Pending</dt><dd className="t-critical">{fmt.money(d.finance.outstanding, { compact: true })}</dd>
+                </dl>
+              </div>
+              {feeTrend.length > 0 && (
+                <>
+                  <div className="minibars" role="img" aria-label="Fees collected and pending by month">
+                    {feeTrend.map((m) => (
+                      <div className="minibars__col" key={m.month} title={`${m.label}: ${fmt.money(m.collected)} collected of ${fmt.money(m.billed)} billed`}>
+                        <span className="minibars__stack" style={{ height: `${Math.max(4, (m.billed / feeMax) * 100)}%` }}>
+                          <span className="minibars__bar" style={{ height: `${m.billed ? (Math.min(m.collected, m.billed) / m.billed) * 100 : 0}%` }} />
+                          <span className="minibars__bar minibars__bar--pending" style={{ flex: 1 }} />
+                        </span>
+                        <span className="minibars__lbl">{m.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="minibars__legend"><span><i />Collected</span><span><i className="p" />Pending</span></div>
                 </>
               )}
-            </div>
-          </div>
-          <div className="mt-4">
-            <AiNotice><strong>Students are never auto-labelled.</strong> These bands are decision support. A teacher confirms every signal before it becomes an intervention.</AiNotice>
-          </div>
-        </Card>
-        <Card title="Live activity" sub="Gate, transport and system events" actions={can('safety.read') ? <Button size="sm" to="/smart-gate">Smart Gate</Button> : undefined}>
-          {d.activity.length ? (
-            <Feed items={d.activity.slice(0, 8).map((x) => ({ time: fmt.time(x.at), text: x.text, meta: `${x.by} · ${x.module}`, icon: x.icon }))} />
-          ) : (
-            <Empty icon="activity" title="No activity yet today" />
+            </Card>
           )}
-        </Card>
-      </Grid>
+        </aside>
+      </div>
 
-      {(adm || d.academic.byGrade.length > 0) && (
-        <Grid cols={adm ? 'g-main mt-5' : 'g-2col mt-5'}>
-          {adm && (
-            <Card
-              title="Admissions funnel"
-              sub={`${adm.conversion}% enquiry-to-admission${adm.costPerAdmission ? ` · cost per admission ${fmt.money(adm.costPerAdmission)}` : ''}`}
-              actions={<Button size="sm" iconRight="arrowRight" to="/admissions">Open CRM</Button>}
-            >
-              <Funnel rows={adm.funnel} onSelect={() => navigate('/pipeline')} />
-              <div className="divider" />
+      {/* Further detail, below the fold */}
+      <div className="col g-4 mt-5">
+        <div className="grid g-main">
+          <Card icon="alert" title={t("Today's Attention")} sub="Ranked by urgency. Every row opens the screen where it is resolved." flush
+            actions={<CardLink to="/my-tasks">My tasks</CardLink>}
+            foot={<span>Signals are advisory. Nothing is actioned automatically.</span>}>
+            {d.attention.length ? (
               <div>
+                {d.attention.map((i) => (
+                  <AlertItem key={i.title} tone={i.tone} icon={i.icon} title={i.title} meta={i.meta} to={i.route} right={<Badge tone={i.tone}>{i.count}</Badge>} />
+                ))}
+              </div>
+            ) : (
+              <Empty icon="check" title="All clear" sub="Nothing needs attention right now." />
+            )}
+          </Card>
+          <Card icon="activity" title="Live activity" sub="Gate, transport and system events">
+            {d.activity.length ? (
+              <Feed items={d.activity.slice(0, 8).map((x) => ({ time: fmt.time(x.at), text: x.text, meta: `${x.by} · ${x.module}`, icon: x.icon }))} />
+            ) : (
+              <Empty icon="activity" title="No activity yet today" />
+            )}
+          </Card>
+        </div>
+
+        <section aria-label="School at a glance">
+          <SectionHead title="School at a glance" sub="Secondary figures — select any figure to open its module." />
+          <div className="statgrid statgrid--card">{glance}</div>
+        </section>
+
+        {(adm || grades.length > 0) && (
+          <div className={`grid ${adm ? 'g-main' : 'g-2col'}`}>
+            {adm && (
+              <Card icon="target" title="Admissions funnel"
+                sub={`${adm.conversion}% enquiry-to-admission${adm.costPerAdmission ? ` · cost per admission ${fmt.money(adm.costPerAdmission)}` : ''}`}
+                actions={<CardLink to="/admissions">Open CRM</CardLink>}>
+                <Funnel rows={adm.funnel} onSelect={() => navigate('/pipeline')} />
+                <div className="divider" />
                 <div className="eyebrow mb-3">Enquiries by source</div>
                 {adm.sources.length ? (
                   <Chart svg={charts.hbar({ rows: adm.sources.map((s, i) => ({ label: s.label, value: s.value, color: SOURCE_COLORS[i % SOURCE_COLORS.length] })), labelW: 104, rowH: 27, label: 'Enquiries by source' })} />
                 ) : <p className="t-sm t-muted">No enquiries recorded.</p>}
-              </div>
+              </Card>
+            )}
+            <Card icon="trending" title="Results by grade" sub="Latest-term average by grade" actions={<CardLink to="/academic-performance">Details</CardLink>}>
+              {grades.length ? (
+                <div className="col g-3">
+                  {grades.map((g) => (
+                    <Meter key={g.grade} label={g.grade} value={g.average} right={`${g.average}/100`} tone={g.average >= 75 ? 'teal' : g.average >= 60 ? undefined : 'critical'} />
+                  ))}
+                </div>
+              ) : <Empty icon="trending" title="No results recorded yet" />}
             </Card>
-          )}
-          <Card title="Academic performance" sub="Latest-term average by grade" actions={<Button size="sm" iconRight="arrowRight" to="/academic-performance">Details</Button>}>
-            {d.academic.byGrade.length ? (
-              <div className="col g-3">
-                {d.academic.byGrade.map((g) => (
-                  <Meter key={g.grade} label={g.grade} value={g.average} right={`${g.average}/100`} tone={g.average >= 75 ? 'teal' : g.average >= 60 ? undefined : 'critical'} />
-                ))}
-              </div>
-            ) : <Empty icon="trending" title="No results recorded yet" />}
-          </Card>
-        </Grid>
-      )}
+          </div>
+        )}
+
+        <AiNotice><strong>Students are never auto-labelled.</strong> Risk bands are decision support. A teacher confirms every signal before it becomes an intervention.</AiNotice>
+      </div>
     </Page>
   );
-}
-
-function pctOf(n: number, of: number) {
-  return of ? Math.round((n / of) * 100) : 0;
 }

@@ -3,7 +3,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
-import { Button, Card, DataTable, ErrorState, FilterSelect, Meter, Page, PageHead, Pagination, SearchInput } from '@/components/ui';
+import { Button, Card, DataTable, ErrorState, FilterSelect, Meter, Page, PageHead, Pagination, SearchInput, Toolbar } from '@/components/ui';
 import { ObjectiveModal, type ObjectiveRow } from './objectiveForms';
 
 export default function ObjectivesPage() {
@@ -23,11 +23,11 @@ export default function ObjectivesPage() {
         actions={canEdit && <Button variant="primary" icon="plus" onClick={() => setEditing('new')}>Add objective</Button>}
       />
       <Card flush>
-        <div className="filterbar" style={{ padding: '12px 16px' }}>
+        <Toolbar>
           <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search code or objective" />
           <FilterSelect label="Subject" value={list.filters.subjectId} onChange={(v) => list.setFilter('subjectId', v)} options={(lookups?.subjects ?? []).map((s) => ({ value: s.id, label: s.name }))} />
           <FilterSelect label="Stage" value={list.filters.stage} onChange={(v) => list.setFilter('stage', v)} options={stages.data ?? []} />
-        </div>
+        </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
           <DataTable
             rows={q.data?.rows}
@@ -35,7 +35,7 @@ export default function ObjectivesPage() {
             rowKey={(r) => r.id}
             sort={list.sort}
             onSort={list.setSort}
-            emptyText={list.hasFilters ? 'No objectives match these filters.' : 'No objectives mapped yet.'}
+            emptyText={list.hasFilters ? 'No objectives match these filters.' : canEdit ? 'No objectives mapped yet. Use “Add objective”, or import them from the Curriculum page.' : 'No objectives mapped yet.'}
             columns={[
               { key: 'code', label: 'Code', render: (r) => <span className="t-bold t-num">{r.code}</span> },
               { key: 'text', label: 'Objective', render: (r) => <>{r.text}{r.lessonPlans > 0 && <div className="t-micro t-muted">{r.lessonPlans} lesson plan{r.lessonPlans === 1 ? '' : 's'}</div>}</> },
@@ -45,7 +45,7 @@ export default function ObjectivesPage() {
               { key: 'mastery', label: 'Mastery', render: (r) => <Meter label="" value={r.mastery} right={`${r.mastery}%`} tone={r.mastery >= 75 ? 'teal' : 'amber'} /> },
               {
                 key: 'a', label: '', sortable: false, className: 'num', render: (r) => (
-                  <span className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                  <span className="ac-links">
                     {can('ai.use') && <Button size="sm" variant="amber" icon="sparkle" to="/copilot">Practice</Button>}
                     {canEdit && <Button size="sm" icon="edit" onClick={() => setEditing(r)} aria-label={`Edit ${r.code}`}>Edit</Button>}
                   </span>

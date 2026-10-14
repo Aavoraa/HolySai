@@ -20,7 +20,7 @@ export const fmtMetric = (v: number | null | undefined, format: 'n' | 'pct') =>
 /** Every measure, campus by campus. Best in each row is highlighted. */
 export function ComparisonCard({ campuses, rows, loading }: { campuses: CampusMetrics[]; rows: MetricRow[]; loading?: boolean }) {
   return (
-    <Card title="Campus comparison" sub="Every measure, campus by campus, computed live. Best in each row is highlighted." flush>
+    <Card icon="building" title="Campus comparison" sub="Every measure, campus by campus, computed live. Best in each row is highlighted." flush>
       <div className="table-wrap">
         <table className="table" aria-busy={loading || undefined}>
           <thead>

@@ -79,24 +79,40 @@ export function LeadFormModal({ onClose, onCreated }: { onClose: () => void; onC
   return (
     <FormModal title="New enquiry" sub="Creates a lead at New Lead with a first-contact follow-up for tomorrow." onClose={onClose} busy={save.isPending}
       error={save.error} fieldErrors={fe.errors} submitLabel="Create lead" formId="lead-form" size="wide">
-      <form id="lead-form" onSubmit={submit} noValidate className="form-grid">
-        <TextField label="Parent name" required value={v.parentName} onChange={(x) => set('parentName', x)} error={fe.errors.parentName} maxLength={120} autoFocus />
-        <TextField label="Phone" required type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} placeholder="+91 98xxx xxxxx" />
-        <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
-        <SelectField label="Preferred campus" required value={v.campusId} onChange={(x) => set('campusId', x)} error={fe.errors.campusId} placeholder="Select…"
-          options={(lookups?.campuses ?? []).map((c) => ({ value: c.id, label: c.name }))} />
-        <TextField label="Student name" required value={v.studentName} onChange={(x) => set('studentName', x)} error={fe.errors.studentName} maxLength={120} />
-        <TextField label="Date of birth" type="date" value={v.studentDob} onChange={(x) => set('studentDob', x)} error={fe.errors.studentDob} />
-        <SelectField label="Grade applied" required value={v.gradeApplied} onChange={(x) => set('gradeApplied', x)} error={fe.errors.gradeApplied} placeholder="Select…" options={GRADES} />
-        <SelectField label="Curriculum" value={v.curriculum} onChange={(x) => set('curriculum', x)} placeholder="Not specified"
-          options={['Cambridge Primary', 'Cambridge Lower Secondary', 'IGCSE', 'AS Level', 'A Level']} />
-        <SelectField label="Source" required value={v.source} onChange={(x) => set('source', x)} error={fe.errors.source} placeholder="Select…" options={[...SOURCES]} />
-        <TextField label="Campaign" value={v.campaign} onChange={(x) => set('campaign', x)} maxLength={80} placeholder="e.g. Sep Admissions" />
-        <TextField label="Lead score" type="number" min={0} max={100} value={v.leadScore} onChange={(x) => set('leadScore', x)} error={fe.errors.leadScore} />
-        <SelectField label="Counsellor" value={v.counsellorId} onChange={(x) => set('counsellorId', x)} error={fe.errors.counsellorId} placeholder="Assign later"
-          options={(counsellors.data ?? []).map((c) => ({ value: c.id, label: `${c.fullName} · ${c.openLeads} open` }))} />
-        <div className="span-2"><Checkbox checked={v.transportRequired} onChange={(x) => set('transportRequired', x)} label="School transport required" /></div>
-        <TextArea className="span-2" label="Notes" rows={2} value={v.notes} onChange={(x) => set('notes', x)} maxLength={1000} placeholder="What did the parent ask about?" />
+      <form id="lead-form" onSubmit={submit} noValidate>
+        <div className="formsection">
+          <div className="formsection__title">Parent</div>
+          <div className="form-grid">
+            <TextField label="Parent name" required value={v.parentName} onChange={(x) => set('parentName', x)} error={fe.errors.parentName} maxLength={120} autoFocus />
+            <TextField label="Phone" required type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} placeholder="+91 98xxx xxxxx" />
+            <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
+            <SelectField label="Preferred campus" required value={v.campusId} onChange={(x) => set('campusId', x)} error={fe.errors.campusId} placeholder="Select…"
+              options={(lookups?.campuses ?? []).map((c) => ({ value: c.id, label: c.name }))} />
+          </div>
+        </div>
+        <div className="formsection">
+          <div className="formsection__title">Child</div>
+          <div className="form-grid">
+            <TextField label="Student name" required value={v.studentName} onChange={(x) => set('studentName', x)} error={fe.errors.studentName} maxLength={120} />
+            <TextField label="Date of birth" type="date" value={v.studentDob} onChange={(x) => set('studentDob', x)} error={fe.errors.studentDob} />
+            <SelectField label="Grade applied" required value={v.gradeApplied} onChange={(x) => set('gradeApplied', x)} error={fe.errors.gradeApplied} placeholder="Select…" options={GRADES} />
+            <SelectField label="Curriculum" value={v.curriculum} onChange={(x) => set('curriculum', x)} placeholder="Not specified"
+              options={['Cambridge Primary', 'Cambridge Lower Secondary', 'IGCSE', 'AS Level', 'A Level']} />
+            <div className="span-2"><Checkbox checked={v.transportRequired} onChange={(x) => set('transportRequired', x)} label="School transport required" /></div>
+          </div>
+        </div>
+        <div className="formsection">
+          <div className="formsection__title">Source and ownership</div>
+          <div className="form-grid">
+            <SelectField label="Source" required value={v.source} onChange={(x) => set('source', x)} error={fe.errors.source} placeholder="Select…" options={[...SOURCES]} />
+            <TextField label="Campaign" value={v.campaign} onChange={(x) => set('campaign', x)} maxLength={80} placeholder="e.g. Sep Admissions" />
+            <SelectField label="Counsellor" value={v.counsellorId} onChange={(x) => set('counsellorId', x)} error={fe.errors.counsellorId} placeholder="Assign later"
+              hint="Open-lead counts help balance the workload"
+              options={(counsellors.data ?? []).map((c) => ({ value: c.id, label: `${c.fullName} · ${c.openLeads} open` }))} />
+            <TextField label="Lead score" type="number" min={0} max={100} value={v.leadScore} onChange={(x) => set('leadScore', x)} error={fe.errors.leadScore} hint="0–100; 80+ is a hot lead" />
+            <TextArea className="span-2" label="Notes" rows={2} value={v.notes} onChange={(x) => set('notes', x)} maxLength={1000} placeholder="What did the parent ask about?" />
+          </div>
+        </div>
       </form>
     </FormModal>
   );
@@ -187,6 +203,13 @@ export function FollowUpModal({ leadCode, leadName, counsellorId, type: fixedTyp
           <SelectField label={isVisit ? 'Host' : 'Assigned to'} value={v.assignedTo} onChange={(x) => setV((s) => ({ ...s, assignedTo: x }))} placeholder="Not assigned"
             error={fe.errors.assignedTo ?? fe.errors.hostId} options={(counsellors.data ?? []).map((c) => ({ value: c.id, label: c.fullName }))} />
         </div>
+        <div className="row g-1 wrap" role="group" aria-label="Quick dates">
+          <span className="t-xs t-muted">Quick pick:</span>
+          {([['Tomorrow', 1], ['In 3 days', 3], ['Next week', 7]] as const).map(([label, days]) => (
+            <Button key={label} size="sm" variant="quiet"
+              onClick={() => { setV((s) => ({ ...s, when: localInput(days, isVisit ? '10:00' : '11:00') })); fe.clear('scheduledAt'); }}>{label}</Button>
+          ))}
+        </div>
         <TextArea label={isVisit ? 'Notes for the host' : 'What is it for?'} required={!isVisit} rows={2} value={v.notes} maxLength={500}
           onChange={(x) => { setV((s) => ({ ...s, notes: x })); fe.clear('notes'); }} error={fe.errors.notes}
           placeholder={isVisit ? 'e.g. Parent prefers a weekend visit' : 'e.g. Share fee structure'} />
@@ -203,7 +226,7 @@ function LeadPicker({ value, onChange, error }: { value: Lead | null; onChange: 
     return (
       <div className="field">
         <span className="label">Lead</span>
-        <div className="row between card card--tint" style={{ padding: 10 }}>
+        <div className="card card--tint adm-picked">
           <span className="t-sm"><strong>{value.studentName}</strong> · {value.grade} · {value.parentName} <span className="t-muted">({value.code}, {value.stage})</span></span>
           <Button size="sm" variant="quiet" onClick={() => onChange(null)}>Change</Button>
         </div>
@@ -214,13 +237,13 @@ function LeadPicker({ value, onChange, error }: { value: Lead | null; onChange: 
     <div className="field">
       <span className="label">Lead <span className="req">*</span></span>
       <SearchInput value={q} onSearch={setQ} placeholder="Search student, parent or LD- reference" maxWidth={9999} />
-      {error && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span>}
+      {error && <span className="hint hint--error" role="alert">{error}</span>}
       {q.length >= 2 && (
-        <div className="col g-1 mt-2" role="listbox" aria-label="Matching leads">
+        <div className="adm-picklist" role="listbox" aria-label="Matching leads">
           {res.isLoading && <span className="t-xs t-muted">Searching…</span>}
           {res.data && !res.data.length && <span className="t-xs t-muted">No open leads match.</span>}
           {res.data?.map((l) => (
-            <button key={l.id} type="button" role="option" aria-selected={false} className="btn btn--quiet" style={{ justifyContent: 'flex-start' }} onClick={() => onChange(l)}>
+            <button key={l.id} type="button" role="option" aria-selected={false} className="btn btn--quiet" onClick={() => onChange(l)}>
               <strong>{l.studentName}</strong>&nbsp;· {l.grade} · {l.parentName} <span className="t-muted">&nbsp;{l.code} · {l.stage}</span>
             </button>
           ))}

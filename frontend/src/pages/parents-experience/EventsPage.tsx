@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Badge, Banner, Button, Card, Dl, Empty, ErrorState, FilterSelect, Modal, Page, PageHead, Pagination, SearchInput,
+  Badge, Banner, Button, Card, Dl, Empty, ErrorState, FilterSelect, Grid, Kpi, Modal, Page, PageHead, Pagination, SearchInput,
   Segment, SelectField, Skeleton, Status, TextArea, TextField, useConfirm,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
@@ -51,11 +51,12 @@ export default function EventsPage() {
       <PageHead title="Events" sub="The school calendar as parents see it."
         actions={canSend && <Button variant="primary" icon="plus" onClick={() => setForm({ open: true, event: null })}>Add event</Button>} />
       {s && (
-        <p className="t-sm t-muted mb-3">
-          <strong className="t-num">{fmt.n(s.upcoming)}</strong> upcoming · <strong className="t-num">{fmt.n(s.next30Days)}</strong> in the next 30 days
-          {s.drafts ? <> · <strong className="t-num">{s.drafts}</strong> draft{s.drafts > 1 ? 's' : ''}</> : null}
-          {s.cancelled ? <> · <strong className="t-num">{s.cancelled}</strong> cancelled</> : null}
-        </p>
+        <Grid cols="g-4col" className="mb-4">
+          <Kpi icon="calendar" label="Upcoming" value={fmt.n(s.upcoming)} foot="On the school calendar" />
+          <Kpi icon="clock" label="Next 30 days" value={fmt.n(s.next30Days)} tone="teal" foot="On the parent calendar soon" />
+          <Kpi icon="edit" label="Drafts" value={fmt.n(s.drafts)} tone={s.drafts ? 'amber' : undefined} foot="Not yet visible to families" onClick={() => list.setFilter('status', 'Draft')} />
+          <Kpi icon="x" label="Cancelled" value={fmt.n(s.cancelled)} foot="Still listed, struck through" onClick={() => list.setFilter('status', 'Cancelled')} />
+        </Grid>
       )}
       <div className="filterbar">
         <Segment items={[{ id: 'list', label: 'List' }, { id: 'calendar', label: 'Calendar' }]} active={view} onChange={(v) => list.setFilter('view', v === 'list' ? '' : v)} />
@@ -70,14 +71,14 @@ export default function EventsPage() {
 
       {view === 'list' ? (
         listQ.error ? <ErrorState error={listQ.error} onRetry={listQ.refetch} />
-          : listQ.isLoading ? <div className="grid g-2col g-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={120} style={{ borderRadius: 14 }} />)}</div>
+          : listQ.isLoading ? <div className="grid g-2col g-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} height={120} />)}</div>
             : !listQ.data?.rows.length ? (
               <Card><Empty icon="calendar" title={period === 'past' ? 'No past events' : 'No events scheduled'}
                 sub={list.hasFilters ? 'Try clearing the filters.' : 'Add an event so families can plan ahead.'}
                 action={canSend && period !== 'past' ? <Button variant="primary" icon="plus" onClick={() => setForm({ open: true, event: null })}>Add event</Button> : undefined} /></Card>
             ) : (
               <>
-                <div className="grid g-2col g-4" style={listQ.isFetching ? { opacity: 0.7 } : undefined}>
+                <div className={cx('grid g-2col g-4', listQ.isFetching && 'pe-fetching')}>
                   {listQ.data.rows.map((e) => <EventCard key={e.id} e={e} onOpen={() => setDetail(e)} />)}
                 </div>
                 <Card flush className="mt-4"><Pagination meta={listQ.data.meta} onPage={list.setPage} /></Card>
@@ -111,14 +112,14 @@ function EventCard({ e, onOpen }: { e: SchoolEvent; onOpen: () => void }) {
   const { can } = useAuth();
   return (
     <Card>
-      <div className="row-top g-4" style={e.status === 'Cancelled' ? { opacity: 0.6 } : undefined}>
-        <span className="col none t-center" style={{ width: 62, padding: 10, borderRadius: 'var(--r-md)', background: 'var(--surface-alt)' }}>
+      <div className={cx('pe-event', e.status === 'Cancelled' && 'pe-event--cancelled')}>
+        <span className="pe-event__date" aria-hidden="true">
           <span className="t-micro t-muted">{MONTHS[d.getMonth()]}</span>
-          <span className="serif" style={{ fontSize: 22, fontWeight: 600 }}>{d.getDate()}</span>
+          <span className="pe-event__day">{d.getDate()}</span>
         </span>
-        <span className="col grow" style={{ minWidth: 0 }}>
+        <span className="pe-event__body">
           <span className="row g-2 wrap">
-            <span className="t-bold" style={e.status === 'Cancelled' ? { textDecoration: 'line-through' } : undefined}>{e.title}</span>
+            <span className="t-bold pe-event__title">{e.title}</span>
             <Badge tone={TYPE_TONE[e.eventType]}>{e.eventType}</Badge>
             {e.status !== 'Published' && <Status value={e.status} />}
           </span>
@@ -172,31 +173,24 @@ function MonthGrid({ y, m, events, loading, today, onOpen, onAdd }: {
     return map;
   }, [events, y, m, days]);
   return (
-    <div style={{ overflowX: 'auto' }} aria-busy={loading || undefined}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(92px, 1fr))', gap: 4, minWidth: 660 }} role="grid" aria-label={`${MONTHS[m]} ${y}`}>
-        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="t-micro t-muted t-bold" style={{ padding: '2px 6px' }} role="columnheader">{d}</div>)}
+    <div className="pe-cal" aria-busy={loading || undefined}>
+      <div className="pe-cal__grid" role="grid" aria-label={`${MONTHS[m]} ${y}`}>
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => <div key={d} className="pe-cal__dow" role="columnheader">{d}</div>)}
         {cells.map((d, i) => {
           if (!d) return <div key={`e${i}`} />;
           const k = ymd(y, m, d);
           const list = byDay.get(k) ?? [];
           return (
-            <div key={k} role="gridcell" style={{
-              minHeight: 92, padding: 6, borderRadius: 8, border: '1px solid var(--border-soft)',
-              background: k === today ? 'var(--surface-alt)' : undefined, outline: k === today ? '2px solid var(--navy)' : undefined,
-            }}>
+            <div key={k} role="gridcell" className={cx('pe-cal__day', k === today && 'pe-cal__day--today')}>
               <div className="row between">
                 <span className={cx('t-xs', k === today ? 't-bold' : 't-muted')}>{d}</span>
                 {onAdd && k >= today && (
-                  <button type="button" className="t-micro t-faint" aria-label={`Add event on ${fmt.date(k)}`} onClick={() => onAdd(k)}>+</button>
+                  <button type="button" className="pe-cal__add" aria-label={`Add event on ${fmt.date(k)}`} onClick={() => onAdd(k)}>+</button>
                 )}
               </div>
               {loading ? null : list.slice(0, 3).map((e) => (
-                <button key={e.id} type="button" onClick={() => onOpen(e)} title={e.title} className="t-micro t-clip"
-                  style={{
-                    display: 'block', width: '100%', textAlign: 'left', marginTop: 3, padding: '2px 6px', borderRadius: 6,
-                    background: `var(--${TYPE_TONE[e.eventType] === 'neutral' ? 'surface-alt' : `${TYPE_TONE[e.eventType]}-tint`})`,
-                    textDecoration: e.status === 'Cancelled' ? 'line-through' : undefined, opacity: e.status === 'Draft' ? 0.7 : 1,
-                  }}>
+                <button key={e.id} type="button" onClick={() => onOpen(e)} title={e.title}
+                  className={cx('pe-cal__ev', TYPE_TONE[e.eventType] !== 'neutral' && `pe-cal__ev--${TYPE_TONE[e.eventType]}`, e.status === 'Cancelled' && 'pe-cal__ev--cancelled', e.status === 'Draft' && 'pe-cal__ev--draft')}>
                   {e.startsOn === k && e.startsAt ? `${e.startsAt} ` : ''}{e.title}
                 </button>
               ))}
@@ -205,7 +199,7 @@ function MonthGrid({ y, m, events, loading, today, onOpen, onAdd }: {
           );
         })}
       </div>
-      {!loading && events.length === 0 && <p className="t-sm t-muted mt-3">No events this month.</p>}
+      {!loading && events.length === 0 && <p className="t-sm t-muted mt-3">No events this month.{onAdd ? ' Use + on a day to add one.' : ''}</p>}
     </div>
   );
 }
@@ -298,8 +292,9 @@ function EventForm({ open, event, date, onClose }: { open: boolean; event: Schoo
         <Button onClick={onClose} disabled={save.isPending}>Cancel</Button>
         <Button variant="primary" icon="save" onClick={submit} loading={save.isPending}>{event ? 'Save changes' : v.status === 'Draft' ? 'Save draft' : 'Publish event'}</Button>
       </>}>
-      <div className="col g-3">
-        <div className="grid g-2col g-3">
+      <div className="formsection">
+        <div className="formsection__title">Event</div>
+        <div className="form-grid">
           <TextField label="Title" required value={v.title} onChange={set('title')} error={errors.title} maxLength={160} autoFocus className="span-2" />
           <SelectField label="Type" value={v.eventType} onChange={set('eventType')} options={TYPES} />
           <TextField label="Venue" value={v.venue} onChange={set('venue')} placeholder="Auditorium" maxLength={120} />
@@ -307,9 +302,12 @@ function EventForm({ open, event, date, onClose }: { open: boolean; event: Schoo
           <TextField label="Ends on" type="date" value={v.endsOn} onChange={set('endsOn')} error={errors.endsOn} min={v.startsOn || undefined} hint="Leave empty for a one-day event" />
           <TextField label="Start time" type="time" value={v.startsAt} onChange={set('startsAt')} error={errors.startsAt} hint="Optional" />
           <SelectField label="Status" value={v.status} onChange={set('status')} options={[{ value: 'Published', label: 'Published — visible to families' }, { value: 'Draft', label: 'Draft — staff only' }]} />
+          <TextArea className="span-2" label="Description" rows={3} value={v.description} onChange={set('description')} maxLength={2000} />
         </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Audience</div>
         <AudiencePicker value={audience} onChange={setAudience} campusId={campusId} onCampus={setCampusId} error={errors.audience} />
-        <TextArea label="Description" rows={3} value={v.description} onChange={set('description')} maxLength={2000} />
       </div>
     </Modal>
   );

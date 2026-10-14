@@ -6,6 +6,7 @@ import { useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { Avatar, Badge, Button, Dropdown, Empty, Icon, Lotus, Modal, useConfirm, useToast } from '@/components/ui';
 import { NAV, mobileNavFor, type NavItem } from './nav';
+import { routeMeta } from './routeMeta';
 import { useSchool } from './SchoolContext';
 import { fmt } from '@/lib/format';
 import { useTheme } from '@/theme/theme';
@@ -14,6 +15,13 @@ interface Counts { unread: number; alerts: number; openTasks: number }
 
 function pathOf(to: string) {
   return to.split('?')[0];
+}
+
+const SECTION_ORDER = ['Student Management', 'Admissions', 'Finance', 'HR & Workforce', 'Transport & Safety', 'Operations', 'Insights & Innovation', 'Administration'];
+function sectionRank(section: string, pinned: boolean) {
+  if (pinned) return -1;
+  const i = SECTION_ORDER.indexOf(section);
+  return i < 0 ? SECTION_ORDER.length : i;
 }
 
 /** Groups and items this user may see; Overview de-duplicated against the home route. */
@@ -30,8 +38,17 @@ function useNavModel() {
       // A page listed twice in one group only appears once
       const seen = new Set<string>();
       items = items.filter((i) => (seen.has(i.to) ? false : (seen.add(i.to), true)));
-      return { group: g.group, icon: g.icon, items, pinned: g.group === 'Overview' };
-    }).filter((g) => g.items.length);
+      // Direct links shown under the group (only pages this user may open).
+      const quick = (g.quick ?? []).flatMap((q) => {
+        const it = items.find((i) => pathOf(i.to) === q.to);
+        return it ? [{ ...it, label: q.label ?? it.label }] : [];
+      });
+      return { group: g.group, label: g.label ?? g.group, hue: g.hue ?? 'brand', icon: g.icon, section: g.section ?? '', items, quick, pinned: g.group === 'Overview' };
+    }).filter((g) => g.items.length)
+      // Groups that share a sidebar caption sit together, in caption order.
+      .map((g, i) => ({ g, i }))
+      .sort((a, b) => sectionRank(a.g.section, a.g.pinned) - sectionRank(b.g.section, b.g.pinned) || a.i - b.i)
+      .map(({ g }) => g);
   }, [user, can]);
 }
 
@@ -48,6 +65,15 @@ export function AppShell() {
     window.scrollTo({ top: 0 });
     mainRef.current?.focus({ preventScroll: true });
   }, [location.pathname]);
+
+  // Browser tab title follows the page, so tabs and history stay distinguishable.
+  const { t } = useI18n();
+  useEffect(() => {
+    const meta = routeMeta(location.pathname);
+    const extra: Record<string, string> = { '/account': 'My account', '/help': 'Help' };
+    const name = meta ? t(meta.label) : extra[location.pathname];
+    document.title = name ? `${name} · Holy Sai Smart School 360` : 'Holy Sai Smart School 360';
+  }, [location.pathname, t]);
 
   useEffect(() => {
     try {
@@ -89,7 +115,7 @@ export function AppShell() {
 // ---------------------------------------------------------------------------
 function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onToggleRail: () => void; onExpand: () => void; counts?: Counts }) {
   const model = useNavModel();
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const { t } = useI18n();
   const location = useLocation();
   const confirm = useConfirm();
@@ -112,11 +138,13 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
     for (const g of model) if (g.items.some(matches)) return g.pinned ? '__pinned__' : g.group;
     return null;
   }, [model, current]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A page with its own direct link is highlighted there, and its group stays closed.
+  const quickHit = useMemo(() => model.some((g) => g.quick.some(matches)), [model, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Follow the page: open the section that owns it when the route changes.
   useEffect(() => {
-    setOpen(owner === '__pinned__' ? null : owner);
-  }, [owner]);
+    setOpen(owner === '__pinned__' || quickHit ? null : owner);
+  }, [owner, quickHit]);
 
   // Bring the current page's item into view — only after navigating, never when a
   // section is merely expanded or collapsed (that used to jump the menu to the top).
@@ -198,48 +226,40 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
   return (
     <>
       <div className="sidebar__brand">
-        <Lotus size={36} />
-        <span className="col grow" style={{ minWidth: 0 }}>
-          <span className="sidebar__name">Holy Sai</span>
-          <span className="sidebar__tag">International School</span>
-        </span>
-        <button className="iconbtn iconbtn--onnavy none sidebar__railbtn" onClick={onToggleRail} aria-label={rail ? 'Expand navigation' : 'Collapse navigation'}>
-          <Icon name={rail ? 'chevronRight' : 'chevronLeft'} size={17} />
+        <Link to={user!.role.homeRoute} className="sidebar__logo" aria-label="Holy Sai Smart School 360 — home">
+          <span className="sidebar__mark"><Lotus size={32} /></span>
+          <span className="col grow" style={{ minWidth: 0 }}>
+            <span className="sidebar__name">Holy Sai</span>
+            <span className="sidebar__tag">Smart School 360</span>
+          </span>
+        </Link>
+        <button className="iconbtn none sidebar__railbtn" onClick={onToggleRail} aria-label={rail ? 'Expand navigation' : 'Collapse navigation'} title={rail ? 'Expand navigation' : 'Collapse navigation'}>
+          <Icon name="menu" size={19} />
         </button>
-      </div>
-      <div className="sidebar__find">
-        <span className="sidebar__findico"><Icon name="search" size={15} /></span>
-        <input
-          className="sidebar__findinput"
-          type="search"
-          placeholder="Find a page…"
-          aria-label="Find a page in the menu"
-          value={q}
-          autoComplete="off"
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Escape' && setQ('')}
-        />
       </div>
       <nav className="sidebar__scroll" aria-label="Main navigation" ref={listRef}>
         {model.map((g) => {
           let items = g.items;
           if (ql) {
-            const groupHit = t(g.group).toLowerCase().includes(ql);
+            const groupHit = t(g.label).toLowerCase().includes(ql);
             if (!groupHit) items = items.filter((i) => t(i.label).toLowerCase().includes(ql));
             if (!items.length) return null;
             matchCount += items.length;
           }
-          const owns = g.pinned ? owner === '__pinned__' : owner === g.group;
+          const owns = g.pinned ? owner === '__pinned__' : owner === g.group && !quickHit;
           const list = <div className="navgroup__items">{items.map((i) => itemEl(i, owns))}</div>;
-          if (g.pinned) return <div className="navgroup navgroup--pinned" data-open="true" key={g.group}>{list}</div>;
+          if (g.pinned) return <div className="navgroup navgroup--pinned" data-open="true" key={g.group} data-hue="brand">{list}</div>;
           const isOpen = ql ? true : open === g.group;
+          const idx = model.indexOf(g);
+          const newSection = !!g.section && model[idx - 1]?.section !== g.section;
           return (
-            <div className="navgroup" data-open={String(isOpen)} data-current={owner === g.group ? 'true' : undefined} key={g.group}>
+            <div className="navgroup" data-open={String(isOpen)} data-current={owns ? 'true' : undefined} key={g.group} data-hue={g.hue}>
+              {newSection && !ql && <div className="navsection" aria-hidden="true">{t(g.section)}</div>}
               <button
                 className="navhead"
                 data-group={g.group}
                 aria-expanded={isOpen}
-                title={t(g.group)}
+                title={t(g.label)}
                 onClick={(e) => {
                   followRoute.current = false;
                   anchor.current = { group: g.group, top: e.currentTarget.getBoundingClientRect().top };
@@ -250,11 +270,14 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
                 }}
               >
                 <span className="navhead__ico"><Icon name={g.icon} size={17} /></span>
-                <span className="navhead__label">{t(g.group)}</span>
-                <span className="navhead__count">{items.length}</span>
+                <span className="navhead__label">{t(g.label)}</span>
+                {owns && !isOpen && <span className="navhead__dot" aria-label="Current section" />}
                 <span className="navhead__chev"><Icon name="chevronDown" size={14} /></span>
               </button>
               {list}
+              {!ql && g.quick.length > 0 && (
+                <div className="navquick">{g.quick.map((i) => itemEl(i, true))}</div>
+              )}
             </div>
           );
         })}
@@ -268,14 +291,15 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
       </nav>
       <div className="sidebar__foot">
         <div className="sidebar__footrow">
-          <button className="sidebar__role grow" aria-haspopup="menu" title={user!.fullName} onClick={(e) => setProfileAnchor(e.currentTarget)}>
-            <Avatar name={user!.fullName} size="sm" tone="avatar--amber" />
-            <span className="col grow" style={{ minWidth: 0 }}>
-              <span className="sidebar__role-name t-clip">{user!.fullName}</span>
-              <span className="sidebar__role-title t-clip">{user!.title ?? user!.role.name}</span>
-            </span>
-            <Icon name="more" size={15} />
-          </button>
+          <Link
+            className="navitem grow"
+            to={can('settings.manage') ? '/admin/settings' : '/account?tab=security'}
+            aria-current={current === '/admin/settings' || current === '/account' ? 'page' : undefined}
+            title={t('Settings')}
+          >
+            <span className="navitem__ico"><Icon name="settings" size={18} /></span>
+            <span className="navitem__label">{t('Settings')}</span>
+          </Link>
           <button className="iconbtn iconbtn--onnavy none sidebar__logout" aria-label={t('Sign out')} title={t('Sign out')} onClick={signOut}>
             <Icon name="logout" size={17} />
           </button>
@@ -286,9 +310,9 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
   );
 }
 
-function ProfileMenu({ anchor, onClose, onSignOut }: { anchor: HTMLElement | null; onClose: () => void; onSignOut: () => void }) {
-  const { user } = useAuth();
-  const { t } = useI18n();
+function ProfileMenu({ anchor, onClose, onSignOut, onLanguage }: { anchor: HTMLElement | null; onClose: () => void; onSignOut: () => void; onLanguage?: () => void }) {
+  const { user, can } = useAuth();
+  const { t, short } = useI18n();
   const navigate = useNavigate();
   if (!user) return null;
   const go = (to: string) => {
@@ -311,6 +335,8 @@ function ProfileMenu({ anchor, onClose, onSignOut }: { anchor: HTMLElement | nul
         <button className="menu__item" role="menuitem" onClick={() => go('/account?tab=security')}><Icon name="settings" size={16} /><span className="grow">Account settings</span></button>
         <button className="menu__item" role="menuitem" onClick={() => go('/account?tab=notifications')}><Icon name="bell" size={16} /><span className="grow">Notification preferences</span></button>
         <button className="menu__item" role="menuitem" onClick={() => go('/account?tab=sessions')}><Icon name="shield" size={16} /><span className="grow">Privacy and access</span></button>
+        {can('ai.use') && <button className="menu__item" role="menuitem" onClick={() => go('/copilot')}><Icon name="sparkle" size={16} /><span className="grow">{t('AI Assistant')}</span></button>}
+        {onLanguage && <button className="menu__item" role="menuitem" onClick={onLanguage}><Icon name="globe" size={16} /><span className="grow">{t('Language')}</span><span className="menu__right">{short}</span></button>}
         <button className="menu__item" role="menuitem" onClick={() => go('/help')}><Icon name="helpCircle" size={16} /><span className="grow">{t('Help')}</span></button>
       </div>
       <div className="menu__sep" />
@@ -338,7 +364,6 @@ function Topbar({ onMenu, mobileSearch, onToggleSearch, alertCount }: { onMenu: 
   const { theme, toggle } = useTheme();
 
   const showCampus = can('dashboard.group') || (can('students.read') && !user?.parentId);
-  const showCopilot = can('ai.use');
 
   const signOut = async () => {
     setProfileAnchor(null);
@@ -355,53 +380,55 @@ function Topbar({ onMenu, mobileSearch, onToggleSearch, alertCount }: { onMenu: 
         <Lotus size={28} />
         <span className="topbar__brandname">Holy Sai</span>
       </span>
-      <div className="topbar__ctx">
-        {showCampus && (
-          <button className="ctxselect" onClick={() => setCampusOpen(true)}>
-            <Icon name="building" size={16} />
-            <span className="col" style={{ minWidth: 0 }}>
-              <span className="ctxselect__label">{t('Campus')}</span>
-              <span className="ctxselect__value">{school.scope === 'group' ? 'All campuses — Group view' : school.campus?.name ?? '—'}</span>
-            </span>
-            <Icon name="chevronDown" size={14} />
-          </button>
-        )}
-        <button className="ctxselect" onClick={() => setYearOpen(true)}>
-          <span className="col">
-            <span className="ctxselect__label">{t('Academic Year')}</span>
-            <span className="ctxselect__value">{school.yearLabel ?? '—'}</span>
-          </span>
-          <Icon name="chevronDown" size={14} />
-        </button>
-      </div>
       <GlobalSearch />
       <div className="spacer" />
       <button className="iconbtn iconbtn--onnavy searchbtn hidden" onClick={onToggleSearch} aria-label={mobileSearch ? 'Close search' : 'Search'}>
         <Icon name={mobileSearch ? 'x' : 'search'} size={19} />
       </button>
-      {showCopilot && (
-        <Button variant="amber" size="sm" icon="sparkle" className="topbar__hideSm" to="/copilot">{t('AI Assistant')}</Button>
-      )}
-      <button className="iconbtn iconbtn--onnavy" aria-label={`${t('Notifications')}${alertCount ? ` (${alertCount} need attention)` : ''}`} onClick={() => navigate('/notifications')}>
-        <Icon name="bell" size={18} />
-        {alertCount ? <span className="iconbtn__dot">{alertCount}</span> : null}
-      </button>
-      <button className="iconbtn iconbtn--onnavy topbar__lang topbar__hideSm" aria-haspopup="menu" aria-label={t('Language')} title={`${t('Language')} — ${label}`} onClick={(e) => setLangAnchor(e.currentTarget)}>
-        <span>{short}</span>
-      </button>
-      <button
-        className="iconbtn iconbtn--onnavy themetoggle"
-        onClick={toggle}
-        aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-        title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
-      >
-        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
-      </button>
-      <button className="topbar__user" aria-haspopup="menu" onClick={(e) => setProfileAnchor(e.currentTarget)}>
+      <div className="topbar__ctx">
+        <button className="ctxselect" onClick={() => setYearOpen(true)} title={`${t('Academic Year')}: ${school.yearLabel ?? '—'}`}>
+          <Icon name="calendar" size={15} />
+          <span className="col">
+            <span className="ctxselect__label">{t('Academic Year')}</span>
+            <span className="ctxselect__value">{school.yearLabel ?? '—'}</span>
+          </span>
+          <Icon name="chevronDown" size={13} />
+        </button>
+        {showCampus && (
+          <button
+            className="ctxselect"
+            onClick={() => setCampusOpen(true)}
+            title={`${t('Campus')}: ${school.scope === 'group' ? 'All campuses' : school.campus?.name ?? '—'}`}
+          >
+            <Icon name="mapPin" size={15} />
+            <span className="col" style={{ minWidth: 0 }}>
+              <span className="ctxselect__label">{t('Campus')}</span>
+              <span className="ctxselect__value">{school.scope === 'group' ? 'All campuses' : school.campus?.name ?? '—'}</span>
+            </span>
+            <Icon name="chevronDown" size={13} />
+          </button>
+        )}
+      </div>
+      <div className="topbar__tools">
+        <button className="iconbtn iconbtn--onnavy" title={t('Notifications')} aria-label={`${t('Notifications')}${alertCount ? ` (${alertCount} need attention)` : ''}`} onClick={() => navigate('/notifications')}>
+          <Icon name="bell" size={18} />
+          {alertCount ? <span className="iconbtn__dot">{alertCount > 99 ? '99+' : alertCount}</span> : null}
+        </button>
+        <button
+          className="iconbtn iconbtn--onnavy themetoggle"
+          onClick={toggle}
+          aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
+        >
+          <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
+        </button>
+      </div>
+      <span className="topbar__sep topbar__hideSm" aria-hidden="true" />
+      <button className="topbar__user" aria-haspopup="menu" title={`${user!.fullName} — ${user!.role.name}`} onClick={(e) => setProfileAnchor(e.currentTarget)}>
         <Avatar name={user!.fullName} size="sm" tone="avatar--amber" />
         <span className="col topbar__usertext" style={{ minWidth: 0 }}>
           <span className="topbar__username">{user!.fullName}</span>
-          <span className="topbar__userrole">{user!.role.name}</span>
+          <span className="topbar__userrole">{user!.title?.split('·')[0].trim() || user!.role.name}</span>
         </span>
         <Icon name="chevronDown" size={14} />
       </button>
@@ -420,7 +447,7 @@ function Topbar({ onMenu, mobileSearch, onToggleSearch, alertCount }: { onMenu: 
           </button>
         ))}
       </Dropdown>
-      <ProfileMenu anchor={profileAnchor} onClose={() => setProfileAnchor(null)} onSignOut={signOut} />
+      <ProfileMenu anchor={profileAnchor} onClose={() => setProfileAnchor(null)} onSignOut={signOut} onLanguage={() => { const el = profileAnchor; setProfileAnchor(null); setLangAnchor(el); }} />
 
       <Modal open={campusOpen} onClose={() => setCampusOpen(false)} title="Campus & scope" sub="Every figure in the application follows this selection." foot={<Button onClick={() => setCampusOpen(false)}>Close</Button>}>
         <div className="col g-3">
@@ -517,9 +544,9 @@ function GlobalSearch() {
       for (const i of g.items) {
         if (seen.has(i.to)) continue;
         const labelT = t(i.label);
-        if (!term ? g.pinned : `${labelT} ${t(g.group)}`.toLowerCase().includes(term.toLowerCase())) {
+        if (!term ? g.pinned : `${labelT} ${t(g.label)} ${t(g.group)}`.toLowerCase().includes(term.toLowerCase())) {
           seen.add(i.to);
-          pages.push({ group: term ? 'Pages' : 'Suggested', label: labelT, meta: t(g.group), icon: i.icon, route: i.to });
+          pages.push({ group: term ? 'Pages' : 'Suggested', label: labelT, meta: t(g.label), icon: i.icon, route: i.to });
         }
       }
     }
@@ -547,7 +574,7 @@ function GlobalSearch() {
         aria-expanded={open}
         aria-controls="global-search-results"
         aria-label="Global search"
-        placeholder={t('Search students, parents, staff, fees…')}
+        placeholder={t('Search students, staff, modules…')}
         value={q}
         onFocus={() => setOpen(true)}
         onChange={(e) => { setQ(e.target.value); setOpen(true); setActive(0); }}
@@ -584,6 +611,13 @@ function GlobalSearch() {
                 })}
               </div>
             ))
+          )}
+          {hits.length > 0 && (
+            <div className="searchpanel__foot" aria-hidden="true">
+              <span><kbd>↑</kbd><kbd>↓</kbd>to move</span>
+              <span><kbd>Enter</kbd>to open</span>
+              <span><kbd>Esc</kbd>to close</span>
+            </div>
           )}
         </div>
       )}

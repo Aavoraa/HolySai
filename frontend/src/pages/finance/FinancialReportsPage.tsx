@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { api } from '@/api/client';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
-import { Button, DataTable, Empty, Icon, Modal, Page, PageHead, useToast } from '@/components/ui';
+import { Button, DataTable, Empty, Icon, Modal, Page, PageHead, Spinner, useToast } from '@/components/ui';
 import type { Report } from './types';
 import { downloadCsv } from './shared';
 
@@ -52,12 +52,12 @@ export default function FinancialReportsPage() {
       <PageHead title="Financial Reports" sub="Standard reports, each generated from live data and exportable." />
       <div className="grid g-3col g-4">
         {REPORTS.map(([key, title, sub, icon]) => (
-          <button key={key} type="button" className="card card--link" style={{ padding: 18, textAlign: 'left' }} onClick={() => open(key)} disabled={loading === key} aria-busy={loading === key || undefined}>
+          <button key={key} type="button" className="card card--link fw-report-tile" onClick={() => open(key)} disabled={!!loading} aria-busy={loading === key || undefined}>
             <span className="row g-3">
               <span className="avatar none"><Icon name={icon} size={17} /></span>
               <span className="col grow"><span className="t-sm t-bold">{title}</span><span className="t-micro t-muted">{sub}</span></span>
             </span>
-            <span className="row g-2 mt-3 t-xs t-muted"><Icon name={loading === key ? 'refresh' : 'download'} size={13} />{loading === key ? 'Generating…' : 'View · Excel (CSV)'}</span>
+            <span className="row g-2 mt-3 t-xs t-muted">{loading === key ? <Spinner size={13} /> : <Icon name="eye" size={13} />}{loading === key ? 'Generating…' : 'View, print or export to Excel (CSV)'}</span>
           </button>
         ))}
       </div>
@@ -68,7 +68,7 @@ export default function FinancialReportsPage() {
           <Button variant="primary" icon="download" disabled={!report.rows.length} onClick={() => exportCsv(report)}>Download CSV</Button>
         </>}>
         {report && (report.rows.length ? (
-          <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
+          <div className="fw-report-scroll">
             <DataTable compact rows={report.rows} rowKey={(r) => JSON.stringify(r)}
               columns={report.columns.map((c) => ({ key: c.key, label: c.label, className: c.money ? 'num' : undefined, render: (r: Record<string, unknown>) => cell(r[c.key], c.money) }))} />
           </div>

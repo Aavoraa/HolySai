@@ -30,12 +30,46 @@ export const DEVICE_STATUS_TONE: Record<string, string> = {
 const GPS_TONE: Record<GpsStatus, string> = { online: 'success', stale: 'warning', offline: 'critical', never: 'neutral' };
 const GPS_LABEL: Record<GpsStatus, string> = { online: 'Online', stale: 'Stale', offline: 'Offline', never: 'Never connected' };
 
-export function GpsStatusBadge({ status, seenAt }: { status: GpsStatus | null | undefined; seenAt?: string | null }) {
+/**
+ * Device connectivity badge: dot + word, so the state reads without colour.
+ * `showSeen` adds the last ping as relative time ("4 min ago") underneath.
+ */
+export function GpsStatusBadge({ status, seenAt, showSeen }: { status: GpsStatus | null | undefined; seenAt?: string | null; showSeen?: boolean }) {
   if (!status) return <span className="t-faint">—</span>;
-  return (
-    <Badge tone={GPS_TONE[status]} dot={status === 'online'} title={seenAt ? `Last contact ${fmt.dateTime(seenAt)}` : undefined}>
+  const badge = (
+    <Badge tone={GPS_TONE[status]} dot title={seenAt ? `Last contact ${fmt.dateTime(seenAt)}` : undefined}>
       {GPS_LABEL[status]}
     </Badge>
+  );
+  if (!showSeen) return badge;
+  return (
+    <span className="col g-1 st-gps">
+      {badge}
+      <LastSeen at={seenAt} prefix="Last ping" />
+    </span>
+  );
+}
+
+/** Relative "last seen" time with the exact timestamp on hover. */
+export function LastSeen({ at, prefix, empty = 'Never' }: { at?: string | null; prefix?: string; empty?: string }) {
+  if (!at) return <span className="st-seen">{prefix ? `${prefix}: ` : ''}{empty}</span>;
+  return (
+    <time className="st-seen" dateTime={at} title={fmt.dateTime(at)}>
+      {prefix ? `${prefix} ` : ''}{fmt.relative(at)}
+    </time>
+  );
+}
+
+/** Battery level shown the same way on every tracking screen (critical below 20 %, low below 40 %). */
+export function BatteryLevel({ pct }: { pct: number | null | undefined }) {
+  if (pct == null) return <span className="t-faint">—</span>;
+  const v = Math.max(0, Math.min(100, Math.round(pct)));
+  const tone = v < 20 ? 'critical' : v < 40 ? 'warning' : 'ok';
+  return (
+    <span className={`st-battery st-battery--${tone}`} title={tone === 'critical' ? 'Battery critically low' : tone === 'warning' ? 'Battery low' : 'Battery'}>
+      <span className="st-battery__bar" aria-hidden="true"><span className="st-battery__fill" style={{ width: `calc(${v}% - 2px)` }} /></span>
+      {v}%{tone === 'critical' && <span className="sr-only"> — critically low</span>}
+    </span>
   );
 }
 
@@ -55,7 +89,7 @@ function qrSvg(text: string) {
 
 export function QrCode({ text, size = 168 }: { text: string; size?: number }) {
   const svg = useMemo(() => qrSvg(text), [text]);
-  return <Svg html={svg} className="qrcode" style={{ width: size, height: size, background: '#fff', padding: 4, borderRadius: 8 }} />;
+  return <Svg html={svg} className="qrcode" style={{ width: size, height: size }} />;
 }
 
 /** Opens a print dialog with one sticker per device: QR + device code in text. */
@@ -211,19 +245,19 @@ export function QrScanner({ onResult, busy }: { onResult: (text: string) => void
         <canvas ref={canvasRef} hidden />
       </div>
       {state === 'scanning' && (
-        <div className="row g-2" style={{ justifyContent: 'space-between' }}>
+        <div className="row g-2 between">
           <span className="t-xs t-muted">Point the camera at the QR label on the device.</span>
           <Button size="sm" variant="quiet" onClick={() => { stopRef.current(); setState('idle'); }}>Stop camera</Button>
         </div>
       )}
       {error && <Banner tone="warning" icon="camera">{error}</Banner>}
-      <div className="row g-2 wrap" style={{ alignItems: 'flex-end' }}>
+      <div className="st-scanrow">
         <label htmlFor={fileId} className="btn btn--ghost btn--sm"><Icon name="upload" size={14} />Photo of label</label>
         <input id={fileId} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { fromPhoto(e.target.files?.[0]); e.target.value = ''; }} />
         <span className="t-xs t-muted">or</span>
         <form className="row g-2 grow" onSubmit={(e) => { e.preventDefault(); if (typed.trim()) onResult(typed.trim()); }}>
           <input className="input grow" placeholder="Type device ID or IMEI, e.g. GPS000123" value={typed} aria-label="Device ID or IMEI"
-            onChange={(e) => setTyped(e.target.value)} style={{ minWidth: 160 }} />
+            onChange={(e) => setTyped(e.target.value)} />
           <Button type="submit" size="sm" disabled={!typed.trim() || busy}>Find</Button>
         </form>
       </div>
@@ -264,7 +298,7 @@ export function TokenModal({ deviceCode, deviceType, token, onClose }: { deviceC
             <div className="t-xs t-muted">Send it as <span className="coord">Authorization: Bearer &lt;token&gt;</span> on every request.</div>
           </div>
         ) : (
-          <div className="row g-4 wrap" style={{ alignItems: 'center' }}>
+          <div className="row g-4 wrap">
             <QrCode text={setupUri} size={220} />
             <div className="col g-2" style={{ flex: '1 1 200px' }}>
               <div className="t-bold">Scan with the Holy Sai app</div>
@@ -287,7 +321,7 @@ function CopyRow({ label, value, onCopy, secret }: { label: string; value: strin
     <div className="col g-1">
       <span className="eyebrow">{label}</span>
       <div className="row g-2">
-        <code className="coord grow" style={{ padding: '8px 10px', background: 'var(--surface-2, #f4f4f4)', borderRadius: 8, wordBreak: 'break-all', fontWeight: secret ? 700 : 500 }}>{value}</code>
+        <code className={`coord st-copy${secret ? ' st-copy--secret' : ''}`}>{value}</code>
         <Button size="sm" icon="copy" onClick={onCopy} aria-label={`Copy ${label}`} />
       </div>
     </div>
@@ -310,7 +344,7 @@ function StudentSearch({ value, onChange }: { value: PickedStudent | null; onCha
   const res = useApiQuery<CurrentLocation[]>(value || q.length < 2 ? null : '/tracking/students', { q, pageSize: 8 }, { staleTime: 30_000 });
   if (value) {
     return (
-      <div className="row g-3 card card--tint" style={{ padding: '8px 12px' }}>
+      <div className="st-picked">
         <Avatar name={value.fullName} size="sm" />
         <span className="col grow" style={{ minWidth: 0 }}>
           <span className="t-sm t-bold t-clip">{value.fullName}</span>
@@ -328,15 +362,14 @@ function StudentSearch({ value, onChange }: { value: PickedStudent | null; onCha
           aria-label="Search students" onChange={(e) => setText(e.target.value)} autoComplete="off" />
       </div>
       {q.length >= 2 && (
-        <div className="card" style={{ maxHeight: 208, overflowY: 'auto', padding: 4 }} role="listbox" aria-label="Matching students">
-          {res.isLoading ? <div className="t-xs t-muted" style={{ padding: 8 }}>Searching…</div>
-            : !res.data?.length ? <div className="t-xs t-muted" style={{ padding: 8 }}>No students match “{q}”.</div>
+        <div className="st-results" role="listbox" aria-label="Matching students">
+          {res.isLoading ? <div className="st-results__msg">Searching…</div>
+            : !res.data?.length ? <div className="st-results__msg">No students match “{q}”.</div>
             : res.data.map((s) => (
-              <button key={s.studentId} type="button" role="option" aria-selected={false} className="person person--link"
-                style={{ width: '100%', padding: '6px 8px', borderRadius: 8 }}
+              <button key={s.studentId} type="button" role="option" aria-selected={false} className="person person--link st-results__opt"
                 onClick={() => onChange({ id: s.studentId, admissionNo: s.admissionNo, fullName: s.fullName, grade: s.grade, section: s.section })}>
                 <Avatar name={s.fullName} size="xs" />
-                <span className="col" style={{ minWidth: 0, textAlign: 'left' }}>
+                <span className="col">
                   <span className="person__name t-clip">{s.fullName}</span>
                   <span className="person__meta t-clip">{[s.admissionNo, s.grade ? `${s.grade}${s.section ?? ''}` : null, s.deviceCode ? `has ${s.deviceCode}` : 'no device'].filter(Boolean).join(' · ')}</span>
                 </span>
@@ -353,7 +386,7 @@ function StudentSearch({ value, onChange }: { value: PickedStudent | null; onCha
 // ---------------------------------------------------------------------------
 function DeviceCard({ d, onChange }: { d: GpsDevice; onChange?: () => void }) {
   return (
-    <div className="row g-3 card card--tint" style={{ padding: '10px 12px' }}>
+    <div className="st-picked">
       <Icon name="mapPin" size={20} />
       <span className="col grow" style={{ minWidth: 0 }}>
         <span className="row g-2"><span className="t-bold coord">{d.deviceCode}</span><DeviceStatusBadge status={d.status} /></span>
@@ -455,12 +488,12 @@ export function AssignDeviceModal({ student: presetStudent, device: presetDevice
               ) : available.isLoading ? <div className="t-sm t-muted">Loading…</div> : !available.data?.length ? (
                 <div className="t-sm t-muted">No devices are available. Register one on the GPS Devices page.</div>
               ) : (
-                <div className="card" style={{ maxHeight: 240, overflowY: 'auto', padding: 4 }} role="listbox" aria-label="Available devices">
+                <div className="st-results" role="listbox" aria-label="Available devices">
                   {available.data.map((d) => (
-                    <button key={d.id} type="button" role="option" aria-selected={false} className="person person--link"
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: 8 }} onClick={() => setDevice(d)}>
+                    <button key={d.id} type="button" role="option" aria-selected={false} className="person person--link st-results__opt"
+                      onClick={() => setDevice(d)}>
                       <Icon name="mapPin" size={16} />
-                      <span className="col" style={{ minWidth: 0, textAlign: 'left' }}>
+                      <span className="col">
                         <span className="person__name coord">{d.deviceCode}</span>
                         <span className="person__meta">{[DEVICE_TYPE_LABEL[d.deviceType], d.imei && `IMEI ${d.imei}`, d.campusName].filter(Boolean).join(' · ')}</span>
                       </span>
@@ -472,7 +505,7 @@ export function AssignDeviceModal({ student: presetStudent, device: presetDevice
           )}
         </Field>
         {student && device && (
-          <div className="row g-2 t-sm" style={{ justifyContent: 'center' }}>
+          <div className="row g-2 t-sm center">
             <strong>{student.admissionNo}</strong><Icon name="link" size={14} /><strong className="coord">{device.deviceCode}</strong>
           </div>
         )}
@@ -488,7 +521,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function StudentChip({ s }: { s: PickedStudent }) {
   return (
-    <div className="row g-3 card card--tint" style={{ padding: '8px 12px' }}>
+    <div className="st-picked">
       <Avatar name={s.fullName} size="sm" />
       <span className="col"><span className="t-sm t-bold">{s.fullName}</span><span className="t-micro t-muted">{s.admissionNo}</span></span>
     </div>

@@ -6,7 +6,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
   AiNotice, Badge, Banner, Button, Card, Checkbox, DataTable, Empty, ErrorState, FilterSelect, Grid, Icon, IconButton, InlineError,
-  Kpi, Modal, Page, PageHead, Pagination, SearchInput, Segment, SelectField, Skeleton, Status, Stepper, TextArea, TextField, useConfirm,
+  Kpi, Modal, Page, PageHead, Pagination, SearchInput, Segment, SelectField, Skeleton, Status, Stepper, TextArea, TextField, useConfirm, Toolbar,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import { serverFieldErrors, useSections } from './shared';
@@ -51,21 +51,21 @@ export default function LessonPlansPage() {
       />
       {summary.error ? <ErrorState error={summary.error} onRetry={() => summary.refetch()} /> : (
         <Grid cols="g-4col">
-          <Kpi loading={!s} label="Plans this week" value={s?.thisWeek ?? 0} foot={s ? `${fmt.dateShort(s.weekStart)} – ${fmt.dateShort(s.weekEnd)}` : undefined} />
-          <Kpi loading={!s} label="Approved" value={s?.approved ?? 0} unit={s && s.thisWeek ? `${Math.round((100 * s.approved) / s.thisWeek)}%` : undefined} tone="teal" onClick={() => list.setFilter('status', 'Approved')} />
-          <Kpi loading={!s} label="Awaiting review" value={s?.awaitingReview ?? 0} tone="amber" foot="Submitted or under review" onClick={() => list.setFilter('status', 'Submitted')} />
-          <Kpi loading={!s} label="AI-assisted" value={s?.aiAssistedPct != null ? `${s.aiAssistedPct}%` : '—'} tone="info" foot="All reviewed by a teacher" />
+          <Kpi loading={!s} icon="calendar" label="Plans this week" value={s?.thisWeek ?? 0} foot={s ? `${fmt.dateShort(s.weekStart)} – ${fmt.dateShort(s.weekEnd)}` : undefined} />
+          <Kpi loading={!s} icon="check" label="Approved" value={s?.approved ?? 0} unit={s && s.thisWeek ? `${Math.round((100 * s.approved) / s.thisWeek)}%` : undefined} tone="teal" onClick={() => list.setFilter('status', 'Approved')} />
+          <Kpi loading={!s} icon="eye" label="Awaiting review" value={s?.awaitingReview ?? 0} tone="amber" foot="Submitted or under review" onClick={() => list.setFilter('status', 'Submitted')} />
+          <Kpi loading={!s} icon="sparkle" label="AI-assisted" value={s?.aiAssistedPct != null ? `${s.aiAssistedPct}%` : '—'} tone="info" foot="All reviewed by a teacher" />
         </Grid>
       )}
 
       <div className="mt-4">
         <Card flush>
-          <div className="filterbar" style={{ padding: '12px 16px' }}>
+          <Toolbar>
             <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search lesson, objective or teacher" />
             <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Draft', 'Submitted', 'Under Review', 'Approved', 'Rejected']} />
             <FilterSelect label="Subject" value={list.filters.subjectId} onChange={(v) => list.setFilter('subjectId', v)} options={(lookups?.subjects ?? []).map((x) => ({ value: x.id, label: x.name }))} />
             {user?.employeeId && <Segment items={[{ id: '', label: 'All plans' }, { id: 'true', label: 'My plans' }]} active={list.filters.mine} onChange={(v) => list.setFilter('mine', v)} />}
-          </div>
+          </Toolbar>
           {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
             <DataTable
               rows={q.data?.rows}
@@ -74,7 +74,7 @@ export default function LessonPlansPage() {
               sort={list.sort}
               onSort={list.setSort}
               onRowClick={(r) => setOpen(r.id)}
-              emptyText={list.hasFilters ? 'No lesson plans match these filters.' : 'No lesson plans yet.'}
+              emptyText={list.hasFilters ? 'No lesson plans match these filters.' : canWrite ? 'No lesson plans yet. Use “New lesson plan” or draft one with the Co-Pilot.' : 'No lesson plans yet.'}
               columns={[
                 { key: 'title', label: 'Lesson', render: (r) => <><span className="t-bold">{r.title}</span><div className="t-micro t-muted">{r.objectiveCode ?? 'No objective linked'}</div></> },
                 { key: 'cls', label: 'Class', render: (r) => r.sectionLabel ?? '—' },
@@ -258,6 +258,8 @@ function PlanForm({ plan, onClose }: { plan?: PlanDetail; onClose: () => void })
         {!editing && <Button variant="primary" icon="send" onClick={() => submit(true)} disabled={mut.isPending}>Save and submit</Button>}
       </>}>
       {mut.error && !Object.keys(serverFieldErrors(mut.error)).length && <div className="mb-3"><InlineError error={mut.error} /></div>}
+      <div className="formsection">
+      <div className="formsection__title">Lesson</div>
       <div className="grid g-2col g-3">
         <TextField label="Lesson title" required value={f.title} onChange={set('title')} error={errors.title} maxLength={160} />
         <TextField label="Date" type="date" required value={f.plannedFor} onChange={set('plannedFor')} error={errors.plannedFor} />
@@ -272,28 +274,36 @@ function PlanForm({ plan, onClose }: { plan?: PlanDetail; onClose: () => void })
         {!editing && <div className="field" style={{ justifyContent: 'flex-end' }}><Checkbox checked={f.aiGenerated} onChange={set('aiGenerated')} label="Drafted with the AI Co-Pilot" /></div>}
       </div>
       <div className="mt-3"><TextArea label="Learning objective (in your words)" rows={2} value={f.objective} onChange={set('objective')} maxLength={1000} /></div>
-      <div className="mt-4">
-        <div className="row between mb-2"><span className="eyebrow">Lesson steps</span>
-          <Button size="sm" icon="plus" onClick={() => setSteps((x) => [...x, { time: '', step: '', detail: '' }])} disabled={steps.length >= 20}>Add step</Button></div>
-        <div className="col g-2">
+      </div>
+      <div className="formsection">
+        <div className="row between mb-2 ac-sectionhead">
+          <span className="formsection__title">Lesson steps</span>
+          <Button size="sm" icon="plus" onClick={() => setSteps((x) => [...x, { time: '', step: '', detail: '' }])} disabled={steps.length >= 20}>Add step</Button>
+        </div>
+        <div className="lp-steps">
           {steps.map((s, i) => (
-            <div key={i} className="row g-2 wrap">
-              <input className="input" style={{ width: 110 }} aria-label={`Step ${i + 1} time`} placeholder="0–5 min" value={s.time} maxLength={40}
+            <div key={i} className="lp-step">
+              <span className="lp-step__n" aria-hidden="true">{i + 1}</span>
+              <input className="input" aria-label={`Step ${i + 1} time`} placeholder="0–5 min" value={s.time} maxLength={40}
                 onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, time: e.target.value } : y)))} />
-              <input className="input" style={{ width: 170 }} aria-label={`Step ${i + 1} name`} placeholder="Step" value={s.step} maxLength={120}
+              <input className="input" aria-label={`Step ${i + 1} name`} placeholder="Step" value={s.step} maxLength={120}
+                aria-invalid={!!errors.steps && !s.step.trim() && !!s.detail.trim() || undefined}
                 onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, step: e.target.value } : y)))} />
-              <input className="input grow" style={{ minWidth: 200 }} aria-label={`Step ${i + 1} detail`} placeholder="What happens" value={s.detail} maxLength={600}
+              <input className="input lp-step__detail" aria-label={`Step ${i + 1} detail`} placeholder="What happens" value={s.detail} maxLength={600}
                 onChange={(e) => setSteps((x) => x.map((y, j) => (j === i ? { ...y, detail: e.target.value } : y)))} />
-              <IconButton icon="trash" label={`Remove step ${i + 1}`} onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} />
+              <span className="lp-step__remove"><IconButton icon="trash" label={`Remove step ${i + 1}`} onClick={() => setSteps((x) => x.filter((_, j) => j !== i))} /></span>
             </div>
           ))}
-          {!steps.length && <Empty icon="list" title="No steps yet" />}
-          {errors.steps && <span className="t-xs" role="alert" style={{ color: 'var(--critical)' }}>{errors.steps}</span>}
+          {!steps.length && <Empty icon="list" title="No steps yet" sub="Add the starter, main activity and plenary." />}
+          {errors.steps && <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{errors.steps}</span>}
         </div>
       </div>
-      <div className="grid g-2col g-3 mt-4">
-        <TextArea label="Activities (one per line)" rows={3} value={f.activities} onChange={set('activities')} />
-        <TextArea label="Homework" rows={3} value={f.homework} onChange={set('homework')} maxLength={600} />
+      <div className="formsection">
+        <div className="formsection__title">Activities and homework</div>
+        <div className="grid g-2col g-3">
+          <TextArea label="Activities (one per line)" rows={3} value={f.activities} onChange={set('activities')} />
+          <TextArea label="Homework" rows={3} value={f.homework} onChange={set('homework')} maxLength={600} />
+        </div>
       </div>
     </Modal>
   );

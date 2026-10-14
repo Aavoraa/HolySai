@@ -4,12 +4,11 @@ import { useAuth } from '@/auth/AuthContext';
 import { useI18n } from '@/i18n/I18nProvider';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import {
-  Avatar, Badge, Banner, Button, Chart, charts, Empty, ErrorState, Icon, Meter, Modal, Skeleton, Status, TextArea, TextField,
-  Timeline, useConfirm, useToast,
-} from '@/components/ui';
+  Avatar, Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, Icon, Meter, Modal, Page, Skeleton, Status, Tabs, TextArea,
+  TextField, Timeline, useConfirm, useToast, CampusBanner, DashLayout, DashRail, TrendCard, DonutCard, RankCard, UpcomingEvents } from '@/components/ui';
 import { TrackingPanel, TrackingStatusPill } from '@/components/tracking/TrackingPanel';
 import type { CurrentLocation, StudentRow } from '@/api/types';
-import { fmt } from '@/lib/format';
+import { cx, fmt, todayKey } from '@/lib/format';
 import type { Profile } from '../students/Student360Page';
 
 type ChildRow = StudentRow & { relationship: string; isPrimary: boolean; canViewTracking: boolean; locationStatus: string | null; locationRecordedAt: string | null };
@@ -30,294 +29,382 @@ interface Overview {
   events: { id: string; title: string; startsOn: string; endsOn: string | null; venue: string | null; audience: string }[];
   pickup: { id: string; personName: string; relation: string; method: string; status: string; lastPickupAt: string | null }[];
 }
+interface FamilyCircular { id: string; title: string; publishedAt: string; audience: string; requiresAck: boolean; acknowledged: boolean; body?: string }
 
 type Tab = 'home' | 'track' | 'academics' | 'safety' | 'fees' | 'more';
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'home', label: 'Home', icon: 'home' },
-  { id: 'track', label: 'Track', icon: 'mapPin' },
-  { id: 'academics', label: 'Academics', icon: 'bookOpen' },
-  { id: 'safety', label: 'Safety', icon: 'shield' },
-  { id: 'fees', label: 'Fees', icon: 'wallet' },
-  { id: 'more', label: 'More', icon: 'menu' },
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'home', label: 'Home' },
+  { id: 'track', label: 'Track' },
+  { id: 'academics', label: 'Academics' },
+  { id: 'safety', label: 'Safety' },
+  { id: 'fees', label: 'Fees' },
+  { id: 'more', label: 'More' },
 ];
+const TODAY_LABEL: Record<string, string> = { present: 'Present today', absent: 'Absent today', late: 'Late today', leave: 'On leave today', unmarked: 'Attendance not marked' };
+const todayTone = (v: string) => (v === 'present' ? 'success' : v === 'late' ? 'warning' : v === 'absent' ? 'critical' : v === 'leave' ? 'info' : 'neutral');
+const trackLabel = (s: string) => (s === 'active' ? 'Tracking Active' : s === 'paused' ? 'Tracking Paused' : s === 'offline' ? 'Offline' : 'Tracking Disabled');
+const hhmm = (t: string | null | undefined) => t?.slice(0, 5) ?? '—';
+const overviewPath = (pid: string, cid: string) => `/parents/${pid}/children/${cid}/overview`;
 
-function MCard({ children, className, style }: { children: ReactNode; className?: string; style?: React.CSSProperties }) {
-  return <div className={`mcard ${className ?? ''}`} style={{ margin: '0 12px 12px', ...style }}>{children}</div>;
-}
-function MSection({ title, right }: { title: string; right?: ReactNode }) {
-  return (
-    <div className="row between" style={{ padding: '16px 16px 8px' }}>
-      <span className="t-sm t-bold">{title}</span>
-      {right}
-    </div>
+// ---------------------------------------------------------------------------
+// Small building blocks
+// ---------------------------------------------------------------------------
+function Item({ icon, tone, lead, title, meta, end, onClick, wrap, endCol }: {
+  icon?: string; tone?: 'success' | 'warning' | 'critical' | 'brand'; lead?: ReactNode; title: ReactNode; meta?: ReactNode; end?: ReactNode;
+  onClick?: () => void; wrap?: boolean; endCol?: boolean;
+}) {
+  const body = (
+    <>
+      {lead ?? (icon && <span className={cx('portal-item__ico', tone && `portal-item__ico--${tone}`)}><Icon name={icon} size={17} /></span>)}
+      <span className="portal-item__body">
+        <span className="portal-item__title">{title}</span>
+        {meta && <span className="portal-item__meta">{meta}</span>}
+      </span>
+      {end !== undefined ? <span className={cx('portal-item__end', endCol && 'portal-item__end--col')}>{end}</span> : onClick ? <Icon name="chevronRight" size={16} className="t-faint none" /> : null}
+    </>
   );
+  if (onClick) return <button type="button" className={cx('portal-item', wrap && 'portal-item--wrap')} onClick={onClick}>{body}</button>;
+  return <div className={cx('portal-item', wrap && 'portal-item--wrap')}>{body}</div>;
 }
 
-/** Wraps the portal in the wireframe's mobile app frame (centred on desktop). */
-function AppFrame({ tab, onTab, children }: { tab: Tab; onTab: (t: Tab) => void; children: ReactNode }) {
-  const { t } = useI18n();
-  return (
-    <div className="page page--flush" style={{ maxWidth: 560, margin: '0 auto' }}>
-      <h1 className="sr-only">Parent 360 — {TABS.find((x) => x.id === tab)?.label}</h1>
-      <div className="device__screen" style={{ height: 'auto', minHeight: 'calc(100vh - var(--topbar-h))', borderRadius: 0, background: 'var(--bg)' }}>
-        <div className="device__scroll" style={{ paddingBottom: 72 }}>{children}</div>
-        <div className="tabbar" role="tablist" style={{ position: 'sticky', bottom: 0, zIndex: 5 }}>
-          {TABS.map((x) => (
-            <button key={x.id} type="button" role="tab" className="tabbar__item" aria-selected={x.id === tab} onClick={() => onTab(x.id)}>
-              <Icon name={x.icon} size={19} />
-              <span>{t(x.label)}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+function LinkAction({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+  return <button type="button" className="portal-link" onClick={onClick}>{children}<Icon name="chevronRight" size={13} /></button>;
 }
 
+function DateChip({ date }: { date: string }) {
+  const [day, mon] = fmt.dateShort(date).split(' ');
+  return <span className="portal-date" aria-hidden="true"><span className="portal-date__mon">{mon}</span><span className="portal-date__day">{day}</span></span>;
+}
+
+function Muted({ children }: { children: ReactNode }) {
+  return <p className="t-sm t-muted">{children}</p>;
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 export default function Parent360Page() {
-  const { user } = useAuth();
   const [sp, setSp] = useSearchParams();
   const me = useApiQuery<ParentMe>('/parents/me');
-  const tab = (sp.get('tab') as Tab) || 'home';
+  const tab = (TABS.some((x) => x.id === sp.get('tab')) ? sp.get('tab') : 'home') as Tab;
   const children = me.data?.children ?? [];
   const childId = sp.get('child') && children.some((c) => c.id === sp.get('child')) ? sp.get('child')! : children[0]?.id;
   const child = children.find((c) => c.id === childId);
 
-  const setParam = (k: string, v: string | null) =>
+  const setParams = (patch: Record<string, string | null>, replace = false) =>
     setSp((p) => {
       const n = new URLSearchParams(p);
-      if (v) n.set(k, v); else n.delete(k);
+      Object.entries(patch).forEach(([k, v]) => (v ? n.set(k, v) : n.delete(k)));
       return n;
-    }, { replace: k === 'child' });
+    }, { replace });
   // Braces matter: newer browsers return a Promise from scrollTo, which React would treat as a cleanup.
   useEffect(() => { window.scrollTo({ top: 0 }); }, [tab]);
 
-  if (me.isLoading) return <div className="page"><Skeleton height={420} /></div>;
-  if (me.error) return <div className="page"><ErrorState error={me.error} onRetry={() => me.refetch()} /></div>;
+  if (me.isLoading) return <Page className="portal"><Skeleton height={180} /><div className="mt-4"><Skeleton height={320} /></div></Page>;
+  if (me.error) return <Page className="portal"><ErrorState error={me.error} onRetry={() => me.refetch()} /></Page>;
   if (!children.length || !child) {
-    return <div className="page"><Empty icon="users" title="No children are linked to your account" sub="Please contact the school office to link your child's record." /></div>;
+    return (
+      <Page className="portal">
+        <h1 className="sr-only">Parent 360</h1>
+        <Card><Empty icon="users" title="No children are linked to your account" sub="Please contact the school office to link your child's record. Once linked, attendance, homework, fees and bus updates appear here." /></Card>
+      </Page>
+    );
   }
-  const pid = me.data!.id;
-  const onTab = (x: Tab) => setParam('tab', x === 'home' ? null : x);
+  const parent = me.data!;
+  const pid = parent.id;
+  const onTab = (x: Tab, extra: Record<string, string | null> = {}) => setParams({ tab: x === 'home' ? null : x, ...extra });
 
   return (
-    <AppFrame tab={tab} onTab={onTab}>
-      {tab === 'home' && <HomeTab parent={me.data!} child={child} children={children} onChild={(id) => setParam('child', id)} onTab={onTab} firstName={user?.fullName.split(' ')[0] ?? ''} />}
-      {tab === 'track' && <TrackTab pid={pid} child={child} children={children} onChild={(id) => setParam('child', id)} />}
-      {tab === 'academics' && <AcademicsTab child={child} />}
+    <PortalShell parent={parent} child={child} tab={tab} onTab={onTab} onChild={(id) => setParams({ child: id }, true)}>
+      {tab === 'home' && <HomeTab pid={pid} child={child} onTab={onTab} />}
+      {tab === 'track' && <TrackTab pid={pid} child={child} />}
+      {tab === 'academics' && <AcademicsTab pid={pid} child={child} />}
       {tab === 'safety' && <SafetyTab pid={pid} child={child} onTab={onTab} />}
-      {tab === 'fees' && <FeesTab child={child} />}
-      {tab === 'more' && <MoreTab child={child} />}
-    </AppFrame>
+      {tab === 'fees' && <FeesTab child={child} autoPay={sp.get('pay') === '1'} onAutoPayDone={() => setParams({ pay: null }, true)} />}
+      {tab === 'more' && <MoreTab child={child} autoCompose={sp.get('compose')} onAutoComposeDone={() => setParams({ compose: null }, true)} />}
+    </PortalShell>
   );
 }
 
-function ChildSwitcher({ child, children, onChild, dark }: { child: ChildRow; children: ChildRow[]; onChild: (id: string) => void; dark?: boolean }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <button type="button" className="row g-3" onClick={() => setOpen(true)} aria-haspopup="dialog"
-        style={{
-          width: '100%', borderRadius: 10, padding: '10px 12px', textAlign: 'left',
-          ...(dark ? { background: 'rgba(255,255,255,.1)', border: '1px solid rgba(254,219,110,.25)' } : { background: 'var(--surface)', border: '1px solid var(--border)' }),
-        }}>
-        <Avatar name={child.fullName} tone="avatar--amber" src={child.photoUrl} />
-        <span className="col grow">
-          <span className="t-sm t-bold" style={dark ? { color: '#fff' } : undefined}>{child.firstName} — {child.grade}{child.section}</span>
-          <span className="t-micro" style={{ color: dark ? 'var(--gold)' : 'var(--text-muted)' }}>{child.campusName}{child.house ? ` · ${child.house} House` : ''}</span>
-        </span>
-        {children.length > 1 && <span className="t-micro" style={dark ? { color: '#fff' } : undefined}>{children.length} children</span>}
-        <Icon name="chevronDown" size={16} />
-      </button>
-      <Modal open={open} onClose={() => setOpen(false)} title="Choose a child">
-        <div className="col g-2">
-          {children.map((c) => (
-            <button key={c.id} type="button" className="optioncard" aria-pressed={c.id === child.id} onClick={() => { onChild(c.id); setOpen(false); }}>
-              <Avatar name={c.fullName} />
-              <span className="col grow"><span className="t-sm t-bold">{c.fullName}</span><span className="t-xs t-muted">{c.grade}{c.section} · {c.admissionNo}</span></span>
-              {c.id === child.id ? <Badge tone="success">Selected</Badge> : <Icon name="chevronRight" size={16} />}
-            </button>
-          ))}
-        </div>
-      </Modal>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-function HomeTab({ parent, child, children, onChild, onTab, firstName }: {
-  parent: ParentMe; child: ChildRow; children: ChildRow[]; onChild: (id: string) => void; onTab: (t: Tab) => void; firstName: string;
+/** Child header (identity, one primary action, today's figures) and the sticky portal tabs. */
+function PortalShell({ parent, child, tab, onTab, onChild, children: body }: {
+  parent: ParentMe; child: ChildRow; tab: Tab; onTab: (t: Tab, extra?: Record<string, string | null>) => void; onChild: (id: string) => void; children: ReactNode;
 }) {
   const { t } = useI18n();
-  const navigate = useNavigate();
-  const ov = useApiQuery<Overview>(`/parents/${parent.id}/children/${child.id}/overview`, undefined, { refetchInterval: 60_000 });
-  const prof = useApiQuery<Profile>(`/students/${child.id}/profile`);
+  const { user } = useAuth();
+  const kids = parent.children;
+  const ov = useApiQuery<Overview>(overviewPath(parent.id, child.id), undefined, { refetchInterval: 60_000 });
+  const circulars = useApiQuery<FamilyCircular[]>('/family/circulars');
+  const pendingAck = circulars.data?.filter((c) => c.requiresAck && !c.acknowledged).length ?? 0;
+
   const hour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
-  const greet = hour < 12 ? t('Good Morning') : hour < 17 ? 'Good Afternoon' : 'Good Evening';
+  const greet = t(hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening');
+  const firstName = (user?.fullName ?? parent.fullName).split(' ')[0];
+
   const d = ov.data;
   const entry = d?.gateToday.find((g) => g.direction === 'in');
   const exit = [...(d?.gateToday ?? [])].reverse().find((g) => g.direction === 'out');
-  const openHw = d?.homework.filter((h) => !h.submitted) ?? [];
+  const due = d?.fees.outstanding ?? 0;
+
+  const primary = due > 0
+    ? <Button size="sm" variant="primary" icon="creditCard" onClick={() => onTab('fees', { pay: '1' })}>{t('Pay Now')} · {fmt.money(due, { compact: true })}</Button>
+    : child.canViewTracking
+      ? <Button size="sm" variant="primary" icon="mapPin" onClick={() => onTab('track')}>Track {child.firstName}</Button>
+      : <Button size="sm" variant="primary" icon="message" onClick={() => onTab('more', { compose: 'teacher' })}>Message teacher</Button>;
 
   return (
-    <>
-      <div style={{ background: 'linear-gradient(135deg,var(--magenta-dark),var(--magenta-deep))', color: '#fff', padding: '14px 16px 24px' }}>
-        <div className="row between">
-          <div>
-            <div className="t-micro" style={{ color: 'var(--gold)' }}>{greet}</div>
-            <div className="serif" style={{ fontSize: 20, fontWeight: 700 }}>{firstName}</div>
+    <Page className="portal">
+      <CampusBanner bleed={false} title={<>{greet}, {firstName}</>} sub={<>Here's {child.firstName}'s day at a glance — attendance, travel, learning and fees.</>} />
+      {kids.length > 1 && (
+        <div className="childpick" role="group" aria-label="Choose a child">
+          {kids.map((c) => (
+            <button key={c.id} type="button" className="childpick__item" aria-pressed={c.id === child.id} onClick={() => onChild(c.id)}>
+              <Avatar name={c.fullName} size="sm" src={c.photoUrl} />
+              <span className="col">
+                <span className="childpick__name">{c.firstName}</span>
+                <span className="childpick__meta">{c.grade}{c.section}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <section className="card profilehead">
+        <div className="profilehead__main">
+          <Avatar name={child.fullName} size="xl" src={child.photoUrl} />
+          <div className="profilehead__id">
+            <div className="row g-2 wrap">
+              <h2 className="profilehead__name">{child.fullName}</h2>
+              <Badge tone={todayTone(child.today)} dot>{TODAY_LABEL[child.today] ?? child.today}</Badge>
+            </div>
+            <p className="profilehead__meta">
+              {child.grade} {child.section} · {child.admissionNo} · {child.campusName}{child.house ? ` · ${child.house} House` : ''}
+            </p>
+            <div className="profilehead__facts">
+              <span><Icon name="bus" size={14} />{child.busRoute ?? 'Own transport'}</span>
+              {child.trackingStatus && <span><Icon name="mapPin" size={14} />{trackLabel(child.trackingStatus)}</span>}
+              {pendingAck > 0 && <span className="t-warning"><Icon name="fileText" size={14} />{pendingAck} circular{pendingAck > 1 ? 's' : ''} to acknowledge</span>}
+            </div>
           </div>
-          <div className="row g-2">
-            <button type="button" className="iconbtn iconbtn--onnavy" aria-label="Notifications" onClick={() => navigate('/notifications')}><Icon name="bell" size={20} /></button>
-            <button type="button" className="iconbtn iconbtn--onnavy" aria-label="Messages" onClick={() => onTab('more')}><Icon name="message" size={20} /></button>
+          <div className="profilehead__actions">
+            {primary}
+            {due > 0 && child.canViewTracking && <Button size="sm" icon="mapPin" onClick={() => onTab('track')}>Track</Button>}
+            {(due > 0 || child.canViewTracking) && <Button size="sm" icon="message" onClick={() => onTab('more', { compose: 'teacher' })}>Message teacher</Button>}
           </div>
         </div>
-        <div style={{ marginTop: 14 }}><ChildSwitcher child={child} children={children} onChild={onChild} dark /></div>
+        <dl className="profilehead__stats">
+          <div>
+            <dt>Today</dt>
+            <dd className={exit || entry ? 't-success' : child.today === 'absent' ? 't-critical' : undefined}>
+              {ov.isLoading ? '…' : exit ? `Left ${fmt.time(exit.occurredAt)}` : entry ? `In ${fmt.time(entry.occurredAt)}` : child.today === 'absent' ? 'Absent' : 'Not in yet'}
+            </dd>
+            <span className="t-clip">{entry ? `${entry.gate} · ${entry.method}` : 'You are notified on arrival'}</span>
+          </div>
+          <div>
+            <dt>Attendance</dt>
+            <dd className={child.attendance != null && child.attendance < 85 ? 't-critical' : undefined}>{child.attendance != null ? `${child.attendance}%` : '—'}</dd>
+            <span>this academic year</span>
+          </div>
+          <div>
+            <dt>Average</dt>
+            <dd>{child.average ?? '—'}</dd>
+            <span className={child.trend > 0 ? 't-success' : child.trend < 0 ? 't-critical' : undefined}>
+              {child.average != null ? `${child.trend >= 0 ? '+' : ''}${child.trend} trend` : 'No results yet'}
+            </span>
+          </div>
+          <div>
+            <dt>Fees due</dt>
+            <dd className={!d ? undefined : due > 0 ? 't-critical' : 't-success'}>{!d ? '—' : due > 0 ? fmt.money(due, { compact: true }) : 'Cleared'}</dd>
+            <span className="t-clip">{!d ? '' : due > 0 ? (d.fees.nextDue ? `next due ${fmt.date(d.fees.nextDue)}` : 'outstanding') : 'nothing to pay'}</span>
+          </div>
+        </dl>
+      </section>
+
+      <div className="tabsbar">
+        <Tabs
+          items={TABS.map((x) => ({ id: x.id, label: t(x.label), count: x.id === 'more' && pendingAck ? pendingAck : undefined }))}
+          active={tab}
+          onChange={(x) => onTab(x)}
+        />
+      </div>
+      <div className="mt-4">
+        {tab === 'home' ? (
+          <DashLayout rail={<DashRail events={false} actions={[
+            { label: `Track ${child.firstName}`, icon: 'mapPin', to: '/parent-360?tab=track', show: child.canViewTracking },
+            { label: 'Academics & Homework', icon: 'bookOpen', to: '/parent-360?tab=academics' },
+            { label: 'Pay Fees', icon: 'creditCard', to: '/parent-360?tab=fees&pay=1' },
+            { label: 'Safety & Pickup', icon: 'shield', to: '/parent-360?tab=safety' },
+            { label: 'Message Teacher', icon: 'message', to: '/parent-360?tab=more&compose=teacher' },
+            { label: 'Circulars & PTM', icon: 'megaphone', to: '/parent-360?tab=more' },
+          ]} />}>{body}</DashLayout>
+        ) : body}
+      </div>
+    </Page>
+  );
+}
+
+// ---------------------------------------------------------------------------
+function HomeTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab: (t: Tab, extra?: Record<string, string | null>) => void }) {
+  const { t } = useI18n();
+  const navigate = useNavigate();
+  const ov = useApiQuery<Overview>(overviewPath(pid, child.id), undefined, { refetchInterval: 60_000 });
+  const prof = useApiQuery<Profile>(`/students/${child.id}/profile`);
+  const d = ov.data;
+
+  if (ov.error) return <ErrorState error={ov.error} onRetry={() => ov.refetch()} />;
+  if (ov.isLoading || !d) {
+    return <div className="grid g-main"><Skeleton height={320} /><Skeleton height={320} /></div>;
+  }
+
+  const entry = d.gateToday.find((g) => g.direction === 'in');
+  const exit = [...d.gateToday].reverse().find((g) => g.direction === 'out');
+  const openHw = d.homework.filter((h) => !h.submitted).sort((a, b) => a.dueOn.localeCompare(b.dueOn));
+  const achievement = prof.data?.achievements[0];
+
+  return (
+    <div className="col g-4">
+      <ChildPulse child={child} prof={prof.data} loading={prof.isLoading} />
+    <div className="grid g-main">
+      <div className="portal-stack">
+        <Card icon="grid" title="Today" sub={fmt.date(new Date())}>
+          <div className="portal-list">
+            <Item
+              icon={exit ? 'logout' : entry ? 'shieldCheck' : 'clock'}
+              tone={entry ? 'success' : child.today === 'absent' ? 'critical' : undefined}
+              title={exit ? `Left campus at ${fmt.time(exit.occurredAt)}` : entry ? `Arrived safely at ${fmt.time(entry.occurredAt)}` : child.today === 'absent' ? 'Marked absent today' : 'No gate entry yet today'}
+              meta={entry ? `${entry.gate} · ${entry.method} verified` : 'You will be notified when your child reaches school'}
+              end={entry && !exit ? <Badge tone="success" dot>Inside campus</Badge> : undefined}
+              onClick={() => onTab('safety')}
+            />
+            {d.bus && (
+              <Item
+                icon="bus" tone={d.bus.runStatus === 'Delayed' ? 'warning' : 'brand'}
+                title={`${d.bus.busNo ?? 'Bus'} · ${d.bus.routeName}`}
+                meta={<>{d.bus.runStatus === 'Delayed' ? `Running ${d.bus.delayMinutes} min late` : d.bus.eta ? `ETA ${d.bus.eta}` : d.bus.runStatus} · stop {d.bus.stopName ?? '—'} · pickup {hhmm(d.bus.pickupTime)} · drop {hhmm(d.bus.dropTime)}</>}
+                end={<Status value={d.bus.runStatus} />}
+                onClick={() => onTab('safety')}
+              />
+            )}
+            <Item
+              icon="mapPin" tone={child.trackingStatus === 'active' ? 'success' : undefined}
+              title="Open live location"
+              meta={`${child.firstName} · ${child.locationRecordedAt ? `Last update ${fmt.relative(child.locationRecordedAt)}` : child.trackingStatus === 'disabled' ? 'Tracking is not enabled' : 'No location yet'}`}
+              end={child.trackingStatus ? <TrackingStatusPill status={trackLabel(child.trackingStatus)} /> : undefined}
+              onClick={() => onTab('track')}
+            />
+          </div>
+        </Card>
+
+        <Card icon="edit" title="Homework" sub={openHw.length ? `${openHw.length} to hand in` : 'All handed in'} actions={<LinkAction onClick={() => onTab('academics')}>All</LinkAction>}>
+          {openHw.length ? (
+            <div className="portal-list">
+              {openHw.slice(0, 4).map((h) => (
+                <Item key={h.id} icon="edit" tone={h.dueOn <= todayKey() ? 'warning' : undefined} title={h.title} meta={`${h.subject} · due ${fmt.dateShort(h.dueOn)}`} end={<Badge tone="info">Open</Badge>} />
+              ))}
+            </div>
+          ) : <Muted>Nothing due right now. New homework appears here as soon as a teacher sets it.</Muted>}
+        </Card>
+
+        <Card icon="trending" title="Academic progress" actions={<LinkAction onClick={() => onTab('academics')}>See all</LinkAction>}>
+          {prof.isLoading ? <Skeleton height={120} /> : prof.data?.academics.subjects.length ? (
+            <div className="col g-3">
+              {prof.data.academics.subjects.slice(0, 4).map((s) => (
+                <Meter key={s.name} label={s.name} value={s.score} right={`${s.score} · ${s.grade}`} tone={s.score >= 80 ? 'teal' : s.score >= 70 ? 'info' : 'amber'} />
+              ))}
+            </div>
+          ) : <Muted>Results will appear after the first assessment.</Muted>}
+        </Card>
       </div>
 
-      <div style={{ marginTop: -10 }}>
-        {ov.error ? <div style={{ padding: 12 }}><ErrorState error={ov.error} onRetry={() => ov.refetch()} /></div> : ov.isLoading ? (
-          <MCard><Skeleton height={60} /></MCard>
-        ) : (
-          <>
-            <MCard>
-              <div className="row g-3">
-                <span className={`avatar ${entry ? 'avatar--teal' : ''} none`}><Icon name={entry ? 'shieldCheck' : 'clock'} size={18} /></span>
-                <div className="grow">
-                  <div className="t-sm t-bold">
-                    {exit ? `Left campus at ${fmt.time(exit.occurredAt)}` : entry ? `Arrived safely at ${fmt.time(entry.occurredAt)}` : child.today === 'absent' ? 'Marked absent today' : 'No gate entry yet today'}
-                  </div>
-                  <div className="t-micro t-muted">{entry ? `${entry.gate} · ${entry.method} verified` : 'You will be notified when your child reaches school'}</div>
-                </div>
-                {entry && !exit && <Badge tone="success" dot>Inside campus</Badge>}
-              </div>
-            </MCard>
+      <div className="portal-stack">
+        <Card icon="wallet" title="Fees">
+          <div className="t-micro t-muted">Total outstanding</div>
+          <div className={cx('portal-amount', d.fees.outstanding > 0 ? 'portal-amount--due' : 'portal-amount--clear')}>{fmt.money(d.fees.outstanding)}</div>
+          <div className="t-xs t-muted mt-1">{d.fees.outstanding > 0 ? (d.fees.nextDue ? `Next instalment due ${fmt.date(d.fees.nextDue)}` : 'Payment pending') : 'All dues cleared — thank you'}</div>
+          <div className="mt-4">
+            {d.fees.outstanding > 0
+              ? <Button variant="teal" block icon="creditCard" onClick={() => onTab('fees', { pay: '1' })}>{t('Pay Now')}</Button>
+              : <Button block icon="receipt" onClick={() => onTab('fees')}>View receipts</Button>}
+          </div>
+        </Card>
 
-            <MCard>
-              <div className="row between">
-                <div className="row g-3">
-                  <span className="avatar avatar--teal none"><Icon name="mapPin" size={18} /></span>
-                  <div>
-                    <div className="t-sm t-bold">Track {child.firstName}</div>
-                    <div className="t-micro t-muted">
-                      {child.locationRecordedAt ? `Last update ${fmt.relative(child.locationRecordedAt)}` : child.trackingStatus === 'disabled' ? 'Tracking is not enabled' : 'No location yet'}
-                    </div>
-                  </div>
-                </div>
-                {child.trackingStatus && <TrackingStatusPill status={child.trackingStatus === 'active' ? 'Tracking Active' : child.trackingStatus === 'paused' ? 'Tracking Paused' : child.trackingStatus === 'offline' ? 'Offline' : 'Tracking Disabled'} />}
-              </div>
-              <div className="mt-3"><Button size="sm" block icon="mapPin" variant="primary" onClick={() => onTab('track')}>Open live location</Button></div>
-            </MCard>
-
-            {d?.bus && (
-              <MCard>
-                <div className="row g-3">
-                  <span className="avatar none" style={{ background: 'var(--navy)', color: '#fff' }}><Icon name="bus" size={18} /></span>
-                  <div className="grow">
-                    <div className="t-sm t-bold">{d.bus.busNo ?? d.bus.routeName} — {d.bus.routeName}</div>
-                    <div className="t-micro t-muted">Home stop {d.bus.stopName ?? '—'} · pickup {d.bus.pickupTime?.slice(0, 5) ?? '—'} · drop {d.bus.dropTime?.slice(0, 5) ?? '—'}</div>
-                  </div>
-                  <Status value={d.bus.runStatus} />
-                </div>
-                <div className="mt-3"><Button size="sm" block icon="bus" onClick={() => onTab('safety')}>Track bus</Button></div>
-              </MCard>
-            )}
-
-            <MSection title="This week" />
-            <div style={{ padding: '0 12px 12px' }}>
-              <div className="grid g-2col g-3">
-                {([
-                  ['Attendance', child.attendance != null ? `${child.attendance}%` : '—', 'success', 'checkSquare', 'academics'],
-                  ['Homework', `${openHw.length} open`, 'warning', 'edit', 'academics'],
-                  ['Average', child.average != null ? `${child.average}` : '—', 'info', 'trending', 'academics'],
-                  ['Fees due', d ? fmt.money(d.fees.outstanding) : '—', d && d.fees.outstanding > 0 ? 'critical' : 'success', 'wallet', 'fees'],
-                ] as const).map(([label, value, tone, icon, go]) => (
-                  <button type="button" className="mcard" key={label} style={{ textAlign: 'left' }} onClick={() => onTab(go)}>
-                    <div className="row g-2"><Icon name={icon} size={15} /><span className="t-micro t-muted">{label}</span></div>
-                    <div className={`t-bold t-${tone}`} style={{ fontSize: 17, marginTop: 4 }}>{value}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        <MSection title="Academic progress" right={<button type="button" className="t-xs" style={{ color: 'var(--magenta)' }} onClick={() => onTab('academics')}>See all</button>} />
-        <MCard>
-          {prof.isLoading ? <Skeleton height={120} /> : prof.data?.academics.subjects.length ? prof.data.academics.subjects.slice(0, 4).map((s) => (
-            <div style={{ marginBottom: 10 }} key={s.name}><Meter label={s.name} value={s.score} right={`${s.score} · ${s.grade}`} tone={s.score >= 80 ? 'teal' : s.score >= 70 ? 'info' : 'amber'} /></div>
-          )) : <p className="t-sm t-muted">Results will appear after the first assessment.</p>}
-        </MCard>
-
-        {prof.data?.achievements[0] && (
-          <>
-            <MSection title="Achievements" />
-            <MCard>
-              <div className="row g-3">
-                <span className="avatar avatar--amber none"><Icon name="award" size={18} /></span>
-                <div className="grow">
-                  <div className="t-sm t-bold">{prof.data.achievements[0].title}</div>
-                  <div className="t-micro t-muted">{fmt.date(prof.data.achievements[0].date)} · {prof.data.achievements[0].verified ? 'verified by the school' : 'awaiting verification'}</div>
-                </div>
-              </div>
-            </MCard>
-          </>
-        )}
-
-        {!!d?.notifications.length && (
-          <>
-            <MSection title="Latest updates" right={<button type="button" className="t-xs" style={{ color: 'var(--magenta)' }} onClick={() => navigate('/notifications')}>All</button>} />
-            <MCard>
+        <Card icon="bell" title="Latest updates" actions={<LinkAction onClick={() => navigate('/notifications')}>All</LinkAction>}>
+          {d.notifications.length ? (
+            <div className="portal-list">
               {d.notifications.slice(0, 4).map((n) => (
-                <button type="button" className="mrow" key={n.id} style={{ width: '100%', textAlign: 'left' }} onClick={() => n.route && navigate(n.route)}>
-                  <Icon name={n.icon} size={16} className={`t-${n.tone === 'warning' ? 'warning' : n.tone === 'critical' ? 'critical' : 'muted'}`} />
-                  <span className="grow"><span className="t-sm">{n.title}</span><div className="t-micro t-muted">{fmt.relative(n.createdAt)}</div></span>
-                </button>
+                <Item key={n.id} icon={n.icon} tone={n.tone === 'critical' ? 'critical' : n.tone === 'warning' ? 'warning' : undefined}
+                  title={n.title} meta={fmt.relative(n.createdAt)} onClick={n.route ? () => navigate(n.route!) : undefined} />
               ))}
-            </MCard>
-          </>
-        )}
-
-        <MSection title="School events" />
-        <div style={{ padding: '0 12px 16px' }}>
-          {d?.events.length ? d.events.slice(0, 3).map((e) => (
-            <div className="mcard" style={{ marginBottom: 8 }} key={e.id}>
-              <div className="row g-3">
-                <span className="col none t-center" style={{ width: 44 }}>
-                  <span className="t-micro t-muted">{fmt.dateShort(e.startsOn).split(' ')[1]}</span>
-                  <span className="t-bold" style={{ fontSize: 16 }}>{fmt.dateShort(e.startsOn).split(' ')[0]}</span>
-                </span>
-                <span className="col grow"><span className="t-sm t-bold">{e.title}</span><span className="t-micro t-muted">{e.venue ?? e.audience}</span></span>
-              </div>
             </div>
-          )) : <p className="t-sm t-muted" style={{ padding: '0 4px' }}>No upcoming events.</p>}
-        </div>
+          ) : <Muted>No new updates. School notices and alerts about {child.firstName} will appear here.</Muted>}
+        </Card>
+
+        {achievement && (
+          <Card icon="award" title="Achievements">
+            <Item icon="award" tone="brand" title={achievement.title}
+              meta={`${fmt.date(achievement.date)} · ${achievement.verified ? 'verified by the school' : 'awaiting verification'}`} />
+          </Card>
+        )}
+      </div>
+    </div>
+    </div>
+  );
+}
+
+const BANDS = [
+  { label: 'Excellent (85+)', min: 85, color: 'var(--success)' },
+  { label: 'Good (70–84)', min: 70, color: 'var(--brand)' },
+  { label: 'Average (50–69)', min: 50, color: 'var(--accent)' },
+  { label: 'Needs Improvement (<50)', min: -Infinity, color: 'var(--critical)' },
+];
+
+/** The Command Center picture, scoped to this one child: attendance trend, subject bands, events and subject ranking. */
+function ChildPulse({ child, prof, loading }: { child: ChildRow; prof: Profile | undefined; loading: boolean }) {
+  if (loading) return <div className="grid dash__pair">{[0, 1].map((i) => <Skeleton key={i} height={300} />)}</div>;
+  const months = prof?.attendance.months ?? [];
+  const subjects = prof?.academics.subjects ?? [];
+  const bands = BANDS.map((b, i) => ({
+    label: b.label, color: b.color, to: '/parent-360?tab=academics',
+    value: subjects.filter((s) => s.score >= b.min && (i === 0 || s.score < BANDS[i - 1].min)).length,
+  }));
+  const overall = subjects.length ? Math.round(subjects.reduce((a, s) => a + s.score, 0) / subjects.length) : null;
+  const ranked = [...subjects].sort((a, b) => b.score - a.score);
+  return (
+    <>
+      <div className="grid dash__pair">
+        <TrendCard title={`${child.firstName}'s Attendance`} series="Attendance" points={months}
+          empty={{ title: 'No attendance trend yet', sub: 'Monthly attendance appears once the school has marked at least two months.' }} />
+        <DonutCard link={{ to: '/parent-360?tab=academics' }} bands={bands}
+          center={overall != null ? `${overall}%` : undefined} centerSub={overall != null ? 'Overall Average' : undefined}
+          empty={{ title: 'No results yet', sub: 'Subject results appear after the first assessment.' }} />
+      </div>
+      <div className="grid dash__events">
+        <UpcomingEvents />
+        <RankCard title="Subject Scores" icon="award" middle="Teacher" valueLabel="Score" link={{ to: '/parent-360?tab=academics', label: 'See all' }}
+          rows={ranked.map((s) => ({ key: s.name, name: s.name, meta: s.teacher ?? s.grade, value: `${s.score}%` }))}
+          empty={{ title: 'No subject scores yet', sub: 'Scores appear once assessment marks are entered.' }} />
       </div>
     </>
   );
 }
 
 // ---------------------------------------------------------------------------
-function TrackTab({ pid, child, children, onChild }: { pid: string; child: ChildRow; children: ChildRow[]; onChild: (id: string) => void }) {
+function TrackTab({ pid, child }: { pid: string; child: ChildRow }) {
   return (
-    <>
-      <div className="appbar"><span className="t-bold">Track {child.firstName}</span></div>
-      <div style={{ padding: 12 }} className="col g-3">
-        {children.length > 1 && <ChildSwitcher child={child} children={children} onChild={onChild} />}
-        {child.canViewTracking ? (
-          <TrackingPanel
-            compact
-            locationPath={`/parents/${pid}/children/${child.id}/location`}
-            historyPath={`/parents/${pid}/children/${child.id}/location/history`}
-            historyNote="You can review the last 7 days of your child's movements."
-            refetchMs={30_000}
-          />
-        ) : (
-          <Empty icon="lock" title="Tracking is not available" sub="Location sharing for this child is not enabled on your account. Please contact the school office." />
-        )}
-        <Banner tone="neutral" icon="lock">Only you and authorised school staff can see this location. Every view is recorded in the school's audit trail.</Banner>
-      </div>
-    </>
+    <div className="col g-4">
+      {child.canViewTracking ? (
+        <TrackingPanel
+          compact
+          locationPath={`/parents/${pid}/children/${child.id}/location`}
+          historyPath={`/parents/${pid}/children/${child.id}/location/history`}
+          historyNote="You can review the last 7 days of your child's movements."
+          refetchMs={30_000}
+        />
+      ) : (
+        <Card><Empty icon="lock" title="Tracking is not available" sub="Location sharing for this child is not enabled on your account. Please contact the school office." /></Card>
+      )}
+      <Banner tone="neutral" icon="lock">Only you and authorised school staff can see this location. Every view is recorded in the school's audit trail.</Banner>
+    </div>
   );
 }
 
@@ -326,80 +413,91 @@ export function TrackChildPage() {
   const { studentId } = useParams();
   const me = useApiQuery<ParentMe>('/parents/me');
   const navigate = useNavigate();
-  if (me.isLoading) return <div className="page"><Skeleton height={420} /></div>;
-  if (me.error) return <div className="page"><ErrorState error={me.error} onRetry={() => me.refetch()} /></div>;
+  if (me.isLoading) return <Page className="portal"><Skeleton height={420} /></Page>;
+  if (me.error) return <Page className="portal"><ErrorState error={me.error} onRetry={() => me.refetch()} /></Page>;
   const child = me.data!.children.find((c) => c.id === studentId || c.admissionNo === studentId);
-  if (!child) return <div className="page"><Empty icon="search" title="Child not found" sub="This child is not linked to your account." action={<Button to="/parent-360">Back to Parent 360</Button>} /></div>;
+  if (!child) return <Page className="portal"><Card><Empty icon="search" title="Child not found" sub="This child is not linked to your account." action={<Button to="/parent-360">Back to Parent 360</Button>} /></Card></Page>;
   return (
-    <AppFrame tab="track" onTab={(t) => navigate(`/parent-360?child=${child.id}${t === 'home' ? '' : `&tab=${t}`}`)}>
-      <TrackTab pid={me.data!.id} child={child} children={me.data!.children} onChild={(id) => navigate(`/parent-360/track/${id}`)} />
-    </AppFrame>
+    <PortalShell
+      parent={me.data!} child={child} tab="track"
+      onTab={(t, extra = {}) => {
+        const q = new URLSearchParams({ child: child.id });
+        if (t !== 'home') q.set('tab', t);
+        Object.entries(extra).forEach(([k, v]) => v && q.set(k, v));
+        navigate(`/parent-360?${q.toString()}`);
+      }}
+      onChild={(id) => navigate(`/parent-360/track/${id}`)}
+    >
+      <TrackTab pid={me.data!.id} child={child} />
+    </PortalShell>
   );
 }
 
 // ---------------------------------------------------------------------------
-function AcademicsTab({ child }: { child: ChildRow }) {
+function AcademicsTab({ pid, child }: { pid: string; child: ChildRow }) {
   const prof = useApiQuery<Profile>(`/students/${child.id}/profile`);
-  const { user } = useAuth();
-  const ov = useApiQuery<Overview>(user?.parentId ? `/parents/${user.parentId}/children/${child.id}/overview` : null);
-  if (prof.isLoading) return <div style={{ padding: 12 }}><Skeleton height={300} /></div>;
-  if (prof.error || !prof.data) return <div style={{ padding: 12 }}><ErrorState error={prof.error} onRetry={() => prof.refetch()} /></div>;
+  const ov = useApiQuery<Overview>(overviewPath(pid, child.id), undefined, { refetchInterval: 60_000 });
+  if (prof.isLoading) return <Skeleton height={300} />;
+  if (prof.error || !prof.data) return <ErrorState error={prof.error} onRetry={() => prof.refetch()} />;
   const d = prof.data;
   const trend = d.academics.termTrend;
+  const hw = [...(ov.data?.homework ?? [])].sort((a, b) => Number(a.submitted) - Number(b.submitted) || a.dueOn.localeCompare(b.dueOn));
+  const openHw = hw.filter((h) => !h.submitted).length;
+
   return (
-    <>
-      <div className="appbar"><span className="t-bold">Academics</span><span className="spacer" /><button type="button" className="iconbtn iconbtn--onnavy" aria-label="Print" onClick={() => window.print()}><Icon name="printer" size={18} /></button></div>
-      <div style={{ paddingTop: 12 }}>
-        <MCard>
-          <div className="row between mb-3"><span className="t-sm t-bold">Progress this year</span><Badge tone={child.risk === 'On Track' ? 'success' : 'warning'}>{child.risk}</Badge></div>
-          {trend.length > 1 ? (
-            <Chart svg={charts.line({ labels: trend.map((x) => x.label), series: [{ name: 'Average', values: trend.map((x) => x.value), color: 'var(--teal)' }], yMin: Math.max(0, Math.min(...trend.map((x) => x.value)) - 10), yMax: 100, height: 150, showDots: false })} />
-          ) : <p className="t-sm t-muted">Progress appears after more assessments.</p>}
-        </MCard>
-        <MSection title="Subject performance" />
-        <MCard>
-          {d.academics.subjects.length ? d.academics.subjects.map((s) => (
-            <div className="mrow" key={s.name}>
-              <span className="grow"><span className="t-sm t-bold">{s.name}</span><div className="t-micro t-muted">{s.teacher ?? ''}</div></span>
-              <span className="col t-right none">
-                <span className="t-bold t-num">{s.score}</span>
+    <div className="grid g-2col">
+      <Card title="Progress this year" actions={<><Badge tone={child.risk === 'On Track' ? 'success' : 'warning'}>{child.risk}</Badge><Button size="sm" variant="quiet" icon="printer" onClick={() => window.print()} aria-label="Print academics" title="Print" /></>}>
+        {trend.length > 1 ? (
+          <Chart svg={charts.line({ labels: trend.map((x) => x.label), series: [{ name: 'Average', values: trend.map((x) => x.value), color: 'var(--teal)' }], yMin: Math.max(0, Math.min(...trend.map((x) => x.value)) - 10), yMax: 100, height: 150, showDots: false })} />
+        ) : <Muted>Progress appears after more assessments.</Muted>}
+      </Card>
+
+      <Card icon="checkSquare" title="Attendance" sub={child.attendance != null ? `${child.attendance}% this year` : undefined}>
+        {d.attendance.totals ? (
+          <div className="portal-figs">
+            <div className="portal-fig"><div className="portal-fig__label">Present</div><div className="portal-fig__value t-success">{d.attendance.totals.present}</div></div>
+            <div className="portal-fig"><div className="portal-fig__label">Late</div><div className="portal-fig__value t-warning">{d.attendance.totals.late}</div></div>
+            <div className="portal-fig"><div className="portal-fig__label">Absent</div><div className="portal-fig__value t-critical">{d.attendance.totals.absent}</div></div>
+            <div className="portal-fig"><div className="portal-fig__label">Leave</div><div className="portal-fig__value">{d.attendance.totals.leave}</div></div>
+          </div>
+        ) : <Muted>No attendance marked yet.</Muted>}
+      </Card>
+
+      <Card icon="edit" title="Homework" sub={ov.data ? `${openHw} open` : undefined}>
+        {ov.isLoading ? <Skeleton height={100} /> : hw.length ? (
+          <div className="portal-list">
+            {hw.map((h) => (
+              <Item key={h.id} icon={h.submitted ? 'check' : 'edit'} tone={h.submitted ? 'success' : undefined} title={h.title}
+                meta={`${h.subject} · due ${fmt.dateShort(h.dueOn)}`} end={<Badge tone={h.submitted ? 'success' : 'info'}>{h.submitted ? 'Submitted' : 'Open'}</Badge>} />
+            ))}
+          </div>
+        ) : <Muted>No homework set at the moment.</Muted>}
+      </Card>
+
+      <Card icon="trending" title="Subject performance">
+        {d.academics.subjects.length ? (
+          <div className="portal-list">
+            {d.academics.subjects.map((s) => (
+              <Item key={s.name} title={s.name} meta={s.teacher ?? undefined} endCol end={<>
+                <span className="t-bold t-num">{s.score} <span className="t-xs t-muted">· {s.grade}</span></span>
                 {s.trend != null && <span className={`t-micro ${s.trend >= 0 ? 't-success' : 't-critical'}`}>{s.trend >= 0 ? '+' : ''}{s.trend}</span>}
-              </span>
-            </div>
-          )) : <p className="t-sm t-muted">No results yet.</p>}
-        </MCard>
-        <MSection title="Attendance" right={<span className="t-xs t-muted">{child.attendance != null ? `${child.attendance}% this year` : ''}</span>} />
-        <MCard>
-          {d.attendance.totals ? (
-            <div className="grid g-2col g-3">
-              <div><div className="t-micro t-muted">Present</div><div className="t-bold t-success">{d.attendance.totals.present}</div></div>
-              <div><div className="t-micro t-muted">Late</div><div className="t-bold t-warning">{d.attendance.totals.late}</div></div>
-              <div><div className="t-micro t-muted">Absent</div><div className="t-bold t-critical">{d.attendance.totals.absent}</div></div>
-              <div><div className="t-micro t-muted">Leave</div><div className="t-bold">{d.attendance.totals.leave}</div></div>
-            </div>
-          ) : <p className="t-sm t-muted">No attendance marked yet.</p>}
-        </MCard>
-        <MSection title="Homework" right={<span className="t-xs t-muted">{ov.data ? `${ov.data.homework.filter((h) => !h.submitted).length} open` : ''}</span>} />
-        <MCard>
-          {ov.data?.homework.length ? ov.data.homework.map((h) => (
-            <div className="mrow" key={h.id}>
-              <span className="grow"><span className="t-sm">{h.title}</span><div className="t-micro t-muted">{h.subject} · due {fmt.dateShort(h.dueOn)}</div></span>
-              <Badge tone={h.submitted ? 'success' : 'info'}>{h.submitted ? 'Submitted' : 'Open'}</Badge>
-            </div>
-          )) : <p className="t-sm t-muted">No open homework.</p>}
-        </MCard>
-        <MSection title="Recent assessments" />
-        <MCard>
-          {d.academics.assessments.length ? d.academics.assessments.slice(0, 5).map((a) => (
-            <div className="mrow" key={a.code}>
-              <span className="grow"><span className="t-sm t-bold">{a.name}</span><div className="t-micro t-muted">{fmt.dateShort(a.heldOn)} · {a.maxMarks} marks</div></span>
-              {a.isAbsent ? <Badge tone="critical">Absent</Badge> : <span className="t-bold t-num">{a.marks ?? '—'}</span>}
-            </div>
-          )) : <p className="t-sm t-muted">No assessment results yet.</p>}
-        </MCard>
-        <div style={{ height: 16 }} />
-      </div>
-    </>
+              </>} />
+            ))}
+          </div>
+        ) : <Muted>No results yet.</Muted>}
+      </Card>
+
+      <Card icon="grid" title="Recent assessments">
+        {d.academics.assessments.length ? (
+          <div className="portal-list">
+            {d.academics.assessments.slice(0, 5).map((a) => (
+              <Item key={a.code} title={a.name} meta={`${fmt.dateShort(a.heldOn)} · ${a.maxMarks} marks`}
+                end={a.isAbsent ? <Badge tone="critical">Absent</Badge> : <span className="t-bold t-num">{a.marks ?? '—'}</span>} />
+            ))}
+          </div>
+        ) : <Muted>No assessment results yet.</Muted>}
+      </Card>
+    </div>
   );
 }
 
@@ -409,7 +507,7 @@ interface FamilySafety {
 }
 
 function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab: (t: Tab) => void }) {
-  const ov = useApiQuery<Overview>(`/parents/${pid}/children/${child.id}/overview`, undefined, { refetchInterval: 60_000 });
+  const ov = useApiQuery<Overview>(overviewPath(pid, child.id), undefined, { refetchInterval: 60_000 });
   const extra = useApiQuery<FamilySafety>(`/family/children/${child.id}/safety`, undefined, { refetchInterval: 60_000 });
   const loc = useApiQuery<CurrentLocation>(`/parents/${pid}/children/${child.id}/location`);
   const confirm = useConfirm();
@@ -424,8 +522,8 @@ function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab:
     success: (_r, v) => (v.action === 'confirm' ? 'Pickup person confirmed' : 'Pickup authorisation revoked'), body: () => ({}),
   });
 
-  if (ov.isLoading) return <div style={{ padding: 12 }}><Skeleton height={300} /></div>;
-  if (ov.error || !ov.data) return <div style={{ padding: 12 }}><ErrorState error={ov.error} onRetry={() => ov.refetch()} /></div>;
+  if (ov.isLoading) return <Skeleton height={300} />;
+  if (ov.error || !ov.data) return <ErrorState error={ov.error} onRetry={() => ov.refetch()} />;
   const d = ov.data;
   const events = [
     ...d.gateToday.map((g) => ({ at: g.occurredAt, title: `${g.direction === 'in' ? 'Gate entry' : 'Gate exit'} — ${g.gate}`, tone: 'teal' })),
@@ -436,68 +534,55 @@ function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab:
 
   return (
     <>
-      <div className="appbar"><span className="t-bold">Safety</span></div>
-      <div style={{ paddingTop: 12 }}>
-        <MCard>
-          <div className="row g-3">
-            <span className={`avatar ${entry ? 'avatar--teal' : ''} none`}><Icon name={entry ? 'shieldCheck' : 'clock'} size={18} /></span>
-            <div className="grow">
-              <div className="t-sm t-bold">{entry ? 'Child arrived safely' : 'Not yet at school today'}</div>
-              <div className="t-micro t-muted">{entry ? `${entry.gate} · ${fmt.time(entry.occurredAt)} · ${entry.method} verified` : 'Gate entry will appear here'}</div>
-            </div>
-          </div>
-          {events.length > 0 && (
-            <div className="mt-3"><Timeline items={events.map((e) => ({ time: fmt.time(e.at), title: e.title, tone: e.tone }))} /></div>
+      <div className="grid g-2col">
+        <Card icon="grid" title="Arrival today">
+          <Item icon={entry ? 'shieldCheck' : 'clock'} tone={entry ? 'success' : undefined}
+            title={entry ? 'Child arrived safely' : 'Not yet at school today'}
+            meta={entry ? `${entry.gate} · ${fmt.time(entry.occurredAt)} · ${entry.method} verified` : 'Gate entry will appear here'} />
+          {events.length > 0 && <div className="mt-4"><Timeline items={events.map((e) => ({ time: fmt.time(e.at), title: e.title, tone: e.tone }))} /></div>}
+        </Card>
+
+        <div className="portal-stack">
+          <Card icon="bus" title="Live location" actions={<LinkAction onClick={() => onTab('track')}>Open map</LinkAction>}>
+            {loc.data ? (
+              <Item icon="mapPin" tone="brand" title={loc.data.placeLabel ?? loc.data.locationStatusLabel}
+                meta={loc.data.recordedAt ? `Updated ${fmt.time(loc.data.recordedAt)}` : 'No location yet'}
+                end={<TrackingStatusPill status={loc.data.displayStatus} />} />
+            ) : loc.error ? <Muted>Location is not available.</Muted> : <Skeleton height={36} />}
+          </Card>
+
+          {d.bus && (
+            <Card icon="bus" title={`${d.bus.busNo ?? 'Bus'} — ${d.bus.routeName}`} actions={<Status value={d.bus.runStatus} />}>
+              <div className="t-sm t-bold">{d.bus.runStatus === 'Delayed' ? `Running ${d.bus.delayMinutes} min late` : d.bus.eta ? `ETA ${d.bus.eta}` : d.bus.runStatus}</div>
+              <div className="t-xs t-muted mt-1">Driver {d.bus.driver ?? '—'}{d.bus.attendant ? ` · Attendant ${d.bus.attendant}` : ''}</div>
+              {extra.data?.bus?.busLocation && <div className="t-xs t-muted mt-1">Bus position updated {fmt.time(extra.data.bus.busLocation.recordedAt)}</div>}
+              <div className="t-xs t-muted mt-1">Stop {d.bus.stopName ?? '—'} · pickup {hhmm(d.bus.pickupTime)} · drop {hhmm(d.bus.dropTime)}</div>
+            </Card>
           )}
-        </MCard>
+        </div>
 
-        <MSection title="Live location" right={<button type="button" className="t-xs" style={{ color: 'var(--magenta)' }} onClick={() => onTab('track')}>Open map</button>} />
-        <MCard>
-          {loc.data ? (
-            <div className="row between g-3">
-              <div>
-                <div className="t-sm t-bold">{loc.data.placeLabel ?? loc.data.locationStatusLabel}</div>
-                <div className="t-micro t-muted">{loc.data.recordedAt ? `Updated ${fmt.time(loc.data.recordedAt)}` : 'No location yet'}</div>
-              </div>
-              <TrackingStatusPill status={loc.data.displayStatus} />
+        <Card title="Pickup authorisation" sub="People allowed to collect your child from school" className="span-2"
+          actions={<Button size="sm" icon="plus" onClick={() => setAdding(true)}>Add person</Button>}>
+          {d.pickup.length ? (
+            <div className="portal-list">
+              {d.pickup.map((p) => (
+                <Item key={p.id} wrap lead={<Avatar name={p.personName} size="sm" />} title={p.personName} meta={`${p.relation} · ${p.method}`}
+                  end={<>
+                    <Status value={p.status} />
+                    {p.status === 'Pending' && <Button size="sm" variant="teal" onClick={() => pickupAction.mutate({ id: p.id, action: 'confirm' })}>Confirm</Button>}
+                    <Button size="sm" variant="quiet" icon="x" onClick={async () => {
+                      if (await confirm({ title: 'Revoke pickup authorisation?', body: `${p.personName} will no longer be allowed to collect ${child.firstName}.`, confirmLabel: 'Revoke', danger: true })) {
+                        pickupAction.mutate({ id: p.id, action: 'revoke' });
+                      }
+                    }}>Revoke</Button>
+                  </>} />
+              ))}
             </div>
-          ) : loc.error ? <p className="t-sm t-muted">Location is not available.</p> : <Skeleton height={36} />}
-        </MCard>
-
-        {d.bus && (
-          <>
-            <MSection title={`${d.bus.busNo ?? 'Bus'} — ${d.bus.routeName}`} />
-            <MCard>
-              <div className="row between">
-                <span className="t-sm t-bold">{d.bus.runStatus === 'Delayed' ? `Running ${d.bus.delayMinutes} min late` : d.bus.eta ?? d.bus.runStatus}</span>
-                <Status value={d.bus.runStatus === 'At campus' ? 'At campus' : d.bus.runStatus} />
-              </div>
-              <div className="t-micro t-muted mt-1">Driver {d.bus.driver ?? '—'}{d.bus.attendant ? ` · Attendant ${d.bus.attendant}` : ''}</div>
-              {extra.data?.bus?.busLocation && (
-                <div className="t-micro t-muted mt-1">Bus position updated {fmt.time(extra.data.bus.busLocation.recordedAt)}</div>
-              )}
-              <div className="t-micro t-muted mt-1">Stop {d.bus.stopName ?? '—'} · pickup {d.bus.pickupTime?.slice(0, 5) ?? '—'} · drop {d.bus.dropTime?.slice(0, 5) ?? '—'}</div>
-            </MCard>
-          </>
-        )}
-
-        <MSection title="Pickup authorisation" right={<button type="button" className="t-xs" style={{ color: 'var(--magenta)' }} onClick={() => setAdding(true)}>Add person</button>} />
-        <MCard>
-          {d.pickup.length ? d.pickup.map((p) => (
-            <div className="mrow" key={p.id}>
-              <Avatar name={p.personName} size="sm" />
-              <span className="grow"><span className="t-sm">{p.personName}</span><div className="t-micro t-muted">{p.relation} · {p.method}</div></span>
-              <Status value={p.status} />
-              {p.status === 'Pending' && <Button size="sm" variant="teal" onClick={() => pickupAction.mutate({ id: p.id, action: 'confirm' })}>Confirm</Button>}
-              <Button size="sm" variant="quiet" aria-label={`Revoke ${p.personName}`} icon="x" onClick={async () => {
-                if (await confirm({ title: 'Revoke pickup authorisation?', body: `${p.personName} will no longer be allowed to collect ${child.firstName}.`, confirmLabel: 'Revoke', danger: true })) {
-                  pickupAction.mutate({ id: p.id, action: 'revoke' });
-                }
-              }} />
-            </div>
-          )) : <p className="t-sm t-muted">No authorised pickup persons on record.</p>}
-        </MCard>
-        <div style={{ height: 16 }} />
+          ) : (
+            <Empty icon="users" title="No authorised pickup persons" sub="Add a grandparent, driver or relative so the gate can verify them."
+              action={<Button icon="plus" onClick={() => setAdding(true)}>Add person</Button>} />
+          )}
+        </Card>
       </div>
 
       <Modal open={adding} onClose={() => setAdding(false)} title="Add a pickup person" sub="The school office verifies every new person before the first pickup." busy={addPickup.isPending}
@@ -518,8 +603,13 @@ interface FamilyFees {
   lines: { id: string; description: string; head: string; amountDue: number; concession: number; amountPaid: number; balance: number; dueDate: string; status: string }[];
   payments: { id: string; receiptNo: string; amount: number; method: string; paidAt: string; status: string }[];
 }
+interface FamilyReceipt {
+  id: string; receiptNo: string; amount: number; method: string; gatewayRef: string | null; status: string; paidAt: string; paidBy: string | null;
+  academicYear: string | null; student: { fullName: string; admissionNo: string; grade: string | null; section: string | null; campus: string };
+  lines: { feeId: string; description: string; head: string; amount: number }[];
+}
 
-function FeesTab({ child }: { child: ChildRow }) {
+function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: boolean; onAutoPayDone: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const q = useApiQuery<FamilyFees>(`/family/children/${child.id}/fees`);
@@ -527,6 +617,7 @@ function FeesTab({ child }: { child: ChildRow }) {
   const [method, setMethod] = useState<'UPI' | 'Card' | 'Net Banking'>('UPI');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [receipt, setReceipt] = useState<{ receiptNo: string; amount: number; method: string; paidAt: string; gatewayRef?: string } | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const pay = useApiMutation<{ amount: number; method: string; feeIds: string[] }, { receiptNo: string; amount: number; method: string; paidAt: string; gatewayRef?: string }>(
     'post', `/family/children/${child.id}/fees/pay`, {
       invalidate: [`/family/children/${child.id}`, '/parents', '/notifications'],
@@ -538,53 +629,58 @@ function FeesTab({ child }: { child: ChildRow }) {
   useEffect(() => setSelected(new Set(open.map((l) => l.id))), [open]);
   const total = open.filter((l) => selected.has(l.id)).reduce((a, l) => a + l.balance, 0);
 
-  if (q.isLoading) return <div style={{ padding: 12 }}><Skeleton height={300} /></div>;
-  if (q.error || !q.data) return <div style={{ padding: 12 }}><ErrorState error={q.error} onRetry={() => q.refetch()} /></div>;
+  // "Pay now" from the header or home tab opens the payment sheet directly.
+  useEffect(() => {
+    if (!autoPay || !q.data) return;
+    if (q.data.summary.outstanding > 0) setPaying(true);
+    onAutoPayDone();
+  }, [autoPay, q.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (q.isLoading) return <Skeleton height={300} />;
+  if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
   const d = q.data;
 
   return (
     <>
-      <div className="appbar"><span className="t-bold">Fees</span><span className="spacer" /><Icon name="receipt" size={18} /></div>
-      <div style={{ paddingTop: 12 }}>
-        <MCard>
-          <div className="t-micro t-muted">Total outstanding</div>
-          <div className="serif" style={{ fontSize: 30, fontWeight: 600, color: d.summary.outstanding > 0 ? 'var(--critical)' : 'var(--success)' }}>{fmt.money(d.summary.outstanding)}</div>
-          <div className="t-micro t-muted">{d.summary.nextDue ? `Next instalment due ${fmt.date(d.summary.nextDue)}` : 'All dues cleared'}</div>
-          {d.summary.outstanding > 0 && (
-            <div className="row g-2 mt-3"><Button variant="teal" block icon="creditCard" onClick={() => setPaying(true)}>{t('Pay Now')}</Button></div>
-          )}
-        </MCard>
-        <MSection title="Account breakdown" />
-        <MCard>
-          {d.lines.length ? d.lines.map((l) => (
-            <div className="mrow" key={l.id}>
-              <span className="grow"><span className="t-sm">{l.description}</span><div className="t-micro t-muted">Due {fmt.date(l.dueDate)}{l.concession ? ` · concession ${fmt.money(l.concession)}` : ''}</div></span>
-              <span className="col t-right none">
-                <span className="t-sm t-bold t-num">{fmt.money(l.amountDue - l.concession)}</span>
-                <Status value={l.status} />
-              </span>
+      <div className="grid g-side">
+        <div className="portal-stack">
+          <Card icon="wallet" title="Total outstanding">
+            <div className={cx('portal-amount', d.summary.outstanding > 0 ? 'portal-amount--due' : 'portal-amount--clear')}>{fmt.money(d.summary.outstanding)}</div>
+            <div className="t-xs t-muted mt-1">{d.summary.nextDue ? `Next instalment due ${fmt.date(d.summary.nextDue)}` : 'All dues cleared'}</div>
+            <div className="t-xs t-muted mt-1">Billed {fmt.money(d.summary.billed)} · paid {fmt.money(d.summary.paid)}</div>
+            {d.summary.outstanding > 0 && <div className="mt-4"><Button variant="teal" block icon="creditCard" onClick={() => setPaying(true)}>{t('Pay Now')}</Button></div>}
+          </Card>
+          <Card icon="wallet" title="Receipts">
+            {d.payments.length ? (
+              <div className="portal-list">
+                {d.payments.map((p) => (
+                  <Item key={p.id} icon="receipt" tone="success" title={p.receiptNo} meta={`Paid ${fmt.date(p.paidAt)} · ${p.method}`}
+                    end={<span className="t-bold t-num">{fmt.money(p.amount)}</span>} onClick={() => setViewing(p.id)} />
+                ))}
+              </div>
+            ) : <Muted>No payments yet. Receipts appear here after each payment.</Muted>}
+          </Card>
+        </div>
+
+        <Card icon="grid" title="Account breakdown" sub="Every charge for this academic year">
+          {d.lines.length ? (
+            <div className="portal-list">
+              {d.lines.map((l) => (
+                <Item key={l.id} title={l.description} meta={`Due ${fmt.date(l.dueDate)}${l.concession ? ` · concession ${fmt.money(l.concession)}` : ''}`} endCol
+                  end={<><span className="t-sm t-bold t-num">{fmt.money(l.amountDue - l.concession)}</span><Status value={l.status} /></>} />
+              ))}
             </div>
-          )) : <p className="t-sm t-muted">No charges this year.</p>}
-        </MCard>
-        <MSection title="Receipts" />
-        <MCard>
-          {d.payments.length ? d.payments.map((p) => (
-            <div className="mrow" key={p.id}>
-              <span className="grow"><span className="t-sm">{p.receiptNo}</span><div className="t-micro t-muted">Paid {fmt.date(p.paidAt)} · {p.method}</div></span>
-              <span className="t-bold t-num">{fmt.money(p.amount)}</span>
-            </div>
-          )) : <p className="t-sm t-muted">No payments yet.</p>}
-        </MCard>
-        <div style={{ height: 16 }} />
+          ) : <Muted>No charges this year.</Muted>}
+        </Card>
       </div>
 
       <Modal open={paying} onClose={() => setPaying(false)} title="Pay fees" sub={`${child.fullName} · ${child.grade}${child.section}`} busy={pay.isPending}
         foot={<><Button onClick={() => setPaying(false)} disabled={pay.isPending}>Cancel</Button><Button variant="teal" icon="lock" loading={pay.isPending} disabled={!total}
           onClick={() => pay.mutate({ amount: total, method, feeIds: [...selected] }, { onError: (e) => toast(e.message, 'critical') })}>Pay {fmt.money(total)}</Button></>}>
         <div className="col g-3">
-          <div className="card card--tint" style={{ padding: 14 }}>
+          <div className="portal-paybox">
             {open.map((l) => (
-              <label className="row between mt-2 check" key={l.id} style={{ width: '100%' }}>
+              <label className="portal-payline check" key={l.id}>
                 <span className="row g-2">
                   <input type="checkbox" checked={selected.has(l.id)} onChange={(e) => setSelected((s) => { const n = new Set(s); if (e.target.checked) n.add(l.id); else n.delete(l.id); return n; })} />
                   <span className="t-sm">{l.description}</span>
@@ -592,15 +688,14 @@ function FeesTab({ child }: { child: ChildRow }) {
                 <span className="t-bold t-num">{fmt.money(l.balance)}</span>
               </label>
             ))}
-            <div className="divider" style={{ margin: '10px 0' }} />
-            <div className="row between"><span className="t-sm t-bold">Total</span><span className="t-bold t-num" style={{ fontSize: 17 }}>{fmt.money(total)}</span></div>
+            <div className="portal-paytotal"><span className="t-sm t-bold">Total</span><span className="h2 t-num">{fmt.money(total)}</span></div>
           </div>
           <div className="eyebrow mt-2">Payment method</div>
           <div className="col g-2">
             {(['UPI', 'Card', 'Net Banking'] as const).map((m) => (
-              <label className="check card" style={{ padding: '12px 14px' }} key={m}>
+              <label className="portal-method" key={m}>
                 <input type="radio" name="pm" checked={method === m} onChange={() => setMethod(m)} />
-                <Icon name={m === 'UPI' ? 'zap' : m === 'Card' ? 'creditCard' : 'building'} size={15} /> {m}
+                <Icon name={m === 'UPI' ? 'zap' : m === 'Card' ? 'creditCard' : 'building'} size={15} /> <span className="t-sm">{m}</span>
               </label>
             ))}
           </div>
@@ -611,8 +706,8 @@ function FeesTab({ child }: { child: ChildRow }) {
       <Modal open={!!receipt} onClose={() => setReceipt(null)} title="Payment successful" foot={<Button variant="primary" onClick={() => setReceipt(null)}>Done</Button>}>
         {receipt && (
           <>
-            <div className="t-center" style={{ padding: '16px 0' }}>
-              <div className="avatar avatar--teal" style={{ width: 62, height: 62, margin: '0 auto' }}><Icon name="check" size={28} /></div>
+            <div className="portal-done">
+              <div className="portal-done__ico"><Icon name="check" size={28} /></div>
               <div className="h2 mt-4">{fmt.money(receipt.amount)} paid</div>
               <p className="t-sm t-muted mt-2">Receipt {receipt.receiptNo} issued. A copy has been queued to your registered WhatsApp number.</p>
             </div>
@@ -625,16 +720,48 @@ function FeesTab({ child }: { child: ChildRow }) {
           </>
         )}
       </Modal>
+
+      {viewing && <ReceiptModal paymentId={viewing} onClose={() => setViewing(null)} />}
     </>
+  );
+}
+
+/** A past receipt, loaded from the family receipts endpoint, ready to print. */
+function ReceiptModal({ paymentId, onClose }: { paymentId: string; onClose: () => void }) {
+  const q = useApiQuery<FamilyReceipt>(`/family/receipts/${paymentId}`);
+  const r = q.data;
+  return (
+    <Modal open onClose={onClose} title={r ? `Receipt ${r.receiptNo}` : 'Receipt'} sub={r ? `${r.student.fullName} · ${r.student.admissionNo}` : undefined}
+      foot={<><Button onClick={onClose}>Close</Button><Button variant="primary" icon="printer" disabled={!r} onClick={() => window.print()}>Print</Button></>}>
+      {q.isLoading ? <Skeleton height={160} /> : q.error || !r ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (
+        <>
+          <div className="portal-done">
+            <div className="h2">{fmt.money(r.amount)}</div>
+            <p className="t-sm t-muted mt-1">{r.status} · {r.method}</p>
+          </div>
+          <dl className="dl">
+            <dt>Paid on</dt><dd>{fmt.dateTime(r.paidAt)}</dd>
+            {r.paidBy && (<><dt>Paid by</dt><dd>{r.paidBy}</dd></>)}
+            {r.gatewayRef && (<><dt>Reference</dt><dd>{r.gatewayRef}</dd></>)}
+            <dt>Class</dt><dd>{r.student.grade ?? '—'} {r.student.section ?? ''} · {r.student.campus}</dd>
+            {r.academicYear && (<><dt>Academic year</dt><dd>{r.academicYear}</dd></>)}
+          </dl>
+          {r.lines.length > 0 && (
+            <div className="portal-list mt-4">
+              {r.lines.map((l) => <Item key={l.feeId} title={l.description} meta={l.head} end={<span className="t-bold t-num">{fmt.money(l.amount)}</span>} />)}
+            </div>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
 // ---------------------------------------------------------------------------
 interface FamilyPtm { id: string; teacher: string; subjectLabel: string; sessionDate: string; startsAt: string; slotMinutes: number; totalSlots: number; freeSlots: number[]; myBooking?: { id: string; slotNo: number; status: string } | null }
-interface FamilyCircular { id: string; title: string; publishedAt: string; audience: string; requiresAck: boolean; acknowledged: boolean; body?: string }
 interface Thread { id: string; subject: string; lastMessageAt: string; status: string; studentName?: string | null; unread?: boolean }
 
-function MoreTab({ child }: { child: ChildRow }) {
+function MoreTab({ child, autoCompose, onAutoComposeDone }: { child: ChildRow; autoCompose: string | null; onAutoComposeDone: () => void }) {
   const { setLang, langs, lang } = useI18n();
   const ptm = useApiQuery<FamilyPtm[]>('/family/ptm', { studentId: child.id });
   const circulars = useApiQuery<FamilyCircular[]>('/family/circulars');
@@ -643,6 +770,7 @@ function MoreTab({ child }: { child: ChildRow }) {
   const [composing, setComposing] = useState(false);
   const [msg, setMsg] = useState({ subject: '', body: '' });
   const [openCircular, setOpenCircular] = useState<FamilyCircular | null>(null);
+  const confirm = useConfirm();
   const toast = useToast();
 
   const ack = useApiMutation<string>('post', (id) => `/family/circulars/${id}/acknowledge`, { invalidate: ['/family/circulars', '/tasks'], success: 'Acknowledged — recorded against your child', body: () => ({}) });
@@ -656,6 +784,13 @@ function MoreTab({ child }: { child: ChildRow }) {
   });
   const pending = circulars.data?.filter((c) => c.requiresAck && !c.acknowledged).length ?? 0;
 
+  // "Message teacher" from the header opens the composer directly.
+  useEffect(() => {
+    if (!autoCompose) return;
+    setComposing(true);
+    onAutoComposeDone();
+  }, [autoCompose]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const slotTime = (s: FamilyPtm, n: number) => {
     const [h, m] = s.startsAt.split(':').map(Number);
     const mins = h * 60 + m + (n - 1) * s.slotMinutes;
@@ -664,64 +799,62 @@ function MoreTab({ child }: { child: ChildRow }) {
 
   return (
     <>
-      <div className="appbar"><span className="t-bold">More</span></div>
-      <div style={{ paddingTop: 12 }}>
-        <MSection title="Parent–teacher meeting" />
-        <MCard>
-          {ptm.error ? <p className="t-sm t-muted">PTM booking is not available right now.</p> : ptm.isLoading ? <Skeleton height={80} /> : ptm.data?.length ? ptm.data.map((p) => (
-            <div className="mrow" key={p.id}>
-              <span className="grow">
-                <span className="t-sm t-bold">{p.teacher}</span>
-                <div className="t-micro t-muted">{p.subjectLabel} · {fmt.date(p.sessionDate)}</div>
-                <div className={`t-micro ${p.freeSlots.length ? 't-muted' : 't-critical'}`}>
-                  {p.myBooking ? `Booked · ${slotTime(p, p.myBooking.slotNo)}` : `${p.freeSlots.length} of ${p.totalSlots} slots left`}
-                </div>
-              </span>
-              {p.myBooking ? (
-                <Button size="sm" onClick={() => cancel.mutate(p.myBooking!.id)} loading={cancel.isPending}>Cancel</Button>
-              ) : (
-                <Button size="sm" variant={p.freeSlots.length ? 'primary' : 'ghost'} disabled={!p.freeSlots.length} onClick={() => setBooking(p)}>{p.freeSlots.length ? 'Book' : 'Full'}</Button>
-              )}
+      <div className="grid g-2col">
+        <Card icon="bell" title="Circulars" sub={pending ? `${pending} need your acknowledgement` : 'Notices from the school'}>
+          {circulars.error ? <Muted>Circulars are not available right now.</Muted> : circulars.isLoading ? <Skeleton height={80} /> : circulars.data?.length ? (
+            <div className="portal-list">
+              {circulars.data.slice(0, 6).map((c) => (
+                <Item key={c.id} wrap icon="fileText" tone={c.requiresAck && !c.acknowledged ? 'warning' : undefined}
+                  title={<button type="button" className="portal-titlebtn" onClick={() => setOpenCircular(c)}>{c.title}</button>}
+                  meta={`${fmt.date(c.publishedAt)} · ${c.audience}`}
+                  end={c.requiresAck ? (c.acknowledged ? <Badge tone="success" icon="check">Acknowledged</Badge> : <Button size="sm" variant="primary" onClick={() => ack.mutate(c.id)} loading={ack.isPending && ack.variables === c.id}>Acknowledge</Button>) : <Button size="sm" variant="quiet" onClick={() => setOpenCircular(c)}>Read</Button>} />
+              ))}
             </div>
-          )) : <p className="t-sm t-muted">No PTM sessions are open for booking.</p>}
-        </MCard>
+          ) : <Muted>No circulars yet. School notices will appear here.</Muted>}
+        </Card>
 
-        <MSection title="Circulars" right={<span className="t-xs t-muted">{pending ? `${pending} need acknowledgement` : ''}</span>} />
-        <MCard>
-          {circulars.error ? <p className="t-sm t-muted">Circulars are not available right now.</p> : circulars.isLoading ? <Skeleton height={80} /> : circulars.data?.length ? circulars.data.slice(0, 6).map((c) => (
-            <div className="mrow" key={c.id}>
-              <button type="button" className="grow" style={{ textAlign: 'left' }} onClick={() => setOpenCircular(c)}>
-                <span className="t-sm">{c.title}</span>
-                <div className="t-micro t-muted">{fmt.date(c.publishedAt)} · {c.audience}</div>
-              </button>
-              {c.requiresAck && (c.acknowledged ? <Badge tone="success" icon="check">Acknowledged</Badge> : <Button size="sm" onClick={() => ack.mutate(c.id)} loading={ack.isPending}>Acknowledge</Button>)}
+        <Card icon="calendar" title="Parent–teacher meetings">
+          {ptm.error ? <Muted>PTM booking is not available right now.</Muted> : ptm.isLoading ? <Skeleton height={80} /> : ptm.data?.length ? (
+            <div className="portal-list">
+              {ptm.data.map((p) => (
+                <Item key={p.id} wrap lead={<DateChip date={p.sessionDate} />} title={p.teacher}
+                  meta={<>{p.subjectLabel} · {fmt.date(p.sessionDate)} · <span className={p.myBooking ? 't-success' : p.freeSlots.length ? undefined : 't-critical'}>
+                    {p.myBooking ? `Booked ${slotTime(p, p.myBooking.slotNo)}` : `${p.freeSlots.length} of ${p.totalSlots} slots left`}</span></>}
+                  end={p.myBooking ? (
+                    <Button size="sm" loading={cancel.isPending && cancel.variables === p.myBooking.id} onClick={async () => {
+                      if (await confirm({ title: 'Cancel this PTM booking?', body: `Your ${slotTime(p, p.myBooking!.slotNo)} slot with ${p.teacher} is released for other parents.`, confirmLabel: 'Cancel booking', cancelLabel: 'Keep booking', danger: true })) {
+                        cancel.mutate(p.myBooking!.id);
+                      }
+                    }}>Cancel</Button>
+                  ) : (
+                    <Button size="sm" variant={p.freeSlots.length ? 'primary' : 'ghost'} disabled={!p.freeSlots.length} onClick={() => setBooking(p)}>{p.freeSlots.length ? 'Book slot' : 'Full'}</Button>
+                  )} />
+              ))}
             </div>
-          )) : <p className="t-sm t-muted">No circulars.</p>}
-        </MCard>
+          ) : <Muted>No PTM sessions are open for booking.</Muted>}
+        </Card>
 
-        <MSection title="Messages" right={<button type="button" className="t-xs" style={{ color: 'var(--magenta)' }} onClick={() => setComposing(true)}>New message</button>} />
-        <MCard>
-          {threads.error ? <p className="t-sm t-muted">Messaging is not available right now.</p> : threads.data?.length ? threads.data.slice(0, 5).map((th) => (
-            <div className="mrow" key={th.id}>
-              <Icon name="message" size={16} />
-              <span className="grow"><span className="t-sm">{th.subject}</span><div className="t-micro t-muted">{fmt.relative(th.lastMessageAt)}</div></span>
-              <Status value={th.status} />
+        <Card title="Messages" actions={<Button size="sm" icon="plus" onClick={() => setComposing(true)}>New message</Button>}>
+          {threads.error ? <Muted>Messaging is not available right now.</Muted> : threads.isLoading ? <Skeleton height={80} /> : threads.data?.length ? (
+            <div className="portal-list">
+              {threads.data.slice(0, 5).map((th) => (
+                <Item key={th.id} icon="message" tone={th.unread ? 'brand' : undefined} title={th.subject} meta={fmt.relative(th.lastMessageAt)} end={<Status value={th.status} />} />
+              ))}
             </div>
-          )) : <p className="t-sm t-muted">No conversations yet.</p>}
-        </MCard>
+          ) : <Muted>No conversations yet. Messages you send to the class teacher appear here.</Muted>}
+        </Card>
 
-        <MSection title="Contact the school" />
-        <MCard>
-          <button type="button" className="mrow" style={{ width: '100%', textAlign: 'left' }} onClick={() => setComposing(true)}><span className="grow t-sm">Message class teacher</span><Icon name="message" size={16} /></button>
-          <button type="button" className="mrow" style={{ width: '100%', textAlign: 'left' }} onClick={() => { setMsg({ subject: `Absence — ${child.firstName}`, body: '' }); setComposing(true); }}><span className="grow t-sm">Report an absence</span><Icon name="calendar" size={16} /></button>
-          <div className="mrow">
-            <span className="grow t-sm">Language</span>
-            <div className="segment">
-              {langs.map((l) => <button key={l.id} type="button" aria-pressed={l.id === lang} onClick={() => { setLang(l.id); toast(l.label, 'success', 'globe'); }}>{l.short}</button>)}
-            </div>
+        <Card icon="building" title="Contact the school">
+          <div className="portal-list">
+            <Item icon="message" title="Message class teacher" onClick={() => setComposing(true)} />
+            <Item icon="calendar" title="Report an absence" meta="Lets the class teacher know in advance" onClick={() => { setMsg({ subject: `Absence — ${child.firstName}`, body: '' }); setComposing(true); }} />
+            <Item icon="globe" title="Language" end={
+              <div className="segment">
+                {langs.map((l) => <button key={l.id} type="button" aria-pressed={l.id === lang} onClick={() => { setLang(l.id); toast(l.label, 'success', 'globe'); }}>{l.short}</button>)}
+              </div>
+            } />
           </div>
-        </MCard>
-        <div style={{ height: 16 }} />
+        </Card>
       </div>
 
       <Modal open={!!booking} onClose={() => setBooking(null)} title="Book a PTM slot" sub={booking ? `${booking.teacher} · ${fmt.date(booking.sessionDate)}` : undefined} busy={book.isPending}
@@ -748,7 +881,7 @@ function MoreTab({ child }: { child: ChildRow }) {
           disabled={msg.subject.trim().length < 3 || msg.body.trim().length < 3} onClick={() => send.mutate({ subject: msg.subject.trim(), body: msg.body.trim() })}>Send</Button></>}>
         <div className="col g-3">
           <TextField label="Subject" required value={msg.subject} onChange={(v) => setMsg({ ...msg, subject: v })} maxLength={160} autoFocus />
-          <TextArea label="Message" required value={msg.body} onChange={(v) => setMsg({ ...msg, body: v })} rows={5} maxLength={2000} />
+          <TextArea label="Message" required value={msg.body} onChange={(v) => setMsg({ ...msg, body: v })} rows={5} maxLength={2000} hint="At least 3 characters. The teacher usually replies within a school day." />
         </div>
       </Modal>
 
@@ -756,9 +889,8 @@ function MoreTab({ child }: { child: ChildRow }) {
         foot={openCircular?.requiresAck && !openCircular.acknowledged
           ? <Button variant="primary" icon="check" onClick={() => { ack.mutate(openCircular.id); setOpenCircular(null); }}>Acknowledge</Button>
           : <Button onClick={() => setOpenCircular(null)}>Close</Button>}>
-        <p className="t-sm" style={{ whiteSpace: 'pre-wrap' }}>{openCircular?.body ?? 'Open the circular from the school notice to read the full text.'}</p>
+        <p className="t-sm pre-wrap">{openCircular?.body ?? 'Open the circular from the school notice to read the full text.'}</p>
       </Modal>
     </>
   );
 }
-

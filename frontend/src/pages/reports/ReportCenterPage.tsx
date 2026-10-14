@@ -4,7 +4,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useApiQuery } from '@/hooks/useApi';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  Badge, Banner, Chips, Empty, ErrorState, Icon, Page, PageHead, PageSkeleton,
+  Badge, Banner, Button, Chips, Empty, ErrorState, Icon, Page, PageHead, PageSkeleton,
   SearchInput, SectionHead, StatStrip,
 } from '@/components/ui';
 import { GROUP_ICON, orderGroups } from './shared';
@@ -76,6 +76,7 @@ export default function ReportCenterPage() {
             icon="search"
             title="No report matches that search"
             sub="Try a different word, or clear the group filter."
+            action={<Button size="sm" onClick={() => { setSearch(''); setGroup('all'); }}>Clear search and filters</Button>}
           />
         </div>
       )}
@@ -94,19 +95,18 @@ export default function ReportCenterPage() {
                 <button
                   key={r.key}
                   type="button"
-                  className="card card--link"
+                  className={r.available ? 'card card--link oi-report-tile' : 'card oi-report-tile oi-report-tile--locked'}
                   disabled={!r.available}
                   aria-disabled={!r.available}
                   title={r.available ? `Open ${r.title}` : `Needs ${r.requires.join(' or ')}`}
-                  style={{ padding: 18, textAlign: 'left', ...(r.available ? {} : { opacity: 0.55, cursor: 'not-allowed' }) }}
                   onClick={() => r.available && navigate(`/admin/reports/${r.key}`)}
                 >
                   <span className="row g-3">
                     <span className="avatar none">
                       <Icon name={r.available ? (GROUP_ICON[r.group] ?? 'fileText') : 'lock'} size={17} />
                     </span>
-                    <span className="col grow" style={{ minWidth: 0 }}>
-                      <span className="row g-2">
+                    <span className="col grow oi-minw0">
+                      <span className="row g-2 wrap">
                         <span className="t-sm t-bold">{r.title}</span>
                         {r.restricted && <Badge tone="info" icon="shieldCheck">Platform</Badge>}
                       </span>

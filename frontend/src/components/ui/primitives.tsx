@@ -3,7 +3,9 @@
  * renders the same markup + CSS classes, so screens look exactly as approved.
  */
 import { forwardRef, useEffect, useId, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useI18n } from '@/i18n/I18nProvider';
+import { routeMeta } from '@/layouts/routeMeta';
 import { iconPaths, brandDivider } from '@/lib/legacy-icons';
 import { charts } from '@/lib/legacy-charts';
 import { cx, fmt } from '@/lib/format';
@@ -33,7 +35,7 @@ export function Icon({ name, size = 18, className, style }: { name: string; size
 
 /** Trusted, internally generated SVG markup (charts, brand marks). */
 export function Svg({ html, className, style }: { html: string; className?: string; style?: CSSProperties }) {
-  return <span className={className} style={{ display: 'contents', ...style }} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <span className={className} style={style ?? { display: 'contents' }} dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 /** School lotus emblem (cropped from the official logo lockup). */
@@ -198,14 +200,17 @@ export function Spinner({ size = 16 }: { size?: number }) {
 // ---------------------------------------------------------------------------
 // Surfaces
 // ---------------------------------------------------------------------------
-export function Card({ title, sub, actions, children, foot, className, flush, tight, id }: {
+export function Card({ title, sub, actions, children, foot, className, flush, tight, id, icon }: {
   title?: ReactNode; sub?: ReactNode; actions?: ReactNode; children?: ReactNode; foot?: ReactNode;
   className?: string; flush?: boolean; tight?: boolean; id?: string;
+  /** Brand-coloured icon shown before the title. */
+  icon?: string;
 }) {
   return (
     <section className={cx('card', className)} id={id}>
       {(title || actions) && (
         <div className="card__head">
+          {icon && <span className="card__ico"><Icon name={icon} size={20} /></span>}
           <div className="grow" style={{ minWidth: 0 }}>
             {title && <div className="card__title">{title}</div>}
             {sub && <div className="card__sub">{sub}</div>}
@@ -219,9 +224,18 @@ export function Card({ title, sub, actions, children, foot, className, flush, ti
   );
 }
 
-export function Kpi({ label, value, unit, delta, deltaUnit = '%', inverse, foot, spark, sparkColor, tone, to, onClick, loading }: {
+/** Small "View all" style link for card headers. */
+export function CardLink({ to, children = 'View all' }: { to: string; children?: ReactNode }) {
+  return <Link className="cardlink" to={to}>{children}</Link>;
+}
+
+export function Kpi({ label, value, unit, delta, deltaUnit = '%', inverse, foot, spark, sparkColor, tone, to, onClick, loading, icon, size }: {
   label: string; value: ReactNode; unit?: string; delta?: number | null; deltaUnit?: string; inverse?: boolean;
-  foot?: ReactNode; spark?: number[]; sparkColor?: string; tone?: 'amber' | 'teal' | 'critical' | 'info'; to?: string; onClick?: () => void; loading?: boolean;
+  foot?: ReactNode; spark?: number[]; sparkColor?: string; tone?: 'amber' | 'teal' | 'critical' | 'info' | 'violet'; to?: string; onClick?: () => void; loading?: boolean;
+  /** Optional icon tile in the tone colour. */
+  icon?: string;
+  /** hero: headline figure; compact: secondary figure in a dense grid. */
+  size?: 'hero' | 'compact';
 }) {
   const navigate = useNavigate();
   const link = !!(to || onClick);
@@ -229,7 +243,11 @@ export function Kpi({ label, value, unit, delta, deltaUnit = '%', inverse, foot,
   const good = inverse ? !up : up;
   const content = (
     <>
-      <div className="kpi__label">{label}</div>
+      {icon && size !== 'compact' && <span className="kpi__tile"><Icon name={icon} size={20} /></span>}
+      <div className="kpi__top">
+        <div className="kpi__label">{label}</div>
+        {icon && size === 'compact' ? <span className="kpi__ico"><Icon name={icon} size={14} /></span> : link ? <Icon name="arrowRight" size={14} className="kpi__go" /> : null}
+      </div>
       <div className="kpi__value">
         {loading ? <span className="skeleton" style={{ display: 'inline-block', width: 72, height: 26 }} /> : value}
         {unit && <small> {unit}</small>}
@@ -248,7 +266,7 @@ export function Kpi({ label, value, unit, delta, deltaUnit = '%', inverse, foot,
       {spark && spark.length > 1 && <span className="kpi__spark"><Svg html={charts.spark(spark, { color: sparkColor ?? 'var(--teal)' })} /></span>}
     </>
   );
-  const cls = cx('kpi', tone && `kpi--${tone}`, link && 'kpi--link');
+  const cls = cx('kpi', tone && `kpi--${tone}`, size && `kpi--${size}`, link && 'kpi--link');
   if (link) {
     return (
       <button type="button" className={cls} style={{ textAlign: 'left', width: '100%' }} onClick={() => (onClick ? onClick() : navigate(to!))}>
@@ -336,19 +354,39 @@ export function SectionHead({ title, sub, right }: { title: ReactNode; sub?: Rea
 
 export interface Crumb { label: string; to?: string }
 
-export function PageHead({ title, sub, crumbs, actions }: { title: ReactNode; sub?: ReactNode; crumbs?: Crumb[]; actions?: ReactNode }) {
+/** Breadcrumb trail derived from the sidebar: "Section › Page", plus the record for detail routes. */
+function useAutoCrumbs(title: ReactNode): Crumb[] | undefined {
+  const { pathname } = useLocation();
+  const { t } = useI18n();
+  const meta = routeMeta(pathname);
+  if (!meta || (meta.group === 'Overview' && !meta.nested)) return undefined;
+  const trail: Crumb[] = [{ label: t(meta.group) }];
+  if (meta.nested) {
+    trail.push({ label: t(meta.label), to: meta.to });
+    if (typeof title === 'string') trail.push({ label: title });
+  } else {
+    trail.push({ label: t(meta.label) });
+  }
+  return trail;
+}
+
+export function PageHead({ title, sub, crumbs, actions }: { title: ReactNode; sub?: ReactNode; crumbs?: Crumb[] | false; actions?: ReactNode }) {
+  const auto = useAutoCrumbs(title);
+  const trail = crumbs === false ? undefined : crumbs ?? auto;
+  const meta = routeMeta(useLocation().pathname);
   return (
     <div className="pagehead">
+      {meta && <span className="pagehead__ico" data-hue={meta.hue} aria-hidden="true"><Icon name={meta.icon} size={20} /></span>}
       <div className="grow" style={{ minWidth: 0 }}>
-        {crumbs && (
-          <div className="breadcrumb">
-            {crumbs.map((c, i) => (
+        {trail && (
+          <nav className="breadcrumb" aria-label="Breadcrumb">
+            {trail.map((c, i) => (
               <span key={i} className="row g-1" style={{ display: 'inline-flex' }}>
                 {i > 0 && <Icon name="chevronRight" size={12} />}
-                {c.to ? <Link to={c.to}>{c.label}</Link> : <span>{c.label}</span>}
+                {c.to ? <Link to={c.to}>{c.label}</Link> : <span aria-current={i === trail.length - 1 ? 'page' : undefined}>{c.label}</span>}
               </span>
             ))}
-          </div>
+          </nav>
         )}
         <h1 className="pagehead__title">{title}</h1>
         {sub && <p className="pagehead__sub">{sub}</p>}
@@ -399,7 +437,7 @@ export function Tabs<T extends string>({ items, active, onChange, pills }: { ite
       {items.map((t) => (
         <button key={t.id} type="button" className="tabs__item" role="tab" aria-selected={t.id === active} onClick={() => onChange(t.id)}>
           {t.label}
-          {t.count != null && <span className="tag" style={{ marginLeft: 6 }}>{t.count}</span>}
+          {t.count != null && <span className="tag tabs__count">{t.count}</span>}
         </button>
       ))}
     </div>
@@ -457,7 +495,7 @@ function Shell({ label, hint, error, required, className, style, children, htmlF
         </label>
       )}
       {children}
-      {error ? <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span> : hint ? <span className="hint">{hint}</span> : null}
+      {error ? <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{error}</span> : hint ? <span className="hint">{hint}</span> : null}
     </div>
   );
 }
@@ -476,7 +514,6 @@ export function TextField({ label, hint, error, required, className, style, valu
         value={value ?? ''}
         required={required}
         aria-invalid={!!error || undefined}
-        style={error ? { borderColor: 'var(--critical)' } : undefined}
         onChange={(e) => onChange(e.target.value)}
         {...rest}
       />
@@ -491,7 +528,7 @@ export function TextArea({ label, hint, error, required, className, style, value
   return (
     <Shell {...{ label, hint, error, required, className, style }} htmlFor={id}>
       <textarea id={id} className="textarea" rows={rows} value={value ?? ''} required={required} aria-invalid={!!error || undefined}
-        style={{ height: 'auto', padding: '8px 12px', ...(error ? { borderColor: 'var(--critical)' } : {}) }}
+        style={{ height: 'auto', padding: '8px 12px' }}
         onChange={(e) => onChange(e.target.value)} {...rest} />
     </Shell>
   );
@@ -506,7 +543,7 @@ export function SelectField({ label, hint, error, required, className, style, va
   return (
     <Shell {...{ label, hint, error, required, className, style }} htmlFor={id}>
       <select id={id} className="select" value={value ?? ''} required={required} disabled={disabled} aria-invalid={!!error || undefined}
-        style={error ? { borderColor: 'var(--critical)' } : undefined} onChange={(e) => onChange(e.target.value)}>
+        onChange={(e) => onChange(e.target.value)}>
         {placeholder !== undefined && <option value="">{placeholder}</option>}
         {options.map((o) => {
           const opt = typeof o === 'string' ? { value: o, label: o } : o;

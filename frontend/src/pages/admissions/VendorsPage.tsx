@@ -4,7 +4,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useAuth } from '@/auth/AuthContext';
 import {
   Badge, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Icon, Kpi, Page, PageHead, Pagination, SearchInput, SelectField, Status,
-  TextField, TextArea,
+  TextField, TextArea, Toolbar,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { FormModal, useFieldErrors } from './LeadForms';
@@ -46,20 +46,21 @@ export default function VendorsPage() {
         )} />
       {!s.error && (
         <Grid cols="g-4col" className="mb-4">
-          <Kpi label="Active vendors" value={d?.active ?? '—'} tone="teal" loading={s.isLoading} foot={d ? `${d.total} on record` : undefined} onClick={() => vl.setFilter('status', 'Active')} />
-          <Kpi label="Renewals due" value={d?.renewalDue ?? '—'} tone="amber" loading={s.isLoading} foot="Marked due or ending within 90 days" onClick={() => vl.setFilter('status', 'Renewal due')} />
-          <Kpi label="Contract value" value={d ? fmt.money(d.contractValue, { compact: true }) : '—'} tone="info" loading={s.isLoading} foot="Active and renewing contracts" />
-          <Kpi label="Active partners" value={d?.partners ?? '—'} loading={s.isLoading} />
+          <Kpi icon="briefcase" label="Active vendors" value={d?.active ?? '—'} tone="teal" loading={s.isLoading} foot={d ? `${d.total} on record` : undefined} onClick={() => vl.setFilter('status', 'Active')} />
+          <Kpi icon="refresh" label="Renewals due" value={d?.renewalDue ?? '—'} tone="amber" loading={s.isLoading} foot="Marked due or ending within 90 days" onClick={() => vl.setFilter('status', 'Renewal due')} />
+          <Kpi icon="rupee" label="Contract value" value={d ? fmt.money(d.contractValue, { compact: true }) : '—'} tone="info" loading={s.isLoading} foot="Active and renewing contracts" />
+          <Kpi icon="building" label="Active partners" value={d?.partners ?? '—'} loading={s.isLoading} />
         </Grid>
       )}
       <div className="grid g-2col g-4">
-        <Card title="Vendors" flush actions={
-          <FilterSelect label="Status" value={vl.filters.status} onChange={(x) => vl.setFilter('status', x)} options={['Active', 'Renewal due', 'Expired', 'Suspended']} />
-        }>
-          <div className="toolbar"><SearchInput value={vl.q} onSearch={vl.setQ} placeholder="Search vendor or category" /></div>
+        <Card icon="grid" title="Vendors" flush>
+          <Toolbar>
+            <SearchInput value={vl.q} onSearch={vl.setQ} placeholder="Search vendor or category" />
+            <FilterSelect label="Status" value={vl.filters.status} onChange={(x) => vl.setFilter('status', x)} options={['Active', 'Renewal due', 'Expired', 'Suspended']} />
+          </Toolbar>
           {vendors.error ? <ErrorState error={vendors.error} onRetry={() => vendors.refetch()} /> : (
             <DataTable rows={vendors.data?.rows} loading={vendors.isLoading || vendors.isPlaceholderData} rowKey={(r) => r.id} sort={vl.sort} onSort={vl.setSort}
-              onRowClick={manage ? (r) => setVendor(r) : undefined} emptyText="No vendors match."
+              onRowClick={manage ? (r) => setVendor(r) : undefined} emptyText={vl.hasFilters ? 'No vendors match the current filters.' : 'No vendors yet. Add the contracts the campus relies on to track renewals.'}
               columns={[
                 { key: 'name', label: 'Vendor', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.category}{r.contactPerson ? ` · ${r.contactPerson}` : ''}</div></> },
                 {
@@ -75,13 +76,13 @@ export default function VendorsPage() {
           )}
           <Pagination meta={vendors.data?.meta} onPage={vl.setPage} />
         </Card>
-        <Card title="Partners & institutions" flush>
+        <Card icon="grid" title="Partners & institutions" flush>
           {partners.error ? <ErrorState error={partners.error} onRetry={() => partners.refetch()} /> : (
             <DataTable rows={partners.data?.rows} loading={partners.isLoading} rowKey={(r) => r.id}
-              onRowClick={manage ? (r) => setPartner(r) : undefined} emptyText="No partners yet."
+              onRowClick={manage ? (r) => setPartner(r) : undefined} emptyText="No partners yet. Curriculum bodies, institutions and community partners appear here."
               columns={[
                 { key: 'name', label: 'Partner', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.partnerType}{r.status !== 'Active' ? ` · ${r.status}` : ''}</div></> },
-                { key: 'since', label: 'Since', render: (r) => r.sinceYear ?? '—' },
+                { key: 'since', label: 'Since', className: 'num', render: (r) => r.sinceYear ?? '—' },
                 { key: 'note', label: 'Current activity', render: (r) => <span className="t-xs">{r.note ?? '—'}</span> },
               ]} />
           )}
@@ -89,7 +90,7 @@ export default function VendorsPage() {
       </div>
       {can('communication.read') && (
         <div className="mt-4">
-          <Card title="Communication history" sub="One timeline across parents, alumni, vendors and partners — WhatsApp, email, SMS, calls and notes" flush
+          <Card icon="bell" title="Communication history" sub="One timeline across parents, alumni, vendors and partners — WhatsApp, email, SMS, calls and notes" flush
             actions={<FilterSelect label="Channel" value={channel} onChange={(x) => { setChannel(x); setComPage(1); }} options={['WhatsApp', 'Call', 'Email', 'SMS', 'Note', 'In-app']} />}>
             {comms.error ? <ErrorState error={comms.error} onRetry={() => comms.refetch()} /> : (
               <DataTable rows={comms.data?.rows} loading={comms.isLoading || comms.isPlaceholderData} rowKey={(r) => r.id} emptyText="No communication recorded."
@@ -143,16 +144,26 @@ function VendorModal({ vendor, onClose }: { vendor: Vendor | null; onClose: () =
   return (
     <FormModal title={vendor ? `Edit ${vendor.name}` : 'Add vendor'} onClose={onClose} busy={save.isPending} error={save.error} fieldErrors={fe.errors}
       submitLabel={vendor ? 'Save changes' : 'Add vendor'} formId="vendor-form" size="wide">
-      <form id="vendor-form" onSubmit={submit} noValidate className="form-grid">
-        <TextField label="Vendor name" required value={v.name} onChange={(x) => set('name', x)} error={fe.errors.name} maxLength={120} autoFocus />
-        <TextField label="Category" required value={v.category} onChange={(x) => set('category', x)} error={fe.errors.category} maxLength={60} placeholder="e.g. Housekeeping" />
-        <TextField label="Contact person" value={v.contactPerson} onChange={(x) => set('contactPerson', x)} maxLength={120} />
-        <TextField label="Phone" type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} />
-        <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
-        <TextField label="Contract value (₹)" type="number" min={0} value={v.contractValue} onChange={(x) => set('contractValue', x)} error={fe.errors.contractValue} />
-        <TextField label="Contract start" type="date" value={v.contractStart} onChange={(x) => set('contractStart', x)} error={fe.errors.contractStart} />
-        <TextField label="Contract end" type="date" value={v.contractEnd} onChange={(x) => set('contractEnd', x)} error={fe.errors.contractEnd} />
-        <SelectField label="Status" value={v.status} onChange={(x) => set('status', x)} options={['Active', 'Renewal due', 'Expired', 'Suspended']} />
+      <form id="vendor-form" onSubmit={submit} noValidate>
+        <div className="formsection">
+          <div className="formsection__title">Vendor</div>
+          <div className="form-grid">
+            <TextField label="Vendor name" required value={v.name} onChange={(x) => set('name', x)} error={fe.errors.name} maxLength={120} autoFocus />
+            <TextField label="Category" required value={v.category} onChange={(x) => set('category', x)} error={fe.errors.category} maxLength={60} placeholder="e.g. Housekeeping" />
+            <TextField label="Contact person" value={v.contactPerson} onChange={(x) => set('contactPerson', x)} maxLength={120} />
+            <TextField label="Phone" type="tel" value={v.phone} onChange={(x) => set('phone', x)} error={fe.errors.phone} />
+            <TextField label="Email" type="email" value={v.email} onChange={(x) => set('email', x)} error={fe.errors.email} />
+            <SelectField label="Status" value={v.status} onChange={(x) => set('status', x)} options={['Active', 'Renewal due', 'Expired', 'Suspended']} />
+          </div>
+        </div>
+        <div className="formsection">
+          <div className="formsection__title">Contract</div>
+          <div className="form-grid">
+            <TextField label="Contract start" type="date" value={v.contractStart} onChange={(x) => set('contractStart', x)} error={fe.errors.contractStart} />
+            <TextField label="Contract end" type="date" value={v.contractEnd} onChange={(x) => set('contractEnd', x)} error={fe.errors.contractEnd} hint="Renewals are flagged 90 days before" />
+            <TextField label="Contract value (₹)" type="number" min={0} value={v.contractValue} onChange={(x) => set('contractValue', x)} error={fe.errors.contractValue} />
+          </div>
+        </div>
       </form>
     </FormModal>
   );

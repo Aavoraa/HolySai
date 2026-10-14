@@ -5,11 +5,11 @@ import { useSchool } from '@/layouts/SchoolContext';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import {
-  Avatar, Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, InlineError, Modal, Page, PageHead, PageSkeleton,
+  Avatar, Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, Icon, InlineError, Modal, Page, PageHead, PageSkeleton,
   Segment, SelectField, Skeleton, Switch, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { useSections } from './shared';
+import { plural, schoolClock, useSections } from './shared';
 
 interface Entry {
   id: string; sectionId: string; sectionLabel: string; day: number; periodNo: number; startsAt: string; endsAt: string;
@@ -64,6 +64,16 @@ export default function TimetablePage() {
     return m;
   }, [d]);
   const conflict = d?.conflicts[0];
+
+  // Highlight the period running now (school clock), refreshed every minute.
+  const [clock, setClock] = useState(schoolClock);
+  useEffect(() => {
+    const t = setInterval(() => setClock(schoolClock()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const nowPeriod = d && d.today.day >= 1 && d.today.day <= d.days.length
+    ? d.periods.find((p) => p.startsAt.slice(0, 5) <= clock && clock < p.endsAt.slice(0, 5))?.periodNo
+    : undefined;
   const canManage = can('academics.manage');
 
   const doPublish = async () => {
@@ -111,48 +121,90 @@ export default function TimetablePage() {
           )}
 
           <div className="mt-4">
-            <Card flush title={mode === 'mine' ? `My timetable — ${d.title}` : d.title} sub={`${d.entries.length} periods a week · today is ${fmt.date(d.today.date)}`}>
-              {d.periods.length === 0 ? <Empty icon="clock" title="No periods configured for this campus" /> : (
-                <div className="table-wrap">
-                  <table className="table table--compact" style={{ minWidth: 860 }}>
-                    <thead>
-                      <tr>
-                        <th style={{ width: 96 }}>Period</th>
-                        {d.days.map((day, i) => <th key={day} style={i + 1 === d.today.day ? { color: 'var(--magenta)' } : undefined}>{day}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {d.periods.map((p) => (
-                        <tr key={p.id}>
-                          <td className="t-micro t-muted t-num t-nowrap">P{p.periodNo} · {p.startsAt}–{p.endsAt}</td>
-                          {d.days.map((day, di) => {
-                            const e = grid.get(`${di + 1}:${p.periodNo}`);
-                            const conflictCell = !!e && e.needsSubstitute && !e.substituteId;
-                            const free = !e;
-                            const label = e ? e.subject ?? e.activity ?? '—' : 'Free';
-                            const who = e ? (e.substituteId ? `Cover: ${shortName(e.substitute)}` : conflictCell ? 'SUBSTITUTE NEEDED' : shortName(e.teacher) || 'Various') : '';
-                            const meta = [mode === 'mine' && e ? e.sectionLabel : null, who, e?.room].filter(Boolean).join(' · ');
-                            const clickable = !!e && canManage && (conflictCell || !!e.substituteId || schoolLevel);
+            <Card flush title={mode === 'mine' ? `My timetable — ${d.title}` : d.title}
+              sub={`${plural(d.entries.length, 'period')} a week · today is ${d.days[d.today.day - 1] ?? fmt.date(d.today.date)}, ${fmt.date(d.today.date)}`}
+              actions={mode === 'class' && sectionId ? (
+                <span className="ac-links">
+                  {can('attendance.read') && <Button size="sm" icon="checkSquare" to={`/attendance?section=${sectionId}`}>Attendance</Button>}
+                  <Button size="sm" icon="edit" to={`/homework?sectionId=${sectionId}`}>Homework</Button>
+                </span>
+              ) : undefined}>
+              {d.periods.length === 0 ? <Empty icon="clock" title="No periods configured for this campus" sub="Periods and bell times are set up by the academic office for each campus." /> : (
+                <>
+                  <div className="tt-scroll" role="region" aria-label="Weekly timetable" tabIndex={0}>
+                    <table className="tt">
+                      <thead>
+                        <tr>
+                          <th className="tt__corner" scope="col">Period</th>
+                          {d.days.map((day, i) => {
+                            const isToday = i + 1 === d.today.day;
                             return (
-                              <td key={day} style={{ padding: 6 }}>
-                                <button type="button" className={`card ${clickable ? 'card--link' : ''}`} disabled={!clickable}
-                                  aria-label={`${day} period ${p.periodNo}: ${label}${meta ? `, ${meta}` : ''}`}
-                                  style={{
-                                    width: '100%', padding: '8px 10px', textAlign: 'left', borderRadius: 'var(--r-sm)', cursor: clickable ? 'pointer' : 'default',
-                                    ...(conflictCell ? { background: 'var(--critical-tint)', borderColor: 'var(--critical-line)' } : free ? { background: 'var(--surface-alt)' } : e?.substituteId ? { background: 'var(--warning-tint, var(--surface-alt))' } : {}),
-                                  }}
-                                  onClick={() => { if (!e) return; if (conflictCell || e.substituteId) setSubFor(e.id); else setEditing(e); }}>
-                                  <span className="t-xs t-bold" style={{ display: 'block' }}>{label}</span>
-                                  <span className="t-micro t-muted" style={{ display: 'block' }}>{meta}</span>
-                                </button>
-                              </td>
+                              <th key={day} scope="col" className={isToday ? 'tt__day--today' : undefined} aria-current={isToday ? 'date' : undefined}>
+                                {day}{isToday && <span className="tt__todaytag">Today</span>}
+                              </th>
                             );
                           })}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {d.periods.map((p) => {
+                          const isNow = nowPeriod === p.periodNo;
+                          return (
+                            <tr key={p.id} className={isNow ? 'tt__row--now' : undefined}>
+                              <th scope="row" className="tt__axis">
+                                <span className="tt__pno">Period {p.periodNo}</span>
+                                <span className="tt__time">{p.startsAt}–{p.endsAt}</span>
+                                {isNow && <span className="tt__nowtag"><span className="dot dot--info dot--pulse" />Now</span>}
+                              </th>
+                              {d.days.map((day, di) => {
+                                const e = grid.get(`${di + 1}:${p.periodNo}`);
+                                const isToday = di + 1 === d.today.day;
+                                const conflictCell = !!e && e.needsSubstitute && !e.substituteId;
+                                const label = e ? e.subject ?? e.activity ?? '—' : 'Free';
+                                const teacher = e ? (e.substituteId ? shortName(e.substitute) : shortName(e.teacher) || 'Various') : '';
+                                const clickable = !!e && canManage && (conflictCell || !!e.substituteId || schoolLevel);
+                                const cls = [
+                                  'tt-cell',
+                                  !e && 'tt-cell--free',
+                                  conflictCell && 'tt-cell--conflict',
+                                  e?.substituteId && 'tt-cell--cover',
+                                  clickable && 'tt-cell--link',
+                                  isToday && isNow && 'tt-cell--now',
+                                ].filter(Boolean).join(' ');
+                                const meta = [mode === 'mine' && e ? e.sectionLabel : null, conflictCell ? 'Substitute needed' : e?.substituteId ? `Cover: ${teacher}` : teacher, e?.room ? `Room ${e.room}` : null].filter(Boolean).join(', ');
+                                return (
+                                  <td key={day} className={isToday ? 'tt__slot tt__slot--today' : 'tt__slot'}>
+                                    <button type="button" className={cls} disabled={!clickable}
+                                      aria-label={`${day} period ${p.periodNo}, ${p.startsAt} to ${p.endsAt}: ${label}${meta ? `, ${meta}` : ''}`}
+                                      onClick={() => { if (!e) return; if (conflictCell || e.substituteId) setSubFor(e.id); else setEditing(e); }}>
+                                      <span className="tt-cell__subject">{label}</span>
+                                      {e && mode === 'mine' && <span className="tt-cell__line"><Icon name="users" size={11} /><span>{e.sectionLabel}</span></span>}
+                                      {e && (conflictCell
+                                        ? <span className="tt-cell__flag">Substitute needed</span>
+                                        : <span className="tt-cell__line">
+                                            <Icon name={e.substituteId ? 'refresh' : 'user'} size={11} />
+                                            <span>{e.substituteId ? <><span className="tt-cell__flag">Cover</span> {teacher}</> : teacher}</span>
+                                          </span>)}
+                                      {e?.room && <span className="tt-cell__line"><Icon name="door" size={11} /><span>{e.room}</span></span>}
+                                    </button>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="tt-legend" aria-label="Legend">
+                    <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--today" />Today</span>
+                    <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--now" />Current period</span>
+                    <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--conflict" />Needs a substitute</span>
+                    <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--cover" />Cover arranged</span>
+                    <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--free" />Free period</span>
+                    {canManage && schoolLevel && <span className="tt-legend__item t-faint">Select a period to edit it or arrange cover.</span>}
+                  </div>
+                </>
               )}
             </Card>
           </div>
@@ -160,7 +212,7 @@ export default function TimetablePage() {
       )}
 
       <div className="grid g-3col g-4 mt-4">
-        <Card title="Teacher load" sub="Periods per week">
+        <Card icon="grid" title="Teacher load" sub="Periods per week">
           {insights.error ? <ErrorState error={insights.error} onRetry={() => insights.refetch()} /> : !insights.data ? <Skeleton height={180} /> : insights.data.teacherLoad.length === 0 ? (
             <Empty icon="users" title="No timetabled teachers" />
           ) : (
@@ -173,7 +225,7 @@ export default function TimetablePage() {
             </>
           )}
         </Card>
-        <Card title="Timetable utilisation" sub="Scheduled periods across timetabled classes">
+        <Card icon="clock" title="Timetable utilisation" sub="Scheduled periods across timetabled classes">
           {!insights.data ? <Skeleton height={160} /> : (
             <div className="row center">
               <Chart svg={charts.donut({
@@ -186,7 +238,7 @@ export default function TimetablePage() {
             </div>
           )}
         </Card>
-        <Card title="Substitute suggestions" sub={conflict ? `For ${d?.days[conflict.day - 1]} Period ${conflict.periodNo}` : 'No open conflicts'}>
+        <Card icon="grid" title="Substitute suggestions" sub={conflict ? `For ${d?.days[conflict.day - 1]} Period ${conflict.periodNo}` : 'No open conflicts'}>
           {conflict && canManage ? <SuggestionList entryId={conflict.id} onAssigned={() => undefined} compact /> : (
             <Empty icon="shieldCheck" title={conflict ? 'Cover is arranged by the academic office' : 'Nothing needs cover'} />
           )}
@@ -218,7 +270,7 @@ function SuggestionList({ entryId, onAssigned, compact, selected, onSelect }: {
         const content = (
           <>
             <Avatar name={x.name} size="sm" />
-            <span className="col grow" style={{ minWidth: 0 }}>
+            <span className="sub-option__body">
               <span className="t-sm t-bold">{x.name}</span>
               <span className="t-micro t-muted">{x.reason}</span>
             </span>
@@ -226,7 +278,7 @@ function SuggestionList({ entryId, onAssigned, compact, selected, onSelect }: {
         );
         if (compact) {
           return (
-            <button key={x.id} type="button" className="card card--link row g-3" style={{ padding: '10px 12px', textAlign: 'left' }} disabled={assign.isPending}
+            <button key={x.id} type="button" className="card card--link sub-option" disabled={assign.isPending}
               onClick={async () => {
                 const ok = await confirm({ title: `Assign ${x.name} as cover?`, body: `${s.entry.day} Period ${s.entry.periodNo} · ${s.entry.section} ${s.entry.subject ?? ''}. ${x.hasAccount ? `${x.name} will be notified.` : ''}`, confirmLabel: 'Assign cover' });
                 if (ok) assign.mutate({ substituteId: x.id });
@@ -237,7 +289,7 @@ function SuggestionList({ entryId, onAssigned, compact, selected, onSelect }: {
           );
         }
         return (
-          <label key={x.id} className="check card card--tint row g-3" style={{ padding: '10px 12px', cursor: 'pointer' }}>
+          <label key={x.id} className="card card--tint sub-option sub-option--pick">
             <input type="radio" name="substitute" checked={selected === x.id} onChange={() => onSelect?.(x.id)} />
             {content}
             <Badge tone={x.match}>{x.match === 'success' ? 'Best match' : x.match === 'info' ? 'Good match' : 'Available'}</Badge>
@@ -292,7 +344,7 @@ function SubstituteModal({ entry, dayName, onClose }: { entry: Entry; dayName: s
           <div className="mt-4">
             <div className="eyebrow mb-2">Suggested cover</div>
             <SuggestionList entryId={entry.id} onAssigned={onClose} selected={selected} onSelect={(id) => { setSelected(id); setError(''); }} />
-            {error && <p className="t-xs mt-2" role="alert" style={{ color: 'var(--critical)' }}>{error}</p>}
+            {error && <p className="ac-err mt-2" role="alert"><Icon name="alertCircle" size={13} />{error}</p>}
           </div>
           <div className="mt-4">
             <TextField label="Note for the substitute" value={note} onChange={setNote} maxLength={200} placeholder="e.g. Worksheet 3 is on the desk" />
@@ -308,27 +360,33 @@ function EditEntryModal({ entry, dayName, onClose }: { entry: Entry; dayName: st
   const { lookups } = useLookups();
   const [f, setF] = useState({ subjectId: entry.subjectId ?? '', activity: entry.activity ?? '', employeeId: entry.employeeId ?? '', room: entry.room ?? '', needsSubstitute: entry.needsSubstitute });
   const [error, setError] = useState('');
+  const [activityError, setActivityError] = useState('');
   const save = useApiMutation<Record<string, unknown>>('put', `/academics/timetable/entries/${entry.id}`, {
     invalidate: ['/academics/timetable', '/academics/teacher-dashboard'], success: 'Timetable updated', onSuccess: onClose, error: false,
   });
   useEffect(() => { if (save.error) setError((save.error as Error).message); }, [save.error]);
   const submit = () => {
-    if (!f.subjectId && !f.activity.trim()) { setError('Choose a subject or enter an activity'); return; }
+    if (!f.subjectId && !f.activity.trim()) { setActivityError('Choose a subject or enter an activity'); return; }
     save.mutate({ subjectId: f.subjectId || null, activity: f.subjectId ? null : f.activity.trim(), employeeId: f.employeeId || null, room: f.room.trim() || null, needsSubstitute: f.needsSubstitute });
   };
   return (
     <Modal open onClose={onClose} busy={save.isPending} title={`Edit ${dayName} Period ${entry.periodNo}`} sub={entry.sectionLabel}
       foot={<><Button onClick={onClose} disabled={save.isPending}>Cancel</Button><Button variant="primary" onClick={submit} loading={save.isPending}>Save</Button></>}>
       {error && <div className="mb-3"><Banner tone="critical" icon="alert">{error}</Banner></div>}
+      <div className="formsection">
+      <div className="formsection__title">Lesson</div>
       <div className="grid g-2col g-3">
-        <SelectField label="Subject" value={f.subjectId} onChange={(v) => setF((x) => ({ ...x, subjectId: v }))} placeholder="Activity (no subject)"
+        <SelectField label="Subject" value={f.subjectId} onChange={(v) => { setF((x) => ({ ...x, subjectId: v })); setActivityError(''); }} placeholder="Activity (no subject)"
           options={(lookups?.subjects ?? []).map((s) => ({ value: s.id, label: s.name }))} />
-        <TextField label="Activity" value={f.activity} onChange={(v) => setF((x) => ({ ...x, activity: v }))} disabled={!!f.subjectId} placeholder="Games, Library, Club…" maxLength={40} />
+        <TextField label="Activity" value={f.activity} onChange={(v) => { setF((x) => ({ ...x, activity: v })); setActivityError(''); }} disabled={!!f.subjectId} placeholder="Games, Library, Club…" maxLength={40}
+          error={activityError} hint={f.subjectId ? 'Clear the subject to use an activity instead.' : undefined} />
         <SelectField label="Teacher" value={f.employeeId} onChange={(v) => setF((x) => ({ ...x, employeeId: v }))} placeholder="No teacher"
           options={(lookups?.staff ?? []).filter((s) => s.employeeType === 'teaching').map((s) => ({ value: s.id, label: s.fullName }))} />
         <TextField label="Room" value={f.room} onChange={(v) => setF((x) => ({ ...x, room: v }))} maxLength={40} />
       </div>
-      <div className="mt-3">
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Cover</div>
         <Switch checked={f.needsSubstitute} onChange={(v) => setF((x) => ({ ...x, needsSubstitute: v }))} label="This period needs a substitute" />
       </div>
     </Modal>

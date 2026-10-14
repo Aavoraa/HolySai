@@ -108,10 +108,10 @@ export function ReceiptModal({ paymentId, onClose }: { paymentId: string | null;
 
 export function ReceiptBody({ r }: { r: Receipt }) {
   return (
-    <div className="card card--tint fin-receipt" style={{ padding: 20 }}>
+    <div className="card card--tint fin-receipt">
       <div className="row between">
         <div>
-          <div className="serif" style={{ fontSize: 18, fontWeight: 600 }}>Holy Sai International</div>
+          <div className="serif fin-receipt__school">Holy Sai International</div>
           <div className="t-micro t-muted">{r.student.campusShort} · Academic Year {r.academicYear}</div>
         </div>
         <Badge tone={r.status === 'Success' ? 'success' : 'critical'} icon={r.status === 'Success' ? 'check' : 'alert'} lg>
@@ -138,7 +138,7 @@ export function ReceiptBody({ r }: { r: Receipt }) {
       <div className="divider" />
       <div className="row between">
         <span className="t-bold">Total paid</span>
-        <span className="t-bold t-num" style={{ fontSize: 18 }}>{fmt.money(r.amount)}</span>
+        <span className="t-bold t-num fin-receipt__total">{fmt.money(r.amount)}</span>
       </div>
       {r.gatewayRef?.startsWith('SIM-') && <p className="t-micro t-muted mt-2">Online payment processed through the simulated gateway (development).</p>}
     </div>
@@ -157,15 +157,15 @@ export function StudentPicker({ onPick, campusId, placeholder = 'Search student 
     <div className="col g-2">
       <SearchInput value={q} onSearch={setQ} placeholder={placeholder} maxWidth={9999} />
       {q.length >= 2 && (
-        <div className="card" style={{ maxHeight: 260, overflow: 'auto' }}>
-          {res.isLoading && <div style={{ padding: 12 }}><Skeleton height={14} /></div>}
+        <div className="card fw-picker" aria-label="Matching students" aria-live="polite">
+          {res.isLoading && <div className="fw-picker__msg"><Skeleton height={14} /></div>}
           {res.error ? <InlineError error={res.error} /> : null}
-          {res.data && !res.data.length && <div className="t-sm t-muted" style={{ padding: 12 }}>No students match “{q}”.</div>}
+          {res.data && !res.data.length && <div className="t-sm t-muted fw-picker__msg">No students match “{q}”. Try the admission ID or part of the name.</div>}
           {res.data?.map((s) => (
             <button type="button" key={s.id} className="alert-item" onClick={() => { onPick(s); setQ(''); }}>
-              <span className="grow" style={{ minWidth: 0, textAlign: 'left' }}>
-                <span className="alert-item__title" style={{ display: 'block' }}>{s.fullName}</span>
-                <span className="alert-item__meta" style={{ display: 'block' }}>{s.admissionNo} · {s.grade}{s.section} · {s.campus}</span>
+              <span className="grow">
+                <span className="alert-item__title">{s.fullName}</span>
+                <span className="alert-item__meta">{s.admissionNo} · {s.grade}{s.section} · {s.campus}</span>
               </span>
               <span className="row g-2 none"><Money v={s.balance} strong /><Status value={s.feeStatus} /></span>
             </button>
@@ -228,31 +228,63 @@ export function PaymentModal({ account, open, onClose, onPaid }: {
         <Button variant="teal" icon="creditCard" loading={pay.isPending} onClick={submit}>Record {isMoney(amount) ? fmt.money(Number(amount)) : 'payment'}</Button>
       </>}>
       {!open_.length ? <Empty icon="check" title="Nothing outstanding" sub="Every charge on this account is settled." /> : (
-        <div className="col g-4">
-          <div>
-            <div className="label">Apply to (optional — otherwise the oldest dues are settled first)</div>
-            <div className="col g-2 mt-2">
+        <div>
+          <div className="formsection">
+            <div className="formsection__title">Apply to</div>
+            <div className="formsection__sub">Optional — if nothing is selected, the oldest dues are settled first.</div>
+            <div className="fw-applylines">
               {open_.map((l) => (
-                <div key={l.id} className="row between">
+                <div key={l.id}>
                   <Checkbox checked={sel.has(l.id)} onChange={() => toggle(l.id)}
                     label={<span>{l.description} <span className="t-micro t-muted">due {fmt.date(l.dueDate)}</span></span>} />
                   <span className="row g-2"><Money v={l.balance} strong /><Status value={l.status} /></span>
                 </div>
               ))}
             </div>
+            <div className="fw-grandtotal">
+              <span className="fw-grandtotal__label">{sel.size ? `Selected (${sel.size})` : 'Outstanding'}</span>
+              <span className="fw-grandtotal__value">{fmt.money(cap)}</span>
+            </div>
           </div>
-          <div className="grid g-3col">
-            <TextField label="Amount (₹)" required type="number" min="0" step="0.01" value={amount} onChange={setAmount} error={errs.amount} />
-            <SelectField label="Method" required value={method} onChange={setMethod} options={COUNTER_METHODS} error={errs.method} />
-            <TextField label="Reference" required={needsRef} value={reference} onChange={setReference} maxLength={80} error={errs.reference}
-              placeholder={method === 'Cash' ? 'Optional' : 'UTR / DD / cheque no.'} />
+          <div className="formsection">
+            <div className="formsection__title">Payment</div>
+            <div className="grid g-3col">
+              <TextField label="Amount (₹)" required type="number" min="0" step="0.01" value={amount} onChange={setAmount} error={errs.amount}
+                hint={`Up to ${fmt.money(cap)}`} />
+              <SelectField label="Method" required value={method} onChange={setMethod} options={COUNTER_METHODS} error={errs.method} />
+              <TextField label="Reference" required={needsRef} value={reference} onChange={setReference} maxLength={80} error={errs.reference}
+                placeholder={method === 'Cash' ? 'Optional' : 'UTR / DD / cheque no.'} />
+            </div>
           </div>
-          <Banner tone="neutral" icon="receipt">A numbered receipt is issued immediately and the parent is notified in the app and on WhatsApp.</Banner>
-          {pay.error && !Object.keys(fieldErrors(pay.error)).length ? <InlineError error={pay.error} /> : null}
+          <div className="mt-4"><Banner tone="neutral" icon="receipt">A numbered receipt is issued immediately and the parent is notified in the app and on WhatsApp.</Banner></div>
+          {pay.error && !Object.keys(fieldErrors(pay.error)).length ? <div className="mt-3"><InlineError error={pay.error} /></div> : null}
         </div>
       )}
     </Modal>
   );
+}
+
+/** Totals row for a money table — sits in a Card `foot`, visually separated from the rows above. */
+export function TotalsBar({ items, action }: { items: { label: string; value: ReactNode; tone?: 'critical' | 'success' }[]; action?: ReactNode }) {
+  return (
+    <div className="fw-totals">
+      <dl className="fw-totals__items">
+        {items.map((it) => (
+          <div className="fw-totals__item" key={it.label}>
+            <dt className="fw-totals__label">{it.label}</dt>
+            <dd className={`fw-totals__value${it.tone ? ` t-${it.tone}` : ''}`}>{it.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {action}
+    </div>
+  );
+}
+
+/** "N records" counter shown at the right of a table toolbar. */
+export function ListCount({ total, noun }: { total: number | undefined; noun: string }) {
+  if (total == null) return null;
+  return <span className="fw-count" aria-live="polite"><strong>{fmt.n(total)}</strong> {noun}</span>;
 }
 
 export function SectionIcon({ name }: { name: string }) {

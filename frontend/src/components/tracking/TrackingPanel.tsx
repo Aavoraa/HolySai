@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import type { CurrentLocation, LocationHistory as History } from '@/api/types';
-import { Avatar, Badge, Button, Card, Dl, Empty, ErrorState, Grid, Icon, Segment, SelectField, Skeleton, Switch, TextField, useConfirm } from '@/components/ui';
+import { Avatar, Badge, Banner, Button, Card, Dl, Empty, ErrorState, Grid, Icon, Kpi, Segment, SelectField, Skeleton, Switch, TextField, useConfirm } from '@/components/ui';
 import { HistoryMap, StudentMap } from '@/components/map/StudentMap';
 import { fmt, todayKey } from '@/lib/format';
 import { statusTone } from '@/lib/tones';
-import { AssignDeviceModal, GpsStatusBadge, useUnassign } from './devices';
+import { AssignDeviceModal, BatteryLevel, GpsStatusBadge, LastSeen, useUnassign } from './devices';
 
 const STATUS_DOT: Record<string, string> = {
   'Tracking Active': 'success',
@@ -19,7 +19,7 @@ const STATUS_DOT: Record<string, string> = {
 export function TrackingStatusPill({ status }: { status: string }) {
   const tone = STATUS_DOT[status] ?? 'neutral';
   return (
-    <span className="trackpill" role="status">
+    <span className="trackpill">
       <span className={`dot dot--${tone}${status === 'Tracking Active' ? ' dot--pulse' : ''}`} />
       {status}
     </span>
@@ -67,7 +67,7 @@ export function TrackingPanel({
       }
     >
       {view === 'current' || !canHistory ? (
-        <div className={compact ? 'col g-4' : 'grid g-main'} style={compact ? undefined : { alignItems: 'start' }}>
+        <div className={compact ? 'col g-4' : 'grid g-main st-top'}>
           <div className="col g-3">
             <div className="row g-3">
               <Avatar name={loc.fullName} size="lg" src={loc.photoUrl} />
@@ -100,17 +100,14 @@ export function TrackingPanel({
                 ['Latitude', <span key="la" className="coord">{hasPoint ? Number(loc.latitude).toFixed(4) : '—'}</span>],
                 ['Longitude', <span key="lo" className="coord">{hasPoint ? Number(loc.longitude).toFixed(4) : '—'}</span>],
                 ['Accuracy', loc.accuracy != null ? `± ${Math.round(loc.accuracy)} m` : '—'],
-                ['GPS Device', loc.deviceCode ? <span key="d" className="row g-2"><span className="coord t-bold">{loc.deviceCode}</span><GpsStatusBadge status={loc.gpsStatus} seenAt={loc.deviceLastSeenAt} /></span> : <span key="d" className="t-muted">No device assigned</span>],
+                ['GPS Device', loc.deviceCode ? <span key="d" className="row g-2 wrap"><span className="coord t-bold">{loc.deviceCode}</span><GpsStatusBadge status={loc.gpsStatus} seenAt={loc.deviceLastSeenAt} /><LastSeen at={loc.deviceLastSeenAt} prefix="Last ping" /></span> : <span key="d" className="t-muted">No device assigned</span>],
                 ...(loc.speed != null ? [['Speed', `${(loc.speed * 3.6).toFixed(1)} km/h`] as [string, string]] : []),
                 ['Last Updated', loc.recordedAt ? <span key="u"><strong>{fmt.time(loc.recordedAt)}</strong> <span className="t-muted">· {fmt.date(loc.recordedAt)}</span></span> : '—'],
-                ['Device battery', loc.batteryPct != null ? `${loc.batteryPct}%` : '—'],
+                ['Device battery', <BatteryLevel key="b" pct={loc.batteryPct} />],
               ]}
             />
             {loc.isStale && hasPoint && loc.trackingEnabled && (
-              <div className="banner banner--warning">
-                <Icon name="clock" size={17} />
-                <div className="grow">No update for more than 30 minutes. The map shows the last known location.</div>
-              </div>
+              <Banner tone="warning" icon="clock">No update for more than 30 minutes. The map shows the last known location.</Banner>
             )}
             {hasPoint && (
               <a className="btn btn--ghost btn--sm" target="_blank" rel="noopener noreferrer"
@@ -142,7 +139,7 @@ function TrackingControls({ loc, onChanged }: { loc: CurrentLocation; onChanged:
     onSuccess: onChanged,
   });
   return (
-    <div className="col g-2" style={{ borderTop: '1px solid var(--border-soft)', paddingTop: 'var(--s-3)' }}>
+    <div className="st-controls">
       <div className="eyebrow">GPS device</div>
       <div className="row g-2 wrap">
         <Button size="sm" icon="qr" variant={loc.deviceCode ? undefined : 'teal'} onClick={() => setAssigning(true)}>
@@ -205,23 +202,23 @@ export function LocationHistory({ path, note, campus }: { path: string; note?: s
 
   return (
     <div className="col g-4">
-      <div className="filterrow">
-        <TextField label="Date" type="date" value={date} max={todayKey()} onChange={(v) => { setDate(v || todayKey()); setSelected(null); }} style={{ minWidth: 160 }} />
-        <SelectField label="Days with data" value={date} onChange={(v) => { setDate(v); setSelected(null); }} options={dayOptions} style={{ minWidth: 200 }} />
-        <TextField label="From" type="time" value={from} onChange={setFrom} style={{ width: 130 }} />
-        <TextField label="To" type="time" value={to} onChange={setTo} error={invalidRange ? 'Must be after From' : undefined} style={{ width: 130 }} />
-        {(from || to) && <Button size="sm" variant="quiet" onClick={() => { setFrom(''); setTo(''); }} style={{ alignSelf: 'flex-end' }}>Clear time</Button>}
+      <div className="filterrow st-histfilters">
+        <TextField label="Date" type="date" value={date} max={todayKey()} onChange={(v) => { setDate(v || todayKey()); setSelected(null); }} />
+        <SelectField label="Days with data" value={date} onChange={(v) => { setDate(v); setSelected(null); }} options={dayOptions} />
+        <TextField className="field--time" label="From" type="time" value={from} onChange={setFrom} />
+        <TextField className="field--time" label="To" type="time" value={to} onChange={setTo} error={invalidRange ? 'Must be after From' : undefined} />
+        {(from || to) && <Button size="sm" variant="quiet" onClick={() => { setFrom(''); setTo(''); }}>Clear time</Button>}
       </div>
       {note && <div className="t-xs t-muted">{note}</div>}
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => q.refetch()} />
       ) : (
-        <Grid cols="g-main" style={{ alignItems: 'start' }}>
+        <Grid cols="g-main st-top">
           {q.isLoading ? <Skeleton height={480} /> : <HistoryMap points={invalidRange ? [] : points} selectedId={selected} onSelect={setSelected} campuses={campus ? [campus] : []} />}
           <div className="col g-3">
-            <div className="grid g-2col">
-              <div className="kpi"><div className="kpi__label">Points</div><div className="kpi__value">{q.data?.summary.count ?? '—'}</div></div>
-              <div className="kpi"><div className="kpi__label">Distance</div><div className="kpi__value">{q.data ? q.data.summary.distanceKm : '—'}<small> km</small></div></div>
+            <div className="statgrid statgrid--card">
+              <Kpi size="compact" label="Points" value={q.data?.summary.count ?? '—'} loading={q.isLoading} />
+              <Kpi size="compact" label="Distance" value={q.data ? q.data.summary.distanceKm : '—'} unit="km" loading={q.isLoading} />
             </div>
             {last && (
               <div className="banner banner--neutral">

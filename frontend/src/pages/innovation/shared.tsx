@@ -1,4 +1,4 @@
-import { Badge, Button, Flow, Modal, SelectField, TextArea, TextField } from '@/components/ui';
+import { Badge, Button, Flow, InlineError, Modal, SelectField, TextArea, TextField } from '@/components/ui';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { FormGrid, StudentPicker, req, useForm, type StudentPick } from '../operations/shared';
 
@@ -47,6 +47,7 @@ export function IdeaSubmitModal({ onClose }: { onClose: () => void }) {
     <Modal open onClose={onClose} title="Submit an idea" sub="Any student can submit. A teacher reviews within a week." busy={save.isPending}
       foot={<><Button onClick={onClose}>Cancel</Button><Button variant="primary" loading={save.isPending} onClick={submit}>Submit idea</Button></>}>
       <div className="col g-3">
+        <InlineError error={save.error} />
         <StudentPicker required value={v.student} onChange={(x) => f.set('student', x)} error={f.errors.student || f.errors.studentId} />
         <TextField label="Idea title" required maxLength={160} placeholder="What are you trying to make or solve?" value={v.title} onChange={(x) => f.set('title', x)} error={f.errors.title} />
         <TextArea label="Describe it" required rows={4} maxLength={1000} placeholder="What problem does it solve, and how might it work?" value={v.problem} onChange={(x) => f.set('problem', x)} error={f.errors.problem} />
@@ -67,7 +68,7 @@ export function MilestoneDrafts({ items, onChange }: { items: MilestoneDraft[]; 
     <div className="col g-2">
       <span className="label">First milestones</span>
       {items.map((m, i) => (
-        <div key={i} className="row g-2">
+        <div key={i} className="row g-2 wrap">
           <input className="input grow" aria-label={`Milestone ${i + 1} title`} placeholder={`Milestone ${i + 1}`} value={m.title} maxLength={160}
             onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)))} />
           <input className="input" type="date" aria-label={`Milestone ${i + 1} due date`} style={{ width: 160 }} value={m.dueOn}

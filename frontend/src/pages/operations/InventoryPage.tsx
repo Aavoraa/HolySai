@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import {
-  Badge, Banner, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination, SearchInput,
-  Segment, SelectField, TextField,
+  Badge, Banner, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Grid, Kpi, Meter, Modal, Page, PageHead, Pagination, SearchInput,
+  Segment, SelectField, TextField, Toolbar,
 } from '@/components/ui';
 import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
-import { FormGrid, req, useCampusOptions, useForm } from './shared';
+import { CRITICAL_ROW, FormError, FormGrid, req, useCampusOptions, useForm } from './shared';
 
 interface Item {
   id: string; sku: string; name: string; category: string; unit: string; quantity: number; reorderLevel: number; unitCost: number;
@@ -38,32 +38,47 @@ export default function InventoryPage() {
       <PageHead title="Inventory" sub="Stock levels against reorder points, by category."
         actions={manage && <Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add item</Button>} />
       {s && s.belowReorder > 0 && (
-        <Banner tone="warning" icon="alert">
-          <strong>{s.belowReorder} item{s.belowReorder > 1 ? 's' : ''} below the reorder point.</strong>{' '}
-          {s.lowItems.join(', ')} {s.belowReorder > 1 ? 'need' : 'needs'} a purchase request this week.
-        </Banner>
+        <div className="mb-4">
+          <Banner tone="critical" icon="alertCircle">
+            <div className="row between wrap g-2">
+              <span>
+                <strong>{s.belowReorder} item{s.belowReorder > 1 ? 's' : ''} below the reorder point.</strong>{' '}
+                {s.lowItems.join(', ')} {s.belowReorder > 1 ? 'need' : 'needs'} a purchase request this week.
+              </span>
+              {!(tab === 'stock' && list.filters.level === 'low') && (
+                <Button size="sm" onClick={() => { setTab('stock'); list.setFilter('level', 'low'); }}>Show items to reorder</Button>
+              )}
+            </div>
+          </Banner>
+        </div>
       )}
-      <Grid cols="g-4col" className="mt-4">
-        <Kpi label="Items tracked" value={fmt.n(s?.items)} loading={sum.isLoading} onClick={() => list.clear()} />
-        <Kpi label="Below reorder point" value={fmt.n(s?.belowReorder)} tone="critical" loading={sum.isLoading} onClick={() => { setTab('stock'); list.setFilter('level', 'low'); }} />
-        <Kpi label="At minimum" value={fmt.n(s?.atMinimum)} tone="amber" loading={sum.isLoading} onClick={() => { setTab('stock'); list.setFilter('level', 'at_minimum'); }} />
-        <Kpi label="Stock value" value={fmt.money(s?.stockValue, { compact: true })} tone="info" loading={sum.isLoading} foot={s ? `${s.movements30d} movements in 30 days` : undefined} />
+      <Grid cols="g-4col" className="mb-4">
+        <Kpi label="Items tracked" icon="box" value={fmt.n(s?.items)} loading={sum.isLoading} onClick={() => list.clear()} />
+        <Kpi label="Below reorder point" icon="alertCircle" value={fmt.n(s?.belowReorder)} tone="critical" loading={sum.isLoading} onClick={() => { setTab('stock'); list.setFilter('level', 'low'); }} />
+        <Kpi label="At minimum" icon="minus" value={fmt.n(s?.atMinimum)} tone="amber" loading={sum.isLoading} onClick={() => { setTab('stock'); list.setFilter('level', 'at_minimum'); }} />
+        <Kpi label="Stock value" icon="rupee" value={fmt.money(s?.stockValue, { compact: true })} tone="info" loading={sum.isLoading} foot={s ? `${s.movements30d} movements in 30 days` : undefined} />
       </Grid>
-      <div className="filterbar mt-4">
-        <Segment items={[{ id: 'stock', label: 'Stock levels' }, { id: 'movements', label: 'Stock movements' }]} active={tab} onChange={setTab} />
-        <SearchInput value={list.q} onSearch={list.setQ} placeholder={tab === 'stock' ? 'Search item or SKU' : 'Search item or note'} />
-        {tab === 'stock' && <>
-          <FilterSelect label="Category" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={CATEGORIES} />
-          <FilterSelect label="Level" value={list.filters.level} onChange={(v) => list.setFilter('level', v)}
-            options={[{ value: 'low', label: 'Reorder' }, { value: 'at_minimum', label: 'At minimum' }, { value: 'ok', label: 'In stock' }]} />
-        </>}
-      </div>
       <Card flush>
-        {tab === 'stock' ? (q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : (
+        <Toolbar>
+          <Segment items={[{ id: 'stock', label: 'Stock levels' }, { id: 'movements', label: 'Stock movements' }]} active={tab} onChange={setTab} />
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder={tab === 'stock' ? 'Search item or SKU' : 'Search item or note'} />
+          {tab === 'stock' && <>
+            <FilterSelect label="Category" value={list.filters.category} onChange={(v) => list.setFilter('category', v)} options={CATEGORIES} />
+            <FilterSelect label="Level" value={list.filters.level} onChange={(v) => list.setFilter('level', v)}
+              options={[{ value: 'low', label: 'Reorder' }, { value: 'at_minimum', label: 'At minimum' }, { value: 'ok', label: 'In stock' }]} />
+          </>}
+          {list.hasFilters && <Button variant="quiet" size="sm" icon="x" onClick={list.clear}>Clear</Button>}
+        </Toolbar>
+        {tab === 'stock' ? (q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : !q.isLoading && q.data && !q.data.rows.length && !list.hasFilters ? (
+          <Empty icon="box" title="No stock items yet"
+            sub="Add stationery, lab consumables, first-aid and housekeeping supplies with a reorder level, and low stock will be flagged automatically."
+            action={manage ? <Button variant="primary" icon="plus" onClick={() => setEdit('new')}>Add item</Button> : undefined} />
+        ) : (
           <>
             <DataTable<Item>
               rows={q.data?.rows} loading={q.isLoading} rowKey={(r) => r.id} sort={list.sort} onSort={list.setSort}
               emptyText="No stock items match the current filters."
+              rowClassName={(r) => (r.status === 'Reorder' ? CRITICAL_ROW : undefined)}
               columns={[
                 { key: 'name', label: 'Item', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.sku} · {r.category} · {r.campusName}</div></> },
                 { key: 'quantity', label: 'In stock', className: 'num', render: (r) => <span className="t-num">{fmt.n(r.quantity)} {r.unit}</span> },
@@ -72,10 +87,10 @@ export default function InventoryPage() {
                   tone={r.quantity < r.reorderLevel ? 'critical' : r.quantity === r.reorderLevel ? 'amber' : 'teal'} /> },
                 { key: 'status', label: 'Status', render: (r) => <Badge tone={tone(r.status)}>{r.status}</Badge> },
                 ...(manage ? [{ key: 'a', label: '', sortable: false, className: 'num', render: (r: Item) => (
-                  <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
+                  <div className="row g-2 end">
                     <Button size="sm" onClick={() => setMove(r)}>Stock in/out</Button>
-                    {r.status !== 'In stock' && <Button size="sm" variant="primary" onClick={() => setPurchase(r)}>Purchase request</Button>}
-                    <Button size="sm" variant="quiet" icon="edit" aria-label={`Edit ${r.name}`} onClick={() => setEdit(r)} />
+                    {r.status !== 'In stock' && <Button size="sm" variant="primary" icon="send" onClick={() => setPurchase(r)}>Purchase request</Button>}
+                    <Button size="sm" variant="quiet" icon="edit" aria-label={`Edit ${r.name}`} title="Edit" onClick={() => setEdit(r)} />
                   </div>
                 ) }] : []),
               ]}
@@ -85,7 +100,8 @@ export default function InventoryPage() {
         )) : (mv.error ? <ErrorState error={mv.error} onRetry={mv.refetch} /> : (
           <>
             <DataTable<Movement>
-              rows={mv.data?.rows} loading={mv.isLoading} rowKey={(r) => String(r.id)} emptyText="No stock movements recorded."
+              rows={mv.data?.rows} loading={mv.isLoading} rowKey={(r) => String(r.id)}
+              emptyText={list.q ? 'No stock movements match your search.' : 'No stock movements recorded yet. Stock in, stock out and count adjustments appear here.'}
               columns={[
                 { key: 'createdAt', label: 'When', render: (r) => <span className="t-num">{fmt.dateTime(r.createdAt)}</span> },
                 { key: 'item', label: 'Item', render: (r) => <><span className="t-bold">{r.itemName}</span><div className="t-micro t-muted">{r.sku}</div></> },
@@ -133,13 +149,14 @@ function ItemModal({ item, onClose }: { item: Item | null; onClose: () => void }
       <FormGrid>
         <TextField label="Item name" required value={v.name} onChange={(x) => f.set('name', x)} error={f.errors.name} maxLength={120} />
         <SelectField label="Category" required value={v.category} onChange={(x) => f.set('category', x)} options={CATEGORIES} placeholder="Choose…" error={f.errors.category} />
-        <SelectField label="Campus" required value={v.campusId} onChange={(x) => f.set('campusId', x)} options={campuses.options} />
+        <SelectField label="Campus" required value={v.campusId} onChange={(x) => f.set('campusId', x)} options={campuses.options} error={f.errors.campusId} />
         <TextField label="Unit" required value={v.unit} onChange={(x) => f.set('unit', x)} error={f.errors.unit} maxLength={20} placeholder="pcs, kits, reams" />
         {!item && <TextField label="Opening stock" type="number" min={0} required value={v.quantity} onChange={(x) => f.set('quantity', x)} error={f.errors.quantity} />}
         <TextField label="Reorder level" type="number" min={0} required value={v.reorderLevel} onChange={(x) => f.set('reorderLevel', x)} error={f.errors.reorderLevel} />
         <TextField label="Unit cost (₹)" type="number" min={0} step="0.01" value={v.unitCost} onChange={(x) => f.set('unitCost', x)} error={f.errors.unitCost} />
       </FormGrid>
       {item && <p className="t-xs t-muted mt-3">Stock quantity changes only through stock movements, so every change is traceable.</p>}
+      <FormError error={save.error} />
     </Modal>
   );
 }
@@ -173,6 +190,7 @@ function MovementModal({ item, onClose }: { item: Item; onClose: () => void }) {
         </FormGrid>
       </div>
       {v.quantity && after < item.reorderLevel && after >= 0 && <div className="mt-3"><Banner tone="warning" icon="alert">This leaves the item below its reorder point. Office and the Principal will be notified.</Banner></div>}
+      <FormError error={save.error} />
     </Modal>
   );
 }
@@ -193,6 +211,7 @@ function PurchaseModal({ item, onClose }: { item: Item; onClose: () => void }) {
           hint={`Estimated ${fmt.money(Number(v.quantity || 0) * item.unitCost)}`} />
         <TextField label="Note" value={v.note} onChange={(x) => f.set('note', x)} maxLength={300} placeholder="Preferred vendor, urgency" />
       </FormGrid>
+      <FormError error={save.error} />
     </Modal>
   );
 }

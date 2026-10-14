@@ -5,7 +5,7 @@ import type { StudentRow } from '@/api/types';
 import { fmt, todayKey } from '@/lib/format';
 import {
   AiNotice, Banner, Button, Card, Chips, DataTable, Dl, ErrorState, Flow, Icon, Modal, Page, PageHead,
-  Pagination, SelectField, Skeleton, Status, TextField,
+  Pagination, SelectField, Skeleton, Status, TextField, Toolbar,
 } from '@/components/ui';
 import { DraftCard, type Draft } from './CopilotDraft';
 import { StudentPicker } from './shared';
@@ -109,7 +109,7 @@ export default function CopilotPage() {
         </>}
       />
 
-      <Card title="What do you need?" sub="Pick a task. The Co-Pilot drafts it from your class data and the approved curriculum.">
+      <Card icon="grid" title="What do you need?" sub="Pick a task. The Co-Pilot drafts it from your class data and the approved curriculum.">
         {ctx.error ? <ErrorState error={ctx.error} onRetry={() => ctx.refetch()} /> : !c ? <Skeleton height={140} /> : (
           <div className="grid g-3col">
             {c.actions.map((a) => {
@@ -133,7 +133,12 @@ export default function CopilotPage() {
           <Card
             title="Context"
             sub="The Co-Pilot only uses this class, this curriculum and the approved question bank."
-            actions={<Button variant="amber" icon="sparkle" loading={generate.isPending} onClick={submit}>{draftId ? 'Regenerate' : 'Generate draft'}</Button>}
+            foot={
+              <div className="row between wrap g-3">
+                <span className="t-micro t-muted">Generator: {c.provider.description}</span>
+                <Button variant="primary" icon="sparkle" loading={generate.isPending} onClick={submit}>{draftId ? 'Regenerate draft' : 'Generate draft'}</Button>
+              </div>
+            }
           >
             <div className="grid g-4col g-3">
               <SelectField label="Grade" required value={form.grade} onChange={(v) => setForm((f) => ({ ...f, grade: v, sectionId: '' }))}
@@ -163,7 +168,7 @@ export default function CopilotPage() {
                     <Button size="sm" variant="quiet" onClick={() => setStudent(null)}>Change</Button>
                   </div>
                 ) : <StudentPicker onPick={setStudent} />}
-                {errors.studentId && <span className="hint" style={{ color: 'var(--critical)' }}>{errors.studentId}</span>}
+                {errors.studentId && <span className="hint hint--error" role="alert"><Icon name="alertCircle" size={13} />{errors.studentId}</span>}
               </div>
             )}
             <div className="mt-3">
@@ -180,27 +185,28 @@ export default function CopilotPage() {
               ) : <Banner tone="neutral" icon="target">Choose a grade, subject and topic to see the curriculum and class data the draft will use.</Banner>}
             </div>
             {errors._ && <div className="mt-3"><Banner tone="critical" icon="alert">{errors._}</Banner></div>}
-            <p className="t-micro t-muted mt-3">Generator: {c.provider.description}</p>
           </Card>
         </div>
       )}
 
-      {draftId && (draft.isLoading ? <Skeleton height={320} style={{ marginTop: 16 }} /> : draft.error ? <div className="mt-4"><ErrorState error={draft.error} onRetry={() => draft.refetch()} /></div>
+      {draftId && (draft.isLoading ? <div className="mt-4"><Skeleton height={320} /></div> : draft.error ? <div className="mt-4"><ErrorState error={draft.error} onRetry={() => draft.refetch()} /></div>
         : current && <DraftCard draft={current} onClosed={() => setDraftId(null)} />)}
 
       <div className="mt-4" ref={historyRef}>
-        <Card
+        <Card icon="grid"
           title="Recent drafts" flush
           sub="Open any draft to review, edit, approve or discard it"
-          actions={<Chips items={[{ id: '', label: 'All' }, { id: 'Under Review', label: 'Under review' }, { id: 'Draft', label: 'Draft' }, { id: 'Approved', label: 'Approved' }, { id: 'Rejected', label: 'Discarded' }]}
-            active={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} />}
         >
+          <Toolbar>
+            <Chips items={[{ id: '', label: 'All' }, { id: 'Under Review', label: 'Under review' }, { id: 'Draft', label: 'Draft' }, { id: 'Approved', label: 'Approved' }, { id: 'Rejected', label: 'Discarded' }]}
+              active={statusFilter} onChange={(v) => { setStatusFilter(v); setPage(1); }} />
+          </Toolbar>
           {drafts.error ? <ErrorState error={drafts.error} onRetry={() => drafts.refetch()} /> : (
             <DataTable<DraftRow>
               rows={drafts.data?.rows} loading={drafts.isLoading} rowKey={(r) => r.id}
               onRowClick={(r) => { setDraftId(r.id); setAction(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
               rowClassName={(r) => (r.id === draftId ? 'is-selected' : undefined)}
-              emptyText="No drafts yet. Pick a task above to create one."
+              emptyText={statusFilter ? 'No drafts with this status. Choose “All” to see every draft.' : 'No drafts yet. Pick a task above to create one.'}
               columns={[
                 { key: 'what', label: 'Draft', render: (r) => <><div className="t-sm t-bold">{r.title}</div><div className="t-micro t-muted">{TYPE_LABEL[r.type]}{r.warnings ? ` · ${r.warnings} note${r.warnings > 1 ? 's' : ''} to check` : ''}</div></> },
                 { key: 'cls', label: 'Class', render: (r) => r.classLabel ?? '—' },

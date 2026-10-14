@@ -6,7 +6,7 @@ import { ApiError } from '@/api/client';
 import { useApiQuery } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
-import { Button, Icon, Person } from '@/components/ui';
+import { Badge, Button, Icon, InlineError, Person } from '@/components/ui';
 import { cx, fmt } from '@/lib/format';
 
 export type Errors = Record<string, string>;
@@ -95,7 +95,7 @@ export function StudentPicker({ value, onChange, label = 'Student', error, requi
     <div className="field">
       <span className="label">{label}{required && <span className="req"> *</span>}</span>
       {value ? (
-        <div className="row between card card--tint" style={{ padding: '8px 12px' }}>
+        <div className="row between g-2 card card--tint oi-ops-tile">
           <Person name={value.fullName} meta={`${value.admissionNo}${value.grade ? ` · ${value.grade}${value.section ?? ''}` : ''}`} />
           <Button size="sm" variant="quiet" onClick={() => onChange(null)}>Change</Button>
         </div>
@@ -104,7 +104,7 @@ export function StudentPicker({ value, onChange, label = 'Student', error, requi
           <div className="input-icon">
             <Icon name="search" size={15} />
             <input className="input" type="search" aria-label={label} placeholder="Type a name or admission number" value={text}
-              aria-invalid={!!error || undefined} style={error ? { borderColor: 'var(--critical)' } : undefined}
+              aria-invalid={!!error || undefined}
               onChange={(e) => setText(e.target.value)} />
           </div>
           {q.length >= 2 && (
@@ -123,7 +123,7 @@ export function StudentPicker({ value, onChange, label = 'Student', error, requi
           )}
         </>
       )}
-      {error && <span className="hint" style={{ color: 'var(--critical)' }} role="alert">{error}</span>}
+      {error && <span className="hint t-critical" role="alert">{error}</span>}
     </div>
   );
 }
@@ -135,4 +135,30 @@ export function FormGrid({ children, cols = 2 }: { children: ReactNode; cols?: 1
 
 export function MoneyText({ value }: { value: number | null | undefined }) {
   return <span className="t-num">{fmt.money(value)}</span>;
+}
+
+/** A titled group of fields inside a long form (`.formsection`). */
+export function FormSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="formsection">
+      <div className="formsection__title">{title}</div>
+      {children}
+    </div>
+  );
+}
+
+/** Server error shown under a form (field errors are mapped onto the fields as well). */
+export function FormError({ error }: { error: unknown }) {
+  if (!error) return null;
+  return <div className="mt-3"><InlineError error={error} /></div>;
+}
+
+/** Row class that flags an overdue, expired or urgent record in a DataTable (module CSS). */
+export const CRITICAL_ROW = 'oi-ops-row--critical';
+
+/** Due-date figure with an overdue badge or a coloured "in N days" line. */
+export function DueIn({ days, soon = 30 }: { days: number | null | undefined; soon?: number }) {
+  if (days == null) return null;
+  if (days < 0) return <div className="mt-1"><Badge tone="critical" dot>{daysLabel(days)}</Badge></div>;
+  return <div className={cx('t-micro', days <= soon ? 't-warning' : 't-muted')}>{daysLabel(days)}</div>;
 }

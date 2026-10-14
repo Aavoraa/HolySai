@@ -6,9 +6,8 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
-  AlertItem, Badge, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter, Page, PageSkeleton,
-  Person, StudentLink,
-} from '@/components/ui';
+  AlertItem, Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter, Page, PageSkeleton,
+  Person, StudentLink, CampusBanner, DashLayout, DashRail, UpcomingEvents, SchoolPulse } from '@/components/ui';
 import { fmt } from '@/lib/format';
 
 /**
@@ -196,16 +195,16 @@ export default function OwnerOverviewPage() {
   const scopeLabel = school.scope === 'group' ? 'All campuses' : school.campus?.name ?? 'your campus';
 
   const head = (
-    <div className="pagehead">
-      <div className="grow">
-        <h1 className="display">{greet}, {user?.fullName}</h1>
-        <p className="lede mt-2">{scopeLabel} · {school.yearLabel} · figures for this academic year to date.</p>
-      </div>
-      <div className="pagehead__actions">
-        <Button variant="ghost" icon="activity" to="/audit">Full audit trail</Button>
-        <Button variant="ghost" icon="pulse" to="/command-center">Daily operations</Button>
-      </div>
-    </div>
+    <CampusBanner
+      title={<>{greet}, {user?.fullName}</>}
+      sub={<>{scopeLabel} · {school.yearLabel} · figures for this academic year to date.</>}
+      actions={(
+        <>
+          <Button variant="ghost" icon="activity" to="/audit">Full audit trail</Button>
+          <Button variant="ghost" icon="pulse" to="/command-center">Daily operations</Button>
+        </>
+      )}
+    />
   );
 
   if (q.isLoading) return <Page>{head}<PageSkeleton kpis={4} /></Page>;
@@ -235,19 +234,28 @@ export default function OwnerOverviewPage() {
   return (
     <Page>
       {head}
+      <DashLayout rail={<DashRail events={false} actions={[
+        { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
+        { label: 'Users & Roles', icon: 'users', to: '/admin/users', show: can('users.manage') },
+        { label: 'Fee Collection', icon: 'wallet', to: '/fees', show: can('finance.read') },
+        { label: 'Audit Trail', icon: 'list', to: '/audit', show: can('audit.read') },
+        { label: 'Report Centre', icon: 'barChart', to: '/admin/reports', show: can('users.manage') },
+        { label: 'System Settings', icon: 'settings', to: '/admin/settings', show: can('settings.manage') },
+      ]} />}>
+      <SchoolPulse events={false} />
 
       {/* ---- Welcome strip ---------------------------------------------- */}
-      <section className="card card--navy" style={{ padding: 'var(--s-5) var(--s-6)' }}>
+      <section className="card oi-ov-welcome">
         <div className="row g-4 wrap between">
-          <div className="row g-3 grow" style={{ minWidth: 0 }}>
+          <div className="row g-3 grow oi-minw0">
             <span className="avatar avatar--gold none"><Icon name="shield" size={18} /></span>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="t-sm t-bold" style={{ color: '#fff' }}>
+            <div className="grow oi-minw0">
+              <div className="t-sm t-bold t-strong">
                 {visit.firstVisit
                   ? 'Welcome — this is your first recorded sign-in.'
                   : <>You last signed in on <strong>{fmt.dateTime(visit.at)}</strong>{visit.device ? ` from ${visit.device}` : ''}{visit.ip ? ` (${visit.ip})` : ''}.</>}
               </div>
-              <div className="t-xs mt-1" style={{ color: 'var(--text-on-navy)' }}>
+              <div className="t-xs t-muted mt-1">
                 {welcome.changes === 0
                   ? visit.firstVisit ? 'Showing the last seven days of activity.' : 'Nothing has changed since then.'
                   : <>Since then <strong>{fmt.n(welcome.changes)}</strong> change{welcome.changes === 1 ? '' : 's'} by <strong>{welcome.people}</strong> {welcome.people === 1 ? 'person' : 'people'}
@@ -283,14 +291,14 @@ export default function OwnerOverviewPage() {
         </div>
 
         <Grid cols="g-4col">
-          <OverviewTile eyebrow="Finance" title="Revenue" sub="Collection & expenditure" to={revenue ? '/financial-reports' : undefined}
+          <OverviewTile icon="wallet" eyebrow="Finance" title="Revenue" sub="Collection & expenditure" to={revenue ? '/financial-reports' : undefined}
             figs={revenue ? [
               ['Collected', fmt.money(revenue.collected, { compact: true })],
               ['Spent', fmt.money(revenue.out.total, { compact: true })],
               ['Outstanding', fmt.money(revenue.outstanding, { compact: true }), revenue.aged.due60plus > 0 ? 'critical' : undefined],
               ['Net', fmt.money(revenue.net, { compact: true }), revenue.net < 0 ? 'critical' : undefined],
             ] : [['Access', 'Not in your role']]} />
-          <OverviewTile eyebrow="Academics" title="Standards" sub="Results & syllabus" to="/academic-performance"
+          <OverviewTile icon="graduation" eyebrow="Academics" title="Standards" sub="Results & syllabus" to="/academic-performance"
             figs={sc ? [
               ['Average score', sc.standards.avgScore != null ? `${sc.standards.avgScore}%` : '—'],
               ['Syllabus covered', sc.standards.syllabus != null ? `${sc.standards.syllabus}%` : '—'],
@@ -299,15 +307,17 @@ export default function OwnerOverviewPage() {
               ['Below pass mark', `${fmt.n(sc.standards.belowPass)} student${sc.standards.belowPass === 1 ? '' : 's'}`,
                 sc.standards.belowPass > 0 ? 'critical' : undefined],
             ] : []} />
-          <OverviewTile eyebrow="Operations" title="Discipline" sub="Safety & incidents" to="/safeguarding"
+          <OverviewTile icon="shield" eyebrow="Operations" title="Discipline" sub="Safety & incidents" to="/safeguarding"
             figs={sc ? [
               ['Open incidents', fmt.n(sc.discipline.openIncidents)],
               ['Critical', fmt.n(sc.discipline.critical), sc.discipline.critical > 0 ? 'critical' : undefined],
               ['Behaviour concerns', `${fmt.n(sc.discipline.concerns30)} in 30 days`],
               ['Positive notes', `${fmt.n(sc.discipline.positive30)} in 30 days`],
             ] : []} />
-          <EventsTile events={sampleEventsFor(school.scope === 'group' ? undefined : school.campus?.code, campusOptions)}
-            showCampus={school.scope === 'group'} />
+          {can('communication.read') ? <UpcomingEvents /> : (
+            <EventsTile events={sampleEventsFor(school.scope === 'group' ? undefined : school.campus?.code, campusOptions)}
+              showCampus={school.scope === 'group'} />
+          )}
         </Grid>
 
         {revenue && (
@@ -387,7 +397,7 @@ export default function OwnerOverviewPage() {
                 {sc.approvals.total > 0 && (
                   <span className="t-xs t-muted">
                     {sc.approvals.total} waiting · {fmt.money(sc.approvals.amount, { compact: true })} at stake
-                    {sc.approvals.overdue > 0 && <> · <strong style={{ color: 'var(--critical-text)' }}>{sc.approvals.overdue} past deadline</strong></>}
+                    {sc.approvals.overdue > 0 && <> · <strong className="oi-crit">{sc.approvals.overdue} past deadline</strong></>}
                   </span>
                 )}
               </div>
@@ -409,7 +419,7 @@ export default function OwnerOverviewPage() {
                             </td>
                             <td className="t-right t-num">{a.amount != null ? fmt.money(a.amount, { compact: true }) : `${a.days} day${a.days === 1 ? '' : 's'}`}</td>
                             <td className="t-num">{daysSince(a.raisedAt)}d</td>
-                            <td className="t-num" style={{ color: late ? 'var(--critical-text)' : undefined }}>{fmt.date(a.deadline)}</td>
+                            <td className={late ? 't-num oi-crit' : 't-num'}>{fmt.date(a.deadline)}{late && <span className="sr-only"> (past deadline)</span>}</td>
                           </tr>
                         );
                       })}
@@ -437,17 +447,17 @@ export default function OwnerOverviewPage() {
 
         {/* 5. School configuration & governance */}
         {sc && (
-          <div style={{ padding: 'var(--s-2) var(--s-1) 0' }}>
+          <div className="oi-ov-section">
             <h3 className="ov-head__title"><Icon name="settings" size={19} />5. School configuration &amp; governance</h3>
             <div className="ov-head__sub">Setup status · Access controls · Policies · Audit trail · Reporting hierarchy</div>
-            <Grid cols="g-auto" className="mt-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))' }}>
+            <Grid cols="oi-ov-govgrid" className="mt-4">
               <div className="ov-tile">
                 <div className="ov-label">Setup status</div>
                 <Meter label={`${sc.governance.setup.checks.filter((x) => x.ok).length} of ${sc.governance.setup.checks.length} configured`}
                   value={sc.governance.setup.pct} right={`${sc.governance.setup.pct}%`} tone={sc.governance.setup.pct < 100 ? 'critical' : 'teal'} />
                 <div className="col g-1 mt-3">
                   {sc.governance.setup.checks.map((x) => (
-                    <span key={x.label} className="row g-2 t-xs" style={{ color: x.ok ? undefined : 'var(--critical-text)' }}>
+                    <span key={x.label} className={x.ok ? 'row g-2 t-xs' : 'row g-2 t-xs oi-crit'}>
                       <Icon name={x.ok ? 'check' : 'x'} size={13} />{x.label}
                     </span>
                   ))}
@@ -479,7 +489,7 @@ export default function OwnerOverviewPage() {
               <div className="ov-tile">
                 <div className="ov-label">Reporting hierarchy</div>
                 {sc.governance.hierarchy.length ? sc.governance.hierarchy.map((h, i) => (
-                  <GovLine key={h.role} label={<span style={{ paddingLeft: Math.min(i, 3) * 8 }}>{i > 0 ? '└ ' : ''}{h.role}</span>} value={fmt.n(h.users)} />
+                  <GovLine key={h.role} label={<span className={`oi-indent-${Math.min(i, 3)}`}>{i > 0 ? '└ ' : ''}{h.role}</span>} value={fmt.n(h.users)} />
                 )) : <div className="t-sm t-muted">No active staff accounts.</div>}
               </div>
             </Grid>
@@ -487,7 +497,7 @@ export default function OwnerOverviewPage() {
             {activity && activity.important.length > 0 && (
               <details className="ov-details mt-4">
                 <summary>Changes worth your attention ({activity.important.length})<Icon name="chevronDown" size={14} className="ov-chev" /></summary>
-                <div className="card" style={{ overflow: 'hidden' }}>
+                <div className="card oi-ov-list">
                   {activity.important.map((e) => {
                     const detail = metaSummary(e.metadata);
                     return (
@@ -496,7 +506,7 @@ export default function OwnerOverviewPage() {
                           <>
                             {e.userName} ({e.role.replace(/_/g, ' ')}) · {moduleLabel(e.module)} · {fmt.dateTime(e.at)}
                             {e.device ? ` · ${e.device}` : ''}{e.ip ? ` (${e.ip})` : ''}
-                            {detail && <span className="t-micro t-muted" style={{ display: 'block', marginTop: 2 }}>{detail}</span>}
+                            {detail && <span className="t-micro t-muted oi-block">{detail}</span>}
                           </>
                         }
                         to={entityLink(e.entityType, e.entityId)} />
@@ -509,12 +519,10 @@ export default function OwnerOverviewPage() {
         )}
 
         {!sc && (
-          <div className="banner banner--neutral">
-            <Icon name="lock" size={17} />
-            <div className="grow">Goals, approvals, exceptions and governance need audit access.</div>
-          </div>
+          <Banner tone="neutral" icon="lock">Goals, approvals, exceptions and governance need audit access.</Banner>
         )}
       </section>
+      </DashLayout>
     </Page>
   );
 }
@@ -526,22 +534,22 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
           <Grid cols="g-4col" className="mt-5">
             <Kpi
               label="Fees collected" value={fmt.money(revenue.collected, { compact: true })}
-              tone="teal" to="/payments"
+              tone="teal" icon="wallet" to="/payments"
               foot={revenue.collectedPct != null ? `${revenue.collectedPct}% of ${fmt.money(revenue.billed, { compact: true })} billed` : 'No fees billed yet'}
               spark={revenue.trend.map((m) => m.collected)} sparkColor="var(--teal)"
             />
             <Kpi
-              label="Still outstanding" value={fmt.money(revenue.outstanding, { compact: true })}
+              label="Still outstanding" value={fmt.money(revenue.outstanding, { compact: true })} icon="alertCircle"
               tone={revenue.aged.due60plus > 0 ? 'critical' : 'amber'} to="/student-accounts"
               foot={`${revenue.aged.familiesOverdue} famil${revenue.aged.familiesOverdue === 1 ? 'y' : 'ies'} past due`}
             />
             <Kpi
               label="Money out" value={fmt.money(revenue.out.total, { compact: true })}
-              tone="info" to="/expenses"
+              tone="info" icon="receipt" to="/expenses"
               foot={`Payroll ${fmt.money(revenue.out.payroll, { compact: true })} · expenses ${fmt.money(revenue.out.expenses, { compact: true })}`}
             />
             <Kpi
-              label="Net position" value={fmt.money(revenue.net, { compact: true })}
+              label="Net position" value={fmt.money(revenue.net, { compact: true })} icon="trending"
               tone={revenue.net < 0 ? 'critical' : 'teal'}
               foot={revenue.net < 0 ? 'Spending exceeds collection this year' : 'Collection exceeds spending this year'}
             />
@@ -550,7 +558,7 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
           <Grid cols="g-main" className="mt-5">
             <MoneyTrend trend={revenue.trend} />
 
-            <Card title="Money out" sub={`This academic year${revenue.out.payrollMonths ? ` · ${revenue.out.payrollMonths} payroll months` : ''}`}>
+            <Card icon="wallet" title="Money out" sub={`This academic year${revenue.out.payrollMonths ? ` · ${revenue.out.payrollMonths} payroll months` : ''}`}>
               <div className="col g-4">
                 <Meter label="Salaries" value={pctOf(revenue.out.payroll, revenue.out.total)}
                   right={fmt.money(revenue.out.payroll, { compact: true })} />
@@ -562,13 +570,13 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
                   <div className="divider" />
                   <div className="t-xs t-muted mb-2">Waiting on a decision</div>
                   {revenue.pending.expenses.count > 0 && (
-                    <div className="row between g-3 t-sm" style={{ padding: '4px 0' }}>
+                    <div className="row between g-3 t-sm oi-ov-line">
                       <span>{revenue.pending.expenses.count} expense claim{revenue.pending.expenses.count === 1 ? '' : 's'}</span>
                       <strong>{fmt.money(revenue.pending.expenses.amount, { compact: true })}</strong>
                     </div>
                   )}
                   {revenue.pending.concessions.count > 0 && (
-                    <div className="row between g-3 t-sm" style={{ padding: '4px 0' }}>
+                    <div className="row between g-3 t-sm oi-ov-line">
                       <span>{revenue.pending.concessions.count} fee concession{revenue.pending.concessions.count === 1 ? '' : 's'}</span>
                       <strong>{fmt.money(revenue.pending.concessions.amount, { compact: true })}</strong>
                     </div>
@@ -579,7 +587,7 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
           </Grid>
 
           <Grid cols="g-main" className="mt-5">
-            <Card title="What families still owe" sub="Unpaid balances by how long they have been due">
+            <Card icon="wallet" title="What families still owe" sub="Unpaid balances by how long they have been due">
               <AgedBar aged={revenue.aged} outstanding={revenue.outstanding} />
               <div className="divider" />
               <div className="row g-5 wrap">
@@ -609,10 +617,10 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
             <Card title="Families furthest behind" sub="Largest overdue balances this academic year" flush
               actions={<Button size="sm" variant="ghost" icon="arrowRight" to="/student-accounts">All accounts</Button>}>
               {revenue.topOwing.length ? revenue.topOwing.map((s) => (
-                <div key={s.studentId} className="row between g-3 hoverable" style={{ padding: '10px var(--s-5)', borderBottom: '1px solid var(--border-soft)' }}>
+                <div key={s.studentId} className="row between g-3 hoverable oi-ov-owing">
                   <StudentLink id={s.studentId} name={s.name}
                     meta={[s.className, s.campus, s.admissionNo].filter(Boolean).join(' · ')} />
-                  <div className="col none" style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <div className="col none oi-ov-owing__fig">
                     <strong className="t-sm t-num">{fmt.money(s.overdue)}</strong>
                     <Badge tone={ageTone(s.daysOverdue)} title={`Oldest unpaid charge due ${fmt.date(s.oldestDue)}`}>
                       {s.daysOverdue} days · {s.charges} charge{s.charges === 1 ? '' : 's'}
@@ -626,14 +634,14 @@ function FinanceDetail({ revenue }: { revenue: Revenue }) {
           </Grid>
 
           <Grid cols={revenue.byCampus.length ? 'g-2col' : ''} className="mt-5">
-            <Card title="By fee head" sub="Billed after concessions, and how much of it has come in" flush>
+            <Card icon="wallet" title="By fee head" sub="Billed after concessions, and how much of it has come in" flush>
               <BreakdownTable
                 rows={revenue.byHead.map((h) => ({ key: h.head, label: h.head, billed: h.billed, collected: h.collected,
                   outstanding: h.outstanding, extra: h.concessions }))}
                 extraLabel="Concessions" />
             </Card>
             {revenue.byCampus.length > 0 && (
-              <Card title="By campus" sub="Fees against salaries and expenses, this academic year" flush>
+              <Card icon="building" title="By campus" sub="Fees against salaries and expenses, this academic year" flush>
                 <BreakdownTable
                   rows={revenue.byCampus.map((c) => ({ key: c.campus, label: c.campus, billed: c.billed, collected: c.collected,
                     outstanding: c.outstanding, extra: c.collected - c.spent }))}
@@ -650,7 +658,7 @@ function ActivityDetail({ activity, firstVisit }: { activity: Activity; firstVis
   const visit = { firstVisit };
   return (
         <div className="col g-4">
-          <Card title="Waiting for a decision" flush>
+          <Card icon="checkSquare" title="Waiting for a decision" flush>
             {activity.approvals.length ? activity.approvals.map((a) => {
               const waited = daysSince(a.oldest);
               const total = a.unit === 'days' ? `${fmt.n(a.total)} day${a.total === 1 ? '' : 's'}` : fmt.money(a.total, { compact: true });
@@ -665,7 +673,7 @@ function ActivityDetail({ activity, firstVisit }: { activity: Activity; firstVis
             )}
           </Card>
 
-          <Card title="Busiest areas" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
+          <Card icon="bus" title="Busiest areas" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
             {activity.byModule.length ? (
               <div className="col g-3">
                 {activity.byModule.map((m) => (
@@ -680,17 +688,17 @@ function ActivityDetail({ activity, firstVisit }: { activity: Activity; firstVis
             ) : <div className="t-sm t-muted">No changes recorded in this period.</div>}
           </Card>
 
-          <Card title="Who has been working" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
+          <Card icon="grid" title="Who has been working" sub={visit.firstVisit ? 'Last seven days' : 'Since your last sign-in'}>
             {activity.byPerson.length ? (
               <div className="col g-1">
                 {activity.byPerson.map((p) => (
-                  <div className="col hoverable" key={p.name + p.role} style={{ padding: '6px 0' }}>
+                  <div className="col hoverable oi-ov-person" key={p.name + p.role}>
                     <div className="row between g-3">
                       <Person name={p.name} meta={`${p.role.replace(/_/g, ' ')} · last active ${fmt.relative(p.lastAt)}`} />
                       <span className="t-sm t-bold t-num none" title="Changes made">{p.count}</span>
                     </div>
                     {p.modules.length > 0 && (
-                      <div className="row g-1 wrap mt-1" style={{ paddingLeft: 40 }}>
+                      <div className="row g-1 wrap mt-1 oi-ov-person__mods">
                         {p.modules.map((m) => <Badge key={m.module}>{moduleLabel(m.module)} {m.count}</Badge>)}
                       </div>
                     )}
@@ -709,27 +717,37 @@ function ActivityDetail({ activity, firstVisit }: { activity: Activity; firstVis
 const pctOf = (part: number, whole: number) => (whole > 0 ? Math.round((part / whole) * 100) : 0);
 
 /** One of the three School overview tiles: area, headline, subject, then up to four figures. */
-function OverviewTile({ eyebrow, title, sub, to, figs }: {
+function OverviewTile({ eyebrow, title, sub, to, figs, icon }: {
   eyebrow: string; title: string; sub: string; to?: string; figs: [string, string, ('critical' | undefined)?][];
+  /** Icon shown in a tinted tile, as on the dashboard KPI cards. */
+  icon?: string;
 }) {
   const content = (
     <>
-      <div className="ov-tile__eyebrow">{eyebrow}</div>
-      <div className="ov-tile__title">{title}</div>
+      <div className="ov-tile__top">
+        {icon && <span className="ov-tile__ico"><Icon name={icon} size={20} /></span>}
+        <div className="oi-minw0">
+          <div className="ov-tile__eyebrow">{eyebrow}</div>
+          <div className="ov-tile__title">{title}</div>
+        </div>
+        {to && <Icon name="arrowRight" size={15} className="ov-tile__go" />}
+      </div>
       <div className="ov-tile__sub">{sub}</div>
       {figs.length > 0 && (
         <div className="ov-tile__figs">
           {figs.map(([label, value, tone]) => (
             <div key={label}>
               <span className="ov-fig__label">{label}</span>
-              <span className="ov-fig__value" style={{ color: tone ? 'var(--critical-text)' : undefined }}>{value}</span>
+              <span className={tone ? 'ov-fig__value oi-crit' : 'ov-fig__value'}>{value}</span>
             </div>
           ))}
         </div>
       )}
     </>
   );
-  return to ? <Link className="ov-tile" to={to}>{content}</Link> : <div className="ov-tile">{content}</div>;
+  return to
+    ? <Link className="ov-tile ov-tile--kpi" to={to}>{content}</Link>
+    : <div className="ov-tile ov-tile--kpi">{content}</div>;
 }
 
 /** Calendar tile: the next few events on the campus calendar. */
@@ -744,15 +762,15 @@ function EventsTile({ events, showCampus }: {
       </div>
       <div className="ov-tile__title">Upcoming events</div>
       <div className="ov-tile__sub">As per the campus calendar</div>
-      <div className="ov-tile__figs" style={{ gridTemplateColumns: 'minmax(0, 1fr)', gap: 'var(--s-2)' }}>
+      <div className="ov-tile__figs oi-ov-events">
         {events.length ? events.map((e) => (
           <div key={e.campus + e.title} className="row g-3">
             <span className="ov-date none">
               <span>{e.date.toLocaleDateString('en-IN', { month: 'short' })}</span>
               <strong>{e.date.getDate()}</strong>
             </span>
-            <div className="grow" style={{ minWidth: 0 }}>
-              <div className="t-sm t-bold" style={{ color: 'var(--text-strong)' }}>{e.title}</div>
+            <div className="grow oi-minw0">
+              <div className="t-sm t-bold t-strong">{e.title}</div>
               <div className="t-micro t-muted">
                 {e.kind}{showCampus ? ` · ${e.campus}` : ''} · {e.in === 1 ? 'tomorrow' : `in ${e.in} days`}
               </div>
@@ -767,9 +785,9 @@ function EventsTile({ events, showCampus }: {
 /** A label / value line inside a governance tile. */
 function GovLine({ label, value, warn }: { label: ReactNode; value: ReactNode; warn?: boolean }) {
   return (
-    <div className="row between g-3 t-sm" style={{ padding: '3px 0' }}>
+    <div className="row between g-3 t-sm oi-ov-line">
       <span className="t-muted">{label}</span>
-      <strong className="t-num" style={{ color: warn ? 'var(--critical-text)' : undefined }}>{value}</strong>
+      <strong className={warn ? 't-num oi-crit' : 't-num'}>{value}</strong>
     </div>
   );
 }
@@ -782,7 +800,7 @@ function Figure({ label, value, sub, delta, deltaLabel }: {
       <span className="t-xs t-muted">{label}</span>
       <span className="h2 mt-1 t-num">{value}</span>
       {delta != null ? (
-        <span className={`kpi__delta mt-1 ${delta >= 0 ? 'kpi__delta--up' : 'kpi__delta--down'}`} style={{ alignSelf: 'flex-start' }}>
+        <span className={`kpi__delta mt-1 oi-self-start ${delta >= 0 ? 'kpi__delta--up' : 'kpi__delta--down'}`}>
           <Icon name={delta >= 0 ? 'arrowUp' : 'arrowDown'} size={12} />{Math.abs(delta)}% {deltaLabel}
         </span>
       ) : sub ? <span className="t-micro t-muted mt-1">{sub}</span> : null}
@@ -799,7 +817,7 @@ function MoneyTrend({ trend }: { trend: Revenue['trend'] }) {
   const shortfall = trend.filter((m, i) => out[i] > m.collected && out[i] > 0).map((m) => m.label);
 
   return (
-    <Card title="Money in and out by month" sub="Fees collected against salaries and expenses, this academic year"
+    <Card icon="wallet" title="Money in and out by month" sub="Fees collected against salaries and expenses, this academic year"
       actions={<Legend items={[{ label: 'Fees collected', color: 'var(--teal)' }, { label: 'Money out', color: 'var(--brand)' }]} />}>
       {trend.some((m, i) => m.collected > 0 || out[i] > 0) ? (
         <>
@@ -816,7 +834,7 @@ function MoneyTrend({ trend }: { trend: Revenue['trend'] }) {
             <span><span className="t-muted">Average collected </span><strong>{fmt.money(avg, { compact: true })} a month</strong></span>
             <span>
               <span className="t-muted">Spent more than collected </span>
-              <strong style={{ color: shortfall.length ? 'var(--critical)' : undefined }}>
+              <strong className={shortfall.length ? 'oi-crit' : undefined}>
                 {shortfall.length ? shortfall.join(', ') : 'no month'}
               </strong>
             </span>
@@ -840,7 +858,7 @@ function BreakdownTable({ rows, extraLabel, signedExtra }: {
           <tr>
             <th />
             <th className="t-right">Billed</th>
-            <th style={{ width: '26%' }}>Collected</th>
+            <th className="oi-ov-colmeter">Collected</th>
             <th className="t-right">Outstanding</th>
             <th className="t-right">{extraLabel}</th>
           </tr>
@@ -851,10 +869,10 @@ function BreakdownTable({ rows, extraLabel, signedExtra }: {
               <td className="t-bold">{r.label}</td>
               <td className="t-right t-num">{fmt.money(r.billed, { compact: true })}</td>
               <td><Meter label={fmt.money(r.collected, { compact: true })} value={pctOf(r.collected, r.billed)} tone="teal" /></td>
-              <td className="t-right t-num" style={{ color: r.outstanding > 0 ? 'var(--critical-text)' : undefined }}>
+              <td className={r.outstanding > 0 ? 't-right t-num oi-crit' : 't-right t-num'}>
                 {fmt.money(r.outstanding, { compact: true })}
               </td>
-              <td className="t-right t-num" style={{ color: signedExtra && r.extra < 0 ? 'var(--critical-text)' : undefined }}>
+              <td className={signedExtra && r.extra < 0 ? 't-right t-num oi-crit' : 't-right t-num'}>
                 {fmt.money(r.extra, { compact: true })}
               </td>
             </tr>
@@ -880,7 +898,7 @@ function AgedBar({ aged, outstanding }: { aged: Revenue['aged']; outstanding: nu
 
   return (
     <>
-      <div className="row" style={{ height: 14, borderRadius: 99, overflow: 'hidden', background: 'var(--bg-sunken)' }}>
+      <div className="row oi-ov-aged" role="img" aria-label={bands.map((b) => `${b.label} ${fmt.money(b.value, { compact: true })}`).join(', ')}>
         {bands.map((b) => (
           <span key={b.label} title={`${b.label}: ${fmt.money(b.value)}`}
             style={{ width: `${(b.value / outstanding) * 100}%`, background: b.cls, height: '100%' }} />

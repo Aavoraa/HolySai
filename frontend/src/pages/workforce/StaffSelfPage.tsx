@@ -4,9 +4,8 @@ import { ApiError } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import {
-  AlertItem, Badge, Button, Card, DataTable, Empty, ErrorState, InlineError, Kpi, Meter, Modal, Page, PageSkeleton, Status,
-  TextArea, TextField, useConfirm,
-} from '@/components/ui';
+  AlertItem, Badge, Banner, Button, Card, DataTable, Empty, ErrorState, InlineError, Kpi, Meter, Modal, Page, PageSkeleton, Skeleton, Status,
+  TextArea, TextField, useConfirm, CampusBanner, DashLayout, DashRail, DonutCard, TrendCard, type TrendPoint } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import { LeaveApplyModal, addDays, dayName, fieldErrors } from './shared';
 import type { LeaveBalance, LeaveRow, MyEmployee, MyRosterDay, OvertimeRow, TaskRow } from './types';
@@ -20,12 +19,28 @@ const greeting = () => {
   return h < 12 ? 'Good Morning' : h < 17 ? 'Good Afternoon' : 'Good Evening';
 };
 const firstName = (n: string) => n.replace(/^(Dr|Mr|Ms|Mrs|Nurse)\.?\s+/i, '').split(' ')[0];
+/** Weekly attendance rate (present/late count in full, half days as half) from my own marked days. */
+function weeklyRate(rows: Attendance['rows']): TrendPoint[] {
+  const weeks = new Map<string, { marked: number; credit: number }>();
+  for (const r of rows) {
+    const day = String(r.date).slice(0, 10);
+    const dt = new Date(`${day}T00:00:00Z`);
+    const monday = addDays(day, -((dt.getUTCDay() + 6) % 7));
+    const w = weeks.get(monday) ?? { marked: 0, credit: 0 };
+    w.marked += 1;
+    w.credit += r.status === 'Present' || r.status === 'Late' ? 1 : r.status === 'Half Day' ? 0.5 : 0;
+    weeks.set(monday, w);
+  }
+  return [...weeks.entries()].sort(([a], [b]) => a.localeCompare(b))
+    .map(([monday, w]) => ({ label: fmt.dateShort(monday), value: Math.round((w.credit / w.marked) * 100) }));
+}
+
 const TONE: Record<string, string> = { Approved: 'success', Paid: 'success', Rejected: 'critical', Cancelled: 'neutral', Submitted: 'warning', 'Under Review': 'warning' };
 
 export default function StaffSelfPage() {
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const { user } = useAuth();
+  const { user, can } = useAuth();
   const me = useApiQuery<MyEmployee>('/me/employee');
   const linked = !(me.error instanceof ApiError && me.error.code === 'EMPLOYEE_NOT_LINKED');
   const on = !!me.data;
@@ -68,32 +83,76 @@ export default function StaffSelfPage() {
   ].join(' ');
   const checkedIn = !!e.checkIn;
   const lastSlip = d.lastPayslip;
+  // Check-in is the one primary action until it is done; after that, applying for leave is.
+  const needsCheckIn = e.today !== 'On Leave' && !checkedIn;
+  const awaiting = (requests.data ?? []).filter((r) => r.status === 'Submitted' || r.status === 'Under Review').length;
+  const overdue = (tasks.data ?? []).filter((t) => t.overdue).length;
+  const attRows = attendance.data?.rows ?? [];
+  const monthKey = todayKey().slice(0, 7);
+  const monthRows = attRows.filter((r) => String(r.date).slice(0, 7) === monthKey);
+  const countOf = (st: string) => monthRows.filter((r) => r.status === st).length;
+  const monthPresent = countOf('Present') + countOf('Late') + countOf('Half Day') * 0.5;
+  const monthRate = monthRows.length ? Math.round((monthPresent / monthRows.length) * 100) : null;
 
   return (
     <Page>
-      <div className="pagehead">
-        <div className="grow">
-          <h1 className="display">{greeting()}, {firstName(e.fullName)}</h1>
-          <p className="lede mt-2">{lede}</p>
+      <CampusBanner
+        title={<>{greeting()}, {firstName(e.fullName)}</>}
+        sub={<>{lede}</>}
+        actions={(
+          <>
+            {e.today !== 'On Leave' && (!checkedIn
+              ? <Button variant="primary" icon="clock" loading={checkIn.isPending} onClick={() => checkIn.mutate()}>Check in</Button>
+              : !e.checkOut && <Button icon="logout" loading={checkOut.isPending} onClick={async () => {
+                  if (await confirm({ title: 'Check out now?', body: `You checked in at ${e.checkIn}.`, confirmLabel: 'Check out' })) checkOut.mutate();
+                }}>Check out</Button>)}
+            <Button icon="clock" onClick={() => setClaiming(true)}>Claim overtime</Button>
+            <Button variant={needsCheckIn ? 'ghost' : 'primary'} icon="calendar" onClick={() => setApplying(true)}>Apply for leave</Button>
+          </>
+        )}
+      />
+      <DashLayout rail={<DashRail actions={[
+        { label: 'My Tasks', icon: 'checkSquare', to: '/my-tasks' },
+        { label: 'Bus Tracking', icon: 'bus', to: '/bus-tracking', show: can('transport.read') },
+        { label: 'Gate Entry/Exit', icon: 'scan', to: '/gate-log', show: can('safety.read') },
+        { label: 'Notifications', icon: 'bell', to: '/notifications' },
+        { label: 'My Account', icon: 'user', to: '/account' },
+      ]} />}>
+
+      {(awaiting > 0 || overdue > 0) && (
+        <div className="mb-4">
+          <Banner tone={overdue ? 'warning' : 'neutral'} icon={overdue ? 'alert' : 'clock'}>
+            {[
+              awaiting ? `${awaiting} request${awaiting > 1 ? 's are' : ' is'} awaiting a decision` : '',
+              overdue ? `${overdue} task${overdue > 1 ? 's are' : ' is'} overdue` : '',
+            ].filter(Boolean).join(' · ')}
+            {overdue > 0 && <> — <button type="button" className="portal-titlebtn t-bold" onClick={() => navigate('/my-tasks')}>open my tasks</button></>}
+          </Banner>
         </div>
-        <div className="pagehead__actions">
-          {e.today !== 'On Leave' && (!checkedIn
-            ? <Button icon="clock" loading={checkIn.isPending} onClick={() => checkIn.mutate()}>Check in</Button>
-            : !e.checkOut && <Button icon="logout" loading={checkOut.isPending} onClick={async () => {
-                if (await confirm({ title: 'Check out now?', body: `You checked in at ${e.checkIn}.`, confirmLabel: 'Check out' })) checkOut.mutate();
-              }}>Check out</Button>)}
-          <Button icon="clock" onClick={() => setClaiming(true)}>Claim overtime</Button>
-          <Button variant="primary" icon="calendar" onClick={() => setApplying(true)}>Apply for leave</Button>
-        </div>
-      </div>
+      )}
 
       <div className="grid g-4col">
-        <Kpi label="Shift today" value={shiftKind} unit={shiftHours}
+        <Kpi icon="clock" label="Shift today" value={shiftKind} unit={shiftHours}
           foot={e.checkIn ? `Clocked in at ${e.checkIn}${e.checkOut ? ` · out ${e.checkOut}` : ''}` : e.today === 'On Leave' ? 'On leave today' : 'Not clocked in yet'} />
-        <Kpi label="Leave balance" value={e.leaveBalance} unit="days" tone="teal" foot={`Of ${e.leaveEntitled} days this year`} />
-        <Kpi label="Overtime this month" value={d.overtime.hours} unit="hours" tone="amber"
+        <Kpi icon="calendar" label="Leave balance" value={e.leaveBalance} unit="days" tone="teal" foot={`Of ${e.leaveEntitled} days this year`} />
+        <Kpi icon="zap" label="Overtime this month" value={d.overtime.hours} unit="hours" tone="amber"
           foot={d.overtime.pending ? `${d.overtime.pending} h pending approval` : d.overtime.hours ? 'Approved' : 'No claims this month'} />
-        <Kpi label="Last payslip" value={lastSlip ? fmt.money(lastSlip.net) : '—'} tone="info" foot={lastSlip ? `${lastSlip.monthLabel} — see below` : 'None released yet'} />
+        <Kpi icon="receipt" label="Last payslip" value={lastSlip ? fmt.money(lastSlip.net) : '—'} tone="info" foot={lastSlip ? `${lastSlip.monthLabel} — see below` : 'None released yet'} />
+      </div>
+
+      <div className="grid dash__pair mt-4">
+        <TrendCard title="My Attendance" series="Attendance (weekly)" points={weeklyRate(attRows)}
+          empty={{ title: attendance.isLoading ? 'Loading attendance…' : 'Not enough attendance yet', sub: 'Your weekly attendance rate over the last 30 days appears once a few days are marked.' }} />
+        <DonutCard title="This Month" icon="checkSquare"
+          center={monthRate != null ? `${monthRate}%` : undefined} centerSub={monthRate != null ? 'Attendance' : undefined}
+          bands={[
+            { label: 'Present', value: countOf('Present'), color: 'var(--success)' },
+            { label: 'Late', value: countOf('Late'), color: 'var(--accent)' },
+            { label: 'Half Day', value: countOf('Half Day'), color: 'var(--caution)' },
+            { label: 'On Leave', value: countOf('On Leave'), color: 'var(--brand)' },
+            { label: 'Absent', value: countOf('Absent'), color: 'var(--critical)' },
+          ].filter((b) => b.value > 0)}
+          empty={{ title: 'No attendance this month yet', sub: 'Your days appear here once attendance is marked.' }} />
       </div>
 
       <div className="grid g-main mt-4">
@@ -118,9 +177,9 @@ export default function StaffSelfPage() {
           )}
         </Card>
         <div className="col g-4">
-          <Card title="My requests" flush>
+          <Card icon="grid" title="My requests" flush>
             {requests.error ? <ErrorState error={requests.error} onRetry={() => requests.refetch()} /> : requests.isLoading ? (
-              <div style={{ padding: 16 }}><span className="skeleton" style={{ display: 'block', height: 120 }} /></div>
+              <div className="portal-pad"><Skeleton height={120} /></div>
             ) : requests.data?.length ? (
               <div>
                 {requests.data.map((r) => (
@@ -131,7 +190,7 @@ export default function StaffSelfPage() {
               </div>
             ) : <Empty icon="fileText" title="No requests yet" />}
           </Card>
-          <Card title="Payslips" flush>
+          <Card icon="receipt" title="Payslips" flush>
             {slips.error ? <ErrorState error={slips.error} onRetry={() => slips.refetch()} /> : (
               <DataTable compact rows={slips.data?.slice(0, 6)} loading={slips.isLoading} rowKey={(r) => r.id} emptyText="No payslips released yet."
                 columns={[
@@ -146,8 +205,8 @@ export default function StaffSelfPage() {
 
       <div className="grid g-2col g-4 mt-4">
         <Card title="Leave" id="my-leave" flush actions={<Button size="sm" icon="plus" onClick={() => setApplying(true)}>Apply</Button>}>
-          <div className="col g-3" style={{ padding: 'var(--s-3) var(--s-4)' }}>
-            {balances.isLoading ? <span className="skeleton" style={{ display: 'block', height: 80 }} /> : (balances.data ?? []).map((b) => (
+          <div className="col g-3 portal-pad">
+            {balances.isLoading ? <Skeleton height={80} /> : (balances.data ?? []).map((b) => (
               <Meter key={b.leaveTypeId} label={b.type} value={b.entitled ? (b.used / b.entitled) * 100 : 0} right={`${b.balance} of ${b.entitled} left`} tone={b.balance ? 'teal' : 'critical'} />
             ))}
           </div>
@@ -165,9 +224,9 @@ export default function StaffSelfPage() {
               ]} />
           )}
         </Card>
-        <Card title="My attendance" sub={attendance.data ? `${fmt.dateShort(attendance.data.from)} – ${fmt.dateShort(attendance.data.to)}` : undefined} flush>
+        <Card icon="checkSquare" title="My attendance" sub={attendance.data ? `${fmt.dateShort(attendance.data.from)} – ${fmt.dateShort(attendance.data.to)}` : undefined} flush>
           {attendance.data && (
-            <div className="row g-2 wrap" style={{ padding: 'var(--s-3) var(--s-4)' }}>
+            <div className="row g-2 wrap portal-pad">
               <Badge tone="success">{attendance.data.summary.present} present</Badge>
               <Badge tone="warning">{attendance.data.summary.late} late</Badge>
               <Badge tone="info">{attendance.data.summary.leave} leave</Badge>
@@ -175,7 +234,7 @@ export default function StaffSelfPage() {
             </div>
           )}
           {attendance.error ? <ErrorState error={attendance.error} onRetry={() => attendance.refetch()} /> : (
-            <div style={{ maxHeight: 360, overflow: 'auto' }}>
+            <div className="portal-scroll">
               <DataTable compact rows={attendance.data?.rows} loading={attendance.isLoading} rowKey={(r) => r.date} emptyText="No attendance recorded."
                 columns={[
                   { key: 'date', label: 'Date', render: (r) => `${fmt.dateShort(r.date)} · ${dayName(r.date).slice(0, 3)}` },
@@ -200,9 +259,9 @@ export default function StaffSelfPage() {
               ]} />
           )}
         </Card>
-        <Card title="My tasks" id="my-requests" flush>
+        <Card icon="checkSquare" title="My tasks" id="my-requests" flush>
           {tasks.error ? <ErrorState error={tasks.error} onRetry={() => tasks.refetch()} /> : tasks.isLoading ? (
-            <div style={{ padding: 16 }}><span className="skeleton" style={{ display: 'block', height: 120 }} /></div>
+            <div className="portal-pad"><Skeleton height={120} /></div>
           ) : tasks.data?.length ? (
             <div>
               {tasks.data.map((t) => (
@@ -218,6 +277,7 @@ export default function StaffSelfPage() {
 
       {applying && <LeaveApplyModal mode="self" onClose={() => setApplying(false)} />}
       {claiming && <ClaimModal onClose={() => setClaiming(false)} />}
+      </DashLayout>
     </Page>
   );
 }
