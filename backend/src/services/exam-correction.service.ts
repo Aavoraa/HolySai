@@ -249,6 +249,30 @@ async function startedAt(): Promise<number | null> {
   return typeof body?.started === 'number' ? body.started : null;
 }
 
+/**
+ * Wakes the service as soon as the API starts and keeps it awake while the API runs, so
+ * Paper Correction opens without a wait. A ping every 10 minutes stays under the 15-minute
+ * idle limit of free hosting; when the API itself sleeps the pings stop, so the service only
+ * runs while the app is in use. A restart (an empty service on free hosting) is answered with
+ * a roster sync, which also rebuilds the demo exams.
+ */
+export function keepAwake(everyMs = 10 * 60_000): () => void {
+  if (!configured()) return () => undefined;
+  const tick = async () => {
+    try {
+      const started = await startedAt();
+      if (!lastSync || (started !== null && lastSync.result.started !== started)) await syncRoster();
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, 'Paper Correction keep-awake ping failed');
+    }
+  };
+  void tick();
+  const timer = setInterval(() => void tick(), everyMs);
+  timer.unref();
+  logger.info('Paper Correction: waking the service and keeping it awake while the API runs');
+  return () => clearInterval(timer);
+}
+
 /** Free hosting puts the service to sleep when idle; waking it takes up to a minute. */
 const STATUS_WAIT_MS = 20_000;
 

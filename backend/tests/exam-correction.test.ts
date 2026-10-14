@@ -146,6 +146,24 @@ describe('Paper Correction gateway', () => {
     expect(n).toBe(3);
   }, 30_000);
 
+  it('keeps the service awake and re-syncs it after a restart', async () => {
+    const { keepAwake } = await import('../src/services/exam-correction.service.js');
+    let started = 5000;
+    reply = (s) => (s.url === '/api/health' ? { status: 200, body: JSON.stringify({ status: 'ok', started }) } : { status: 200, body: '{}' });
+    const stop = keepAwake(150);
+    try {
+      await new Promise((r) => setTimeout(r, 400));
+      const pings = seen.filter((s) => s.url === '/api/health').length;
+      expect(pings).toBeGreaterThanOrEqual(2); // on start, then on the timer
+      const syncsBefore = seen.filter((s) => s.url === '/api/integration/sync').length;
+      started = 6000; // the service restarted (free hosting: empty again)
+      await new Promise((r) => setTimeout(r, 400));
+      expect(seen.filter((s) => s.url === '/api/integration/sync').length).toBeGreaterThan(syncsBefore);
+    } finally {
+      stop();
+    }
+  });
+
   it('reports "not connected" when unconfigured', async () => {
     env.EXAM_VISION_URL = undefined;
     try {
