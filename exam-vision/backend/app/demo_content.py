@@ -155,7 +155,102 @@ MATHS = {
     ],
 }
 
-EXAMS = [SCIENCE, MATHS]
+def _def(n, text, what, why, ref, concepts, alt=(), misc=()):
+    """A 4-mark definition question: 2 for the definition, 2 for its purpose / how it works."""
+    return {"number": n, "text": text, "max": 4, "qtype": "long",
+            "criteria": [("C1", what, 2), ("C2", why, 2)], "ref": ref, "concepts": list(concepts),
+            "alt": list(alt), "misc": list(misc)}
+
+
+# The test the school uploaded: real scans (question.pdf, ashwini.pdf, rohini.pdf, chandru.pdf).
+# Marks are AI suggestions waiting for the teacher; nothing is approved yet.
+MARKETING = {
+    "key": "marketing",
+    "name": "Marketing Basics — Test 1",
+    "class": "Grade 12 · GDV",
+    "section": "A",
+    "subject": "Business Studies",
+    "grade_level": "Cambridge AS Level, Business",
+    "instructions": "Answer in your own words. Spelling and grammar are not assessed.",
+    "teacher": None,
+    "results": "draft",
+    "questions": [
+        _def("1", "What is lead generation?", "Identifying / attracting potential customers",
+             "Purpose: interest, contact details, converting them into customers",
+             "Finding and attracting potential customers interested in the company's products or services, collecting their details and converting them into customers.",
+             ["potential customers", "interest", "conversion"]),
+        _def("2", "What is sales?", "Selling products or services to customers",
+             "Exchange for money / understanding needs and persuading the customer to buy",
+             "Selling products or services to customers in exchange for money — understanding the customer's needs and persuading them to buy.",
+             ["selling", "customers", "exchange for money"]),
+        _def("3", "What is digital marketing?", "Promotion of products or services",
+             "Through digital / online channels, with examples (website, social media, email, search)",
+             "Promoting products or services through online platforms such as websites, social media, email and search engines.",
+             ["promotion", "online channels"]),
+        _def("4", "What is a target audience?", "A specific group of people",
+             "Most likely to be interested in the product or service / whom the business wants to reach",
+             "A specific group of people most likely to be interested in a company's product or service — the people the business wants to reach.",
+             ["specific group", "likely to be interested"], misc=["A target audience is only social-media users"]),
+        _def("5", "What is graphic design?", "Creating visual content",
+             "Using images, colours, typography and layout to communicate a message or attract attention",
+             "Creating visual content using images, colours, typography and layout to communicate a message (posters, logos, banners, social posts).",
+             ["visual content", "communicate a message"]),
+        {"number": "6", "text": "What are the tools used for lead generation?", "max": 5, "qtype": "long",
+         "criteria": [("C1", "Names valid lead-generation tools (1 mark each, up to 3)", 3),
+                      ("C2", "Explains how they help (finding prospects, contact details)", 2)],
+         "ref": "e.g. LinkedIn (Sales Navigator), Apollo.io, HubSpot, ZoomInfo, Google search, Hunter, Prospeo — used to find potential customers and their contact details.",
+         "concepts": ["named tools", "finding prospects"], "alt": ["Semrush", "Snov.io", "Lusha"], "misc": []},
+    ],
+    "sheets": [
+        {"no": "HS-2026-1337", "approved": False, "identity": False, "pages": ["marketing-aswini-p1.jpg", "marketing-aswini-p2.jpg"],
+         "name_on_sheet": "M. Aswini", "page_of": {"6": 2}, "warnings": ["page 2 is rotated 90°; read sideways"],
+         "answers": {
+            "1": ("Lead Generation: Lead generation is the process of finding potential customers. It helps a business get more customers.",
+                  [2, 1], {"why": ["", "Says it gets more customers, but not how (interest, contact details, conversion)."], "miss": ["conversion"]}),
+            "2": ("Sales: Sales is the process of selling the many products and services. It help on business earn and money.",
+                  [2, 1], {"why": ["", "Mentions earning money but not the customer or their needs."], "miss": ["customer needs"]}),
+            "3": ("Digital marketing: Digital marketing is promoting products or many services. It helps on online. It uses social media, websites and Google.",
+                  [2, 2], {"good": ["Gives online channels as examples"]}),
+            "4": ("Target Audience: A target audience is a group of social media peoples interested in a product or service. They are the people a business wants to reach.",
+                  [1, 2], {"why": ["Limits the group to social-media users.", ""], "mis": ["A target audience is only social-media users"]}),
+            "5": ("Graphic Design: Graphic design is creating visual content like posters, logos and banners. It helps attract people's most many attention.",
+                  [2, 1], {"why": ["", "Attracting attention only; no images, colours, typography or message."], "miss": ["communicate a message"]}),
+            "6": ("Tools used for Lead Generation: LinkedIn, Apollo and Google are some lead generation tools. They help find potential customers and their contact details.",
+                  [3, 2], {"good": ["Three valid tools and their purpose"]}),
+         }},
+        {"no": "HS-2026-1338", "approved": False, "identity": False, "pages": ["marketing-rohini-p1.jpg", "marketing-rohini-p2.jpg"],
+         "name_on_sheet": "Rohini N", "page_of": {"6": 2},
+         "answers": {
+            "1": ("Lead generation: Lead generation is the process finding potential customers, collecting their business contact details and creating interest in a company products or services in Lead generation.",
+                  [2, 2], {"good": ["Mentions contact details and creating interest"]}),
+            "2": ("Sales: * Sales mean understanding what a customer needs, explaining their right product or services and convincing them to buy it.\n* Sales - Understand, customer needs, Right products, Right customer - For sales convert.",
+                  [2, 2], {"good": ["Explains the customer's needs and persuasion"]}),
+            "3": ("Digital Marketing: * Digital marketing means promoting our products or services through digital platforms like Google, social media, websites and related the to reach to customers.\n* Eg - Digital marketing - promote the online products.",
+                  [2, 2], {}),
+            "4": ("Target Audience: * Target audience means by specific group of people how are interested in your services. In target people, Tarket clents and.",
+                  [2, 1], {"why": ["", "The answer stops mid-sentence; 'most likely' / whom the business wants to reach is not clear."]}),
+            "5": ("Graphic design: * Graphic Design is creating attractive designs, like the posters and social media post attract people, more information collect the designs.",
+                  [2, 1], {"why": ["", "Says designs attract people; no images, colours, typography or message."], "miss": ["communicate a message"]}),
+            "6": ("Lead generation tools: * Apollo.io * Sendburg * Prospeo.io * LinkedIn",
+                  [3, 0], {"why": ["", "Lists tools but does not say how they help."], "miss": ["how the tools help"],
+                           "review": "'Sendburg' is not a known lead-generation tool (possibly a misspelling); three other valid tools already earn C1."}),
+         }},
+        {"no": "HS-2026-1339", "approved": False, "identity": False, "pages": ["marketing-chandru-p1.jpg"], "name_on_sheet": None,
+         "answers": {
+            "1": ("Lead generation is the process of identifying and attracting potential customers who are interested in a company's products or service. It helps businesses find prospects and convert them into customers.",
+                  [2, 2], {"good": ["Complete definition with conversion"]}),
+            "2": ("Sales is the process of selling products or services to customers in exchange for money.", [2, 2], {}),
+            "3": ("Digital Marketing is the promotion of products or services through online platform such as website, social media and email.", [2, 2], {}),
+            "4": ("A target Audience is a specific group of people who are most likely to be interested in a company's product or service.", [2, 2], {}),
+            "5": ("Graphic design is the process of creating visual content using images, colours, typography and layout to communicate a message.",
+                  [2, 2], {"good": ["Names all the elements of design"]}),
+            "6": ("LinkedIn, Apollo.io, Google Search, Semrush, Gmail, Google Map, HubSpot, Zoom info.",
+                  [3, 0], {"why": ["", "A list only; how the tools help is not explained."], "miss": ["how the tools help"]}),
+         }},
+    ],
+}
+
+EXAMS = [SCIENCE, MATHS, MARKETING]
 
 FEEDBACK_FULL = "Well done — clear and correct."
 FEEDBACK_PART = "Good effort. Look again at the part you missed."

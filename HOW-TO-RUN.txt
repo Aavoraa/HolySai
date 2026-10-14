@@ -284,9 +284,10 @@ G. PAPER CORRECTION (AI marking of answer sheets - exam-vision\)
   assessment.
 
   On Render (render.yaml): the service "holy-sai-exam" runs on the FREE
-  plan - testing only. It sleeps after 15 minutes idle (first visit then
-  shows "Starting Paper Correction..." for up to a minute) and every sleep
-  or deploy WIPES its exams, sheets and marks. Send approved marks to an
+  plan - testing only. The main app wakes it as soon as the app starts and
+  pings it every 10 minutes, so it stays awake while the app is in use; it
+  sleeps when the app does. Every sleep or deploy WIPES its exams, sheets
+  and marks (the two demo tests are rebuilt automatically). Send approved marks to an
   assessment before leaving it. In the Render dashboard, set on
   holy-sai-exam: EXAM_CLAUDE_API_KEY = the Claude key, and
   EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED = 1 (these survive the wipes).

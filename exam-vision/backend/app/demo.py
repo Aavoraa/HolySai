@@ -57,7 +57,7 @@ def ensure_demo(db: Session) -> list[str]:
         return []
     created = []
     for spec in EXAMS:
-        if db.scalars(select(Exam).where(Exam.name == spec["name"], Exam.class_name == CLASS)).first():
+        if db.scalars(select(Exam).where(Exam.name == spec["name"], Exam.class_name == spec.get("class", CLASS))).first():
             continue
         students = {s.admission_no: s for s in db.scalars(select(Student).where(
             Student.admission_no.in_([sh["no"] for sh in spec["sheets"]])))}
@@ -73,9 +73,10 @@ def ensure_demo(db: Session) -> list[str]:
 
 
 def _build(db: Session, spec: dict, students: dict[str, Student]) -> None:
-    teacher = db.scalars(select(User).where(User.role == "teacher", User.name.contains(spec["teacher"]))).first()
+    teacher = db.scalars(select(User).where(User.role == "teacher", User.name.contains(spec["teacher"]))).first()         if spec.get("teacher") else None
     approver = teacher.id if teacher else None
-    exam = Exam(name=spec["name"], academic_year=_year(), class_name=CLASS, section=SECTION, subject=spec["subject"],
+    exam = Exam(name=spec["name"], academic_year=_year(), class_name=spec.get("class", CLASS),
+                section=spec.get("section", SECTION), subject=spec["subject"],
                 grade_level=spec["grade_level"], instructions=spec["instructions"], results_status=spec["results"],
                 created_at=_ago(60 * 26))
     db.add(exam)
@@ -101,29 +102,36 @@ def _build(db: Session, spec: dict, students: dict[str, Student]) -> None:
 
     for i, sheet in enumerate(spec["sheets"]):
         student = students[sheet["no"]]
-        image = Image.open(SHEETS / f"{spec['key']}-{sheet['no']}.jpg").convert("RGB")
-        png = to_png(image)
+        files = sheet.get("pages") or [f"{spec['key']}-{sheet['no']}.jpg"]
+        images = [Image.open(SHEETS / f).convert("RGB") for f in files]
+        pngs = [to_png(im) for im in images]
         uploaded = _ago(60 * 24 - i * 3)
-        sub = Submission(exam_id=exam.id, student_id=student.id, file_sha256=hashlib.sha256(png).hexdigest(),
-                         original_filename=f"{sheet['no']}.pdf", page_count=1, identity_verified=True,
-                         identity_verified_by=approver, uploaded_by=approver, created_at=uploaded,
+        identity = sheet.get("identity", sheet["approved"])
+        sub = Submission(exam_id=exam.id, student_id=student.id, file_sha256=hashlib.sha256(b"".join(pngs)).hexdigest(),
+                         original_filename=f"{sheet['no']}.pdf", page_count=len(images), identity_verified=identity,
+                         identity_verified_by=approver if identity else None, uploaded_by=approver, created_at=uploaded,
                          status="approved" if sheet["approved"] else "evaluated")
         db.add(sub)
         db.flush()
         folder = settings.upload_dir / sub.id
         folder.mkdir(parents=True, exist_ok=True)
-        (folder / "page-1.png").write_bytes(png)
-        db.add(Page(submission_id=sub.id, page_no=1, image_path=str(folder / "page-1.png"), width=image.width,
-                    height=image.height, quality=quality(image)))
+        for no, (im, png) in enumerate(zip(images, pngs), start=1):
+            (folder / f"page-{no}.png").write_bytes(png)
+            db.add(Page(submission_id=sub.id, page_no=no, image_path=str(folder / f"page-{no}.png"), width=im.width,
+                        height=im.height, quality=quality(im)))
 
+        page_of = sheet.get("page_of", {})
         answers_text = {n: a[0] for n, a in sheet["answers"].items()}
-        full_text = "\n".join(f"{n}. {t}" for n, t in answers_text.items())
-        ext = Extraction(submission_id=sub.id, provider="claude", model=MODEL, status="done",
-                         pages=[{"page_no": 1, "text": full_text, "warnings": [], "uncertain": [], "confidence": None,
-                                 "duration_ms": 9000 + i * 700}],
-                         warnings=[], answers={n: {"text": t, "pages": [1], "uncertain": []} for n, t in answers_text.items()},
-                         unassigned_text="", name_on_sheet=student.name, duration_ms=9000 + i * 700,
-                         usage={"input_tokens": 2400 + i * 37, "output_tokens": 380 + i * 11},
+        page_texts = [{"page_no": no, "uncertain": [], "confidence": None, "duration_ms": 9000 + i * 700,
+                       "warnings": [w for w in sheet.get("warnings", []) if f"page {no}" in w],
+                       "text": "\n".join(f"{n}. {t}" for n, t in answers_text.items() if page_of.get(n, 1) == no)}
+                      for no in range(1, len(images) + 1)]
+        ext = Extraction(submission_id=sub.id, provider="claude", model=MODEL, status="done", pages=page_texts,
+                         warnings=list(sheet.get("warnings", [])),
+                         answers={n: {"text": t, "pages": [page_of.get(n, 1)], "uncertain": []} for n, t in answers_text.items()},
+                         unassigned_text="", name_on_sheet=sheet.get("name_on_sheet", student.name),
+                         duration_ms=9000 + i * 700 + 4000 * (len(images) - 1),
+                         usage={"input_tokens": 2400 * len(images) + i * 37, "output_tokens": 380 + 300 * (len(images) - 1) + i * 11},
                          requested_by=approver, created_at=uploaded + dt.timedelta(minutes=1))
         db.add(ext)
         db.flush()
@@ -131,12 +139,12 @@ def _build(db: Session, spec: dict, students: dict[str, Student]) -> None:
 
         for n, (text, awards, notes) in sheet["answers"].items():
             _answer(db, sub, ext, questions[n], rubrics[n], text, awards, notes, approved=sheet["approved"],
-                    approver=approver, at=uploaded + dt.timedelta(minutes=2))
+                    approver=approver, at=uploaded + dt.timedelta(minutes=2), page=page_of.get(n, 1))
     audit(db, approver, "demo_exam_created", "exam", exam.id, sheets=len(spec["sheets"]))
 
 
 def _answer(db: Session, sub: Submission, ext: Extraction, q: Question, rub: dict, text: str, awards: list,
-            notes: dict, *, approved: bool, approver: str | None, at: dt.datetime) -> None:
+            notes: dict, *, approved: bool, approver: str | None, at: dt.datetime, page: int = 1) -> None:
     crits = rub["criteria"]
     why = notes.get("why", "")
     whys = why if isinstance(why, list) else [why] * len(crits)
@@ -157,7 +165,7 @@ def _answer(db: Session, sub: Submission, ext: Extraction, q: Question, rub: dic
               "misconceptions": notes.get("mis", []), "student_final_answer": text.split("\n")[-1],
               "ocr_status": "verified" if approved else "unverified", "evaluation_confidence": None,
               "requires_teacher_review": bool(review), "review_reasons": [review] if review else []}
-    answer = Answer(submission_id=sub.id, question_id=q.id, extraction_id=ext.id, original_text=text, page_refs=[1],
+    answer = Answer(submission_id=sub.id, question_id=q.id, extraction_id=ext.id, original_text=text, page_refs=[page],
                     ocr_status="verified" if approved else "unverified", flags=[])
     db.add(answer)
     db.flush()

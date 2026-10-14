@@ -122,11 +122,14 @@ def test_demo_exams_are_built_once_after_the_roster_sync(client, integrated, mon
     monkeypatch.setenv("EXAM_DEMO", "1")
     names = {"HS-2026-1041": "Aditya Kumar", "HS-2026-1055": "Bhavana Iyer", "HS-2026-1058": "Dinesh Selvam",
              "HS-2026-1076": "Nithya Venkatesh", "HS-2026-1082": "Reshma Chandran", "HS-2026-1085": "Surya Kumar"}
+    seniors = {"HS-2026-1337": "Aswini M", "HS-2026-1338": "Rohini N", "HS-2026-1339": "Chandru K"}
     roster = {"students": [{"admission_no": no, "name": n, "class_name": "Grade 5 · GDV", "section": "A", "roll_no": str(i)}
-                           for i, (no, n) in enumerate(names.items(), start=1)],
+                           for i, (no, n) in enumerate(names.items(), start=1)]
+                          + [{"admission_no": no, "name": n, "class_name": "Grade 12 · GDV", "section": "A", "roll_no": str(i)}
+                             for i, (no, n) in enumerate(seniors.items(), start=1)],
               "staff": [{"id": TEACHER, "name": "Ms. Priya Raghavan", "role": "teacher"},
                         {"id": PRINCIPAL, "name": "Mr. Ganesh Venkat", "role": "teacher"}]}
-    assert sync(client, roster).json()["demo_exams_created"] == 2
+    assert sync(client, roster).json()["demo_exams_created"] == 3
     assert sync(client, roster).json()["demo_exams_created"] == 0  # idempotent
 
     admin = who("99999999-2222-3333-4444-555555555555", "admin", "Admin")
@@ -140,6 +143,14 @@ def test_demo_exams_are_built_once_after_the_roster_sync(client, integrated, mon
     assert totals == {"Aditya Kumar": 9, "Bhavana Iyer": 8, "Dinesh Selvam": 6, "Nithya Venkatesh": 7, "Reshma Chandran": 6}
     assert report["overrides"]["count"] == 1  # Reshma Q3: the teacher accepted her own-words answer
     assert any("roots" in m for m, _ in report["common_misconceptions"])
+
+    # the uploaded Marketing test: AI suggestions only, identity still to confirm
+    mk = exams["Marketing Basics — Test 1"]
+    assert mk["class_name"] == "Grade 12 · GDV" and mk["counts"]["approved"] == 0
+    rows = {r["student"]["name"]: r for r in client.get(f"/api/exams/{mk['id']}/submissions", headers=admin).json()}
+    assert {n: r["totals"]["total"] for n, r in rows.items()} == {"Aswini M": 21, "Rohini N": 21, "Chandru K": 23}
+    assert rows["Chandru K"]["name_check"]["status"] == "unknown" and rows["Aswini M"]["pages"] == 2
+    assert not any(r["identity_verified"] for r in rows.values())
 
     # the Maths teacher sees only Maths; sheets open with their page image
     priya = who(TEACHER, "teacher", "Ms. Priya Raghavan")
