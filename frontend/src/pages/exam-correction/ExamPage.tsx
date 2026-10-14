@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '@/api/client';
 import { useApiMutation, useApiQuery, useInvalidate, usePagedQuery } from '@/hooks/useApi';
 import {
-  Badge, Banner, Button, Card, Checkbox, DataTable, Dl, Empty, ErrorState, Grid, InlineError, Kpi, Modal, Page, PageHead,
+  AiNotice, Badge, Banner, Button, Card, Checkbox, DataTable, Dl, Empty, ErrorState, Grid, InlineError, Kpi, Modal, Page, PageHead,
   PageSkeleton, SelectField, StatStrip, Tabs, TextArea, TextField, useConfirm, useToast,
 } from '@/components/ui';
 import { errorMessage } from '@/components/ui/states';
@@ -214,6 +214,7 @@ function QuestionsTab({ exam, manager }: { exam: Exam; manager: boolean }) {
   const [rubricFor, setRubricFor] = useState<Question | null>(null);
   const [historyFor, setHistoryFor] = useState<Question | null>(null);
   const [drafting, setDrafting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const reeval = useApiMutation<void, { jobs_queued: number }>('post', `${EV}/exams/${exam.id}/reevaluate`, {
     invalidate: ['/exam-correction'], success: (r) => `${r.data.jobs_queued} sheet(s) queued for re-evaluation`, body: () => ({}),
   });
@@ -232,7 +233,8 @@ function QuestionsTab({ exam, manager }: { exam: Exam; manager: boolean }) {
   return (
     <div className="col g-4">
       <div className="row g-2 wrap">
-        {manager && <Button variant="primary" icon="plus" onClick={() => setEditing('new')}>Add question</Button>}
+        {manager && <Button variant="primary" icon="upload" onClick={() => setImporting(true)}>Upload question paper</Button>}
+        {manager && <Button icon="plus" onClick={() => setEditing('new')}>Add question</Button>}
         {questions.some((q) => !q.rubric) && <Button icon="sparkle" loading={drafting} onClick={draftAll}>Draft missing rubrics with AI</Button>}
         {questions.length > 0 && (
           <Button icon="refresh" loading={reeval.isPending} onClick={async () => {
@@ -241,7 +243,9 @@ function QuestionsTab({ exam, manager }: { exam: Exam; manager: boolean }) {
         )}
       </div>
       {questions.length === 0 ? (
-        <Card><Empty icon="helpCircle" title="No questions yet" sub={manager ? 'Add each question with its marks, then define a rubric for it.' : 'The exam coordinator adds the questions.'} /></Card>
+        <Card><Empty icon="helpCircle" title="No questions yet"
+          sub={manager ? 'Upload the question paper — Claude reads the questions and drafts a rubric for each — or add questions one by one.' : 'The exam coordinator adds the questions.'}
+          action={manager ? <Button variant="primary" icon="upload" onClick={() => setImporting(true)}>Upload question paper</Button> : undefined} /></Card>
       ) : questions.map((q) => (
         <Card key={q.id} title={<span className="row g-2 wrap"><span className="pc-qnum">Q{q.number}</span><Badge>{q.qtype}</Badge><Badge tone="navy">{marks(q.max_marks)} marks</Badge>
           {q.rubric ? <Badge tone="success">rubric v{q.rubric.version}</Badge> : <Badge tone="critical">no rubric</Badge>}
@@ -269,7 +273,75 @@ function QuestionsTab({ exam, manager }: { exam: Exam; manager: boolean }) {
       {editing && <QuestionModal exam={exam} question={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
       {rubricFor && <RubricModal question={rubricFor} onClose={() => setRubricFor(null)} />}
       {historyFor && <RubricHistoryModal question={historyFor} onClose={() => setHistoryFor(null)} />}
+      {importing && <ImportPaperModal exam={exam} onClose={() => setImporting(false)} />}
     </div>
+  );
+}
+
+interface ImportResult {
+  created: string[]; skipped: string[]; answer_key_found: boolean; warnings: string[];
+  rubrics: { saved: string[]; failed: { question: string; error: string }[] }; default_marks_used: string[];
+}
+
+/** Upload the question paper (and answer key, if any): Claude reads the questions and drafts the rubrics. */
+function ImportPaperModal({ exam, onClose }: { exam: Exam; onClose: () => void }) {
+  const invalidate = useInvalidate();
+  const [files, setFiles] = useState<File[]>([]);
+  const [marks, setMarks] = useState('1');
+  const [rubrics, setRubrics] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const submit = async () => {
+    if (!files.length) return setError(new Error('Choose the question paper (PDF or photos).'));
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    fd.append('default_marks', marks);
+    fd.append('draft_rubrics', String(rubrics));
+    setBusy(true); setError(null);
+    try {
+      setResult((await api.upload<ImportResult>(`${EV}/exams/${exam.id}/questions/import`, fd, 600_000)).data);
+      await invalidate('/exam-correction');
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open onClose={onClose} title="Upload question paper" size="wide" busy={busy}
+      sub="Claude reads the questions; an answer key in the same upload (e.g. a page headed Answers) is used for the rubrics."
+      foot={result ? <Button variant="primary" onClick={onClose}>Review questions</Button> : <>
+        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" icon="sparkle" loading={busy} onClick={submit}>Read paper{rubrics ? ' & draft rubrics' : ''}</Button>
+      </>}>
+      {result ? (
+        <div className="col g-3">
+          <Banner tone={result.created.length ? 'success' : 'neutral'} icon={result.created.length ? 'check' : 'info'}>
+            {result.created.length ? `${result.created.length} question(s) added (Q${result.created.join(', Q')}).` : 'No new questions were added.'}
+            {result.rubrics.saved.length > 0 && ` AI-draft rubrics saved for ${result.rubrics.saved.length}.`}
+            {result.answer_key_found ? ' The answer key was used.' : ''}
+          </Banner>
+          {result.skipped.length > 0 && <Banner tone="neutral" icon="info">Already in the exam, skipped: Q{result.skipped.join(', Q')}.</Banner>}
+          {result.default_marks_used.length > 0 && <Banner tone="warning" icon="alert">No marks printed for Q{result.default_marks_used.join(', Q')} — given {marks} mark(s) each. Change them with Edit question if needed.</Banner>}
+          {result.rubrics.failed.length > 0 && <Banner tone="critical" icon="alert">Rubric drafting failed for Q{result.rubrics.failed.map((f) => f.question).join(', Q')}: {result.rubrics.failed[0].error}</Banner>}
+          {result.warnings.map((w) => <Banner key={w} tone="neutral" icon="info">{w}</Banner>)}
+          <AiNotice>Check each question and its <strong>AI draft</strong> rubric before marking — they are suggestions.</AiNotice>
+        </div>
+      ) : (
+        <div className="col g-3">
+          {error ? <InlineError error={error} /> : null}
+          <div className="field">
+            <label className="label" htmlFor="pc-paper">Question paper</label>
+            <input id="pc-paper" className="input pc-file" type="file" multiple accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+              onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+            <span className="hint">A PDF or photos in page order, up to 10 pages. Include the answer key pages if you have them.</span>
+          </div>
+          <div className="grid g-2col g-3">
+            <SelectField label="Marks when none are printed" value={marks} onChange={setMarks}
+              options={['1', '2', '3', '4', '5'].map((m) => ({ value: m, label: `${m} mark${m === '1' ? '' : 's'} per question` }))} />
+            <div className="field"><span className="label">Rubrics</span><Checkbox checked={rubrics} onChange={setRubrics} label="Draft a rubric for each question with AI" /></div>
+          </div>
+          {busy && <Banner tone="neutral" icon="clock">Claude is reading the paper{rubrics ? ' and drafting rubrics' : ''} — this takes about a minute.</Banner>}
+        </div>
+      )}
+    </Modal>
   );
 }
 

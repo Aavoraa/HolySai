@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,7 +18,9 @@ from ..models import (
 )
 from ..security import ManagerUser, StaffUser, audit, can_manage, exam_for_user
 from ..providers.base import ProviderError
-from ..services import jobs, rubric_draft
+from ..config import settings
+from ..services import jobs, paper_import, rubric_draft
+from ..services.documents import DocumentError, load_pages, to_png
 from ..services.processing import rubric_dict, rubric_problems, submission_total
 from ..services.scoring import increments_ok
 
@@ -301,6 +303,70 @@ def draft_all_rubrics(exam_id: str, body: DraftAllIn, user: StaffUser, db: DB) -
     audit(db, user, "rubrics_drafted_by_ai", "exam", exam.id, saved=done, failed=len(failed))
     db.commit()
     return {"saved": done, "failed": failed}
+
+
+@router.post("/exams/{exam_id}/questions/import")
+async def import_questions(exam_id: str, user: ManagerUser, db: DB, files: list[UploadFile] = File(...),
+                           default_marks: float = Form(2), draft_rubrics: bool = Form(True)) -> dict:
+    """Upload the question paper (PDF or photos; an answer key may be included): Claude reads the
+    questions, they are added to the exam, and an AI-draft rubric is saved for each new one.
+    Questions whose number already exists are skipped. Everything stays editable."""
+    exam = exam_for_user(db, exam_id, user)
+    if not 0 < default_marks <= 100:
+        raise HTTPException(400, "Default marks must be between 0.5 and 100.")
+    images = []
+    for f in files:
+        data = await f.read()
+        if len(data) > settings.max_upload_bytes:
+            raise HTTPException(413, f"{f.filename} is larger than {settings.max_upload_bytes // (1024 * 1024)} MB.")
+        try:
+            images += [to_png(im) for im in load_pages(data, 10 - len(images))]
+        except DocumentError as exc:
+            raise HTTPException(400, f"{f.filename}: {exc}") from exc
+    if not images:
+        raise HTTPException(400, "Upload the question paper as a PDF or photos.")
+    cfg = ai_config.load(db)
+    try:
+        paper = paper_import.read_paper(cfg, images, exam)
+    except ProviderError as exc:
+        raise HTTPException(503 if exc.retryable else 400, str(exc)) from exc
+
+    existing = {q.number for q in exam.questions}
+    created: list[tuple[Question, str | None]] = []
+    skipped = []
+    for item in paper["questions"]:
+        if item["number"] in existing:
+            skipped.append(item["number"])
+            continue
+        marks = item["max_marks"] or default_marks
+        step = 1.0 if float(marks).is_integer() else 0.5
+        if not increments_ok(marks, step):
+            marks, step = round(marks * 2) / 2 or 0.5, 0.5
+        q = Question(exam_id=exam.id, number=item["number"], order=len(exam.questions) + len(created) + 1,
+                     text=item["text"], qtype=item["qtype"], max_marks=marks, mark_increment=step)
+        db.add(q)
+        db.flush()
+        created.append((q, item["answer_key"]))
+        existing.add(item["number"])
+    audit(db, user, "questions_imported", "exam", exam.id, created=len(created), skipped=len(skipped),
+          answer_key=paper["answer_key_found"], model=paper["model"])
+    db.commit()
+
+    saved, failed = [], []
+    if draft_rubrics:
+        for q, key in created:
+            try:
+                r = rubric_draft.draft(cfg, exam, q, answer_key=key)
+            except ProviderError as exc:
+                failed.append({"question": q.number, "error": str(exc)})
+                continue
+            save_rubric(q.id, RubricIn(**r, source="ai_draft"), user, db)
+            saved.append(q.number)
+        db.commit()
+    return {"created": [q.number for q, _ in created], "skipped": skipped, "answer_key_found": paper["answer_key_found"],
+            "warnings": paper["warnings"], "rubrics": {"saved": saved, "failed": failed},
+            "default_marks_used": [q.number for q, _ in created
+                                   if next(i for i in paper["questions"] if i["number"] == q.number)["max_marks"] is None]}
 
 
 @router.get("/questions/{question_id}/rubrics")

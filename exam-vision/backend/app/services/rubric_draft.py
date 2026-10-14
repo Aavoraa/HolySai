@@ -39,13 +39,16 @@ SCHEMA = {
 }
 
 
-def draft(cfg: AIConfig, exam: Exam, q: Question, client=None) -> dict:
-    """Returns a rubric dict ready for the rubric form (criteria ids C1..Cn). Raises ProviderError."""
+def draft(cfg: AIConfig, exam: Exam, q: Question, client=None, answer_key: str | None = None) -> dict:
+    """Returns a rubric dict ready for the rubric form (criteria ids C1..Cn). Raises ProviderError.
+    ``answer_key``: the school's own answer for the question (from an uploaded key); the rubric follows it."""
     client = client or make_client(cfg)
     prompt = (f"Subject: {exam.subject}. Class: {exam.class_name} {exam.grade_level}".strip()
               + f"\nQuestion {q.number} ({q.qtype}): {q.text}\nMaximum marks: {q.max_marks:g}; "
               f"mark step: {q.mark_increment:g}"
-              + (f"\nExpected final answer: {q.numeric_answer} {q.unit or ''}" if q.numeric_answer else ""))
+              + (f"\nExpected final answer: {q.numeric_answer} {q.unit or ''}" if q.numeric_answer else "")
+              + (f"\nThe teacher's answer key for this question: {answer_key}\n"
+                 "Base the model answer and the criteria on this key." if answer_key else ""))
     data, _usage, _model = call_structured(client, cfg, model=cfg.claude_eval_model, system=SYSTEM, schema=SCHEMA,
                                            content=[{"type": "text", "text": prompt}], max_tokens=4000)
     criteria = [c for c in data.get("criteria") or [] if c.get("name") and float(c.get("max_marks") or 0) > 0]
@@ -67,7 +70,7 @@ def draft(cfg: AIConfig, exam: Exam, q: Question, client=None) -> dict:
     return {
         "criteria": [{"id": f"C{i}", "name": c["name"].strip(), "max_marks": c["max_marks"],
                       "description": (c.get("description") or "").strip()} for i, c in enumerate(criteria, 1)],
-        "reference_answer": (data.get("reference_answer") or "").strip(),
+        "reference_answer": (data.get("reference_answer") or "").strip() or (answer_key or ""),
         "expected_concepts": [s for s in data.get("expected_concepts") or [] if s],
         "alternatives": [s for s in data.get("alternatives") or [] if s],
         "misconceptions": [s for s in data.get("misconceptions") or [] if s],

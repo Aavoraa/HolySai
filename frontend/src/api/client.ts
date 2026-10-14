@@ -173,7 +173,7 @@ export const api = {
   put: async <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
   patch: async <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body }),
   delete: async <T>(path: string) => request<T>('DELETE', path),
-  upload: async <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
+  upload: async <T>(path: string, form: FormData, timeoutMs?: number) => request<T>('POST', path, { form, timeoutMs }),
   /** POST that may run for minutes (AI drafting/testing); default 10 minutes. */
   postLong: async <T>(path: string, body?: unknown, timeoutMs = 600_000) => request<T>('POST', path, { body: body ?? {}, timeoutMs }),
   /** A protected binary (e.g. an image) as a Blob, for object URLs. */

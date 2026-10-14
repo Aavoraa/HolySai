@@ -218,3 +218,42 @@ def test_draft_all_saves_ai_rubrics_only_where_missing(world, client, monkeypatc
                      {"id": "C2", "name": "to earn money", "max_marks": 1, "description": ""}]})
     r = client.post(f"/api/exams/{world.exam['id']}/rubrics/draft-all", headers=world.teacher, json={})
     assert r.json() == {"saved": ["3"], "failed": []}
+
+
+def test_question_paper_import_creates_questions_and_draft_rubrics(world, client, monkeypatch):
+    from app.services import paper_import, rubric_draft
+
+    seen_keys = {}
+    monkeypatch.setattr(paper_import, "read_paper", lambda cfg, images, exam, client=None: {
+        "questions": [
+            {"number": "1", "text": "Which planet do we live on?", "max_marks": None, "qtype": "short", "answer_key": "Earth"},
+            {"number": "2", "text": "How many legs does a spider have?", "max_marks": 2, "qtype": "short", "answer_key": "Eight"},
+            {"number": "3", "text": "Describe the water cycle.", "max_marks": 3.5, "qtype": "long", "answer_key": None},
+        ], "answer_key_found": True, "warnings": [], "usage": {}, "model": "fake"})
+
+    def fake_draft(cfg, exam, q, client=None, answer_key=None):
+        seen_keys[q.number] = answer_key
+        return {"criteria": [{"id": "C1", "name": "Correct", "max_marks": q.max_marks, "description": ""}],
+                "reference_answer": answer_key or "model answer", "expected_concepts": [], "alternatives": [],
+                "misconceptions": [], "partial_credit_rules": "", "required_elements": "", "ignore_criteria": "",
+                "subject_rules": ""}
+    monkeypatch.setattr(rubric_draft, "draft", fake_draft)
+
+    exam = client.post("/api/exams", headers=world.admin, json={
+        "name": "Imported", "academic_year": "2026-27", "class_name": "7", "section": "A", "subject": "Science"}).json()
+    files = [("files", ("paper.png", page_png("SCIENCE\n1. Which planet do we live on?"), "image/png"))]
+    r = client.post(f"/api/exams/{exam['id']}/questions/import", headers=world.admin, files=files, data={"default_marks": "1"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["created"] == ["1", "2", "3"] and out["rubrics"]["saved"] == ["1", "2", "3"]
+    assert out["default_marks_used"] == ["1"] and out["answer_key_found"] is True
+    assert seen_keys == {"1": "Earth", "2": "Eight", "3": None}  # the key steers each rubric
+
+    qs = {q["number"]: q for q in client.get(f"/api/exams/{exam['id']}", headers=world.admin).json()["questions"]}
+    assert qs["1"]["max_marks"] == 1 and qs["2"]["max_marks"] == 2 and qs["3"]["mark_increment"] == 0.5
+    assert qs["1"]["rubric"]["source"] == "ai_draft" and qs["1"]["rubric"]["reference_answer"] == "Earth"
+
+    # importing again skips the numbers that exist; teachers cannot import
+    again = client.post(f"/api/exams/{exam['id']}/questions/import", headers=world.admin, files=files).json()
+    assert again["created"] == [] and again["skipped"] == ["1", "2", "3"]
+    assert client.post(f"/api/exams/{exam['id']}/questions/import", headers=world.teacher, files=files).status_code == 403
