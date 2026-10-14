@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..db import get_db
-from ..models import ROLES, Student, User
+from ..models import ROLES, Exam, ExamTeacher, Student, User
 from ..security import (
     AdminUser, CurrentUser, ManagerUser, audit, create_session, end_session, hash_password,
     validate_new_password, verify_password,
@@ -23,6 +24,16 @@ router = APIRouter(prefix="/api", tags=["auth"])
 DB = Annotated[Session, Depends(get_db)]
 
 
+def local_accounts() -> None:
+    """Accounts and students are managed here only when EXAM Vision runs on its own.
+    As a Holy Sai module, Holy Sai signs users in and owns the student roster."""
+    if settings.integrated:
+        raise HTTPException(404, "Managed in Holy Sai.")
+
+
+LocalOnly = [Depends(local_accounts)]
+
+
 def user_out(u: User) -> dict:
     return {"id": u.id, "username": u.username, "name": u.name, "role": u.role, "active": u.active,
             "student_id": u.student_id}
@@ -30,7 +41,9 @@ def user_out(u: User) -> dict:
 
 @router.get("/auth/status")
 def status(db: DB) -> dict:
-    return {"needs_setup": db.scalar(select(func.count(User.id))) == 0}
+    if settings.integrated:
+        return {"needs_setup": False, "integrated": True}
+    return {"needs_setup": db.scalar(select(func.count(User.id))) == 0, "integrated": False}
 
 
 class SetupIn(BaseModel):
@@ -39,7 +52,7 @@ class SetupIn(BaseModel):
     password: str
 
 
-@router.post("/auth/setup")
+@router.post("/auth/setup", dependencies=LocalOnly)
 def setup(body: SetupIn, db: DB) -> dict:
     """Creates the first administrator. Only possible while there are no users."""
     if db.scalar(select(func.count(User.id))):
@@ -59,7 +72,7 @@ class LoginIn(BaseModel):
     password: str
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", dependencies=LocalOnly)
 def login(body: LoginIn, db: DB) -> dict:
     user = db.scalars(select(User).where(User.username == body.username.strip().lower())).first()
     if user is None or not user.active or not verify_password(body.password, user.password_hash):
@@ -67,7 +80,7 @@ def login(body: LoginIn, db: DB) -> dict:
     return {"token": create_session(db, user), "user": user_out(user)}
 
 
-@router.post("/auth/logout")
+@router.post("/auth/logout", dependencies=LocalOnly)
 def logout(request: Request, user: CurrentUser, db: DB) -> dict:
     end_session(db, request.headers.get("authorization", "")[7:].strip())
     return {"ok": True}
@@ -83,7 +96,7 @@ class PasswordIn(BaseModel):
     new_password: str
 
 
-@router.post("/auth/password")
+@router.post("/auth/password", dependencies=LocalOnly)
 def change_password(body: PasswordIn, user: CurrentUser, db: DB) -> dict:
     if not verify_password(body.current_password, user.password_hash):
         raise HTTPException(400, "The current password is wrong.")
@@ -109,7 +122,7 @@ def list_users(_: ManagerUser, db: DB) -> list[dict]:
     return [user_out(u) for u in db.scalars(select(User).order_by(User.role, User.name))]
 
 
-@router.post("/users")
+@router.post("/users", dependencies=LocalOnly)
 def create_user(body: UserIn, admin: AdminUser, db: DB) -> dict:
     if body.role not in ROLES:
         raise HTTPException(400, f"Role must be one of {', '.join(ROLES)}.")
@@ -135,7 +148,7 @@ class UserPatch(BaseModel):
     password: str | None = None
 
 
-@router.patch("/users/{user_id}")
+@router.patch("/users/{user_id}", dependencies=LocalOnly)
 def update_user(user_id: str, body: UserPatch, admin: AdminUser, db: DB) -> dict:
     user = db.get(User, user_id)
     if user is None:
@@ -180,12 +193,15 @@ def list_students(user: CurrentUser, db: DB, class_name: str | None = None) -> l
     if user.role == "student":
         raise HTTPException(403, "You do not have permission for this.")
     q = select(Student).order_by(Student.class_name, Student.section, Student.name)
+    if user.role == "teacher":  # only the classes of the exams they mark
+        classes = select(Exam.class_name).join(ExamTeacher, ExamTeacher.exam_id == Exam.id)             .where(ExamTeacher.user_id == user.id)
+        q = q.where(Student.class_name.in_(classes))
     if class_name:
         q = q.where(Student.class_name == class_name)
     return [student_out(s) for s in db.scalars(q)]
 
 
-@router.post("/students")
+@router.post("/students", dependencies=LocalOnly)
 def create_student(body: StudentIn, user: ManagerUser, db: DB) -> dict:
     if db.scalars(select(Student).where(Student.admission_no == body.admission_no.strip())).first():
         raise HTTPException(409, "A student with that admission number exists.")
@@ -197,7 +213,7 @@ def create_student(body: StudentIn, user: ManagerUser, db: DB) -> dict:
     return student_out(s)
 
 
-@router.post("/students/import")
+@router.post("/students/import", dependencies=LocalOnly)
 def import_students(user: ManagerUser, db: DB, csv_text: str = Body(..., media_type="text/plain")) -> dict:
     """CSV with a header: admission_no,name,class_name,section,roll_no. Existing numbers are updated."""
     reader = csv.DictReader(io.StringIO(csv_text.strip()))

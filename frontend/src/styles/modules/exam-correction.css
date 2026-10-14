@@ -1,0 +1,63 @@
+/* Module styles: Paper Correction (exam-correction). Uses tokens from tokens.css only — no new colours. */
+
+.pc-text { margin: 0; white-space: pre-wrap; }
+.pc-note { max-width: 280px; margin-top: 2px; }
+.pc-qnum { font-weight: 700; color: var(--brand); }
+.pc-list { margin: var(--s-2) 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pc-list--num { list-style: decimal; }
+.pc-flags { color: var(--warning); font-size: var(--fs-xs); }
+.pc-file { padding-top: 6px; height: auto; }
+.pc-history { padding: var(--s-3); border: 1px solid var(--border-soft); border-radius: var(--r-sm, 8px); }
+.pc-answer {
+  white-space: pre-wrap; font-family: var(--font-mono); font-size: var(--fs-sm);
+  background: var(--bg-sunken); border: 1px solid var(--border-soft); border-radius: var(--r-sm, 8px);
+  padding: var(--s-2) var(--s-3); margin-top: var(--s-1); max-height: 320px; overflow: auto;
+}
+
+/* Rubric criteria editor: id | description | marks | remove, details underneath */
+.pc-crit-row { display: grid; grid-template-columns: 80px 1fr 100px auto; gap: var(--s-2); align-items: end; }
+.pc-crit-row .btn { margin-bottom: 2px; }
+.pc-crit-desc { grid-column: 2 / 4; }
+@media (max-width: 640px) {
+  .pc-crit-row { grid-template-columns: 1fr 1fr; }
+  .pc-crit-desc { grid-column: 1 / -1; }
+}
+
+/* Sheet review: page viewer beside the marking column */
+.pc-review { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+.pc-review__side { min-width: 0; }
+@media (max-width: 1100px) { .pc-review { grid-template-columns: 1fr; } }
+
+.pc-viewer {
+  position: sticky; top: calc(var(--topbar-h) + var(--s-3));
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md, 12px); overflow: hidden;
+}
+@media (max-width: 1100px) { .pc-viewer { position: static; } }
+.pc-viewer__bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; padding: var(--s-2) var(--s-3); border-bottom: 1px solid var(--border-soft); }
+.pc-viewer__canvas { height: min(78vh, 1100px); overflow: auto; background: var(--bg-sunken); text-align: center; }
+.pc-viewer__canvas img { display: block; margin: 0 auto; max-width: none; background: #fff; }
+.pc-viewer__loading { height: 100%; display: grid; place-items: center; color: var(--text-faint); }
+
+.pc-total { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.pc-total__n { font-size: var(--fs-h2); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Question cards */
+.pc-qcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md, 12px); overflow: hidden; }
+.pc-qcard.is-open { box-shadow: var(--sh-1); }
+.pc-qhead {
+  width: 100%; display: flex; align-items: center; gap: var(--s-2); padding: var(--s-3) var(--s-4);
+  background: none; border: 0; cursor: pointer; text-align: left; color: inherit; font: inherit;
+}
+.pc-qhead:hover { background: var(--surface-alt); }
+.pc-qhead:focus-visible { outline: none; box-shadow: var(--sh-focus); }
+.pc-qbody { padding: 0 var(--s-4) var(--s-4); border-top: 1px solid var(--border-soft); padding-top: var(--s-3); }
+
+.pc-ai { margin-top: var(--s-3); padding: var(--s-3); border: 1px dashed var(--accent-line); background: var(--accent-tint); border-radius: var(--r-sm, 8px); }
+.pc-ai__crit { display: flex; gap: var(--s-3); align-items: flex-start; padding-top: var(--s-2); border-top: 1px solid var(--border-soft); }
+.pc-ai__crit:first-child { border-top: 0; padding-top: 0; }
+.pc-evidence { font-style: italic; margin-top: 2px; }
+
+.pc-marks { margin-top: var(--s-3); padding: var(--s-3); border: 1px solid var(--border-soft); border-radius: var(--r-sm, 8px); }
+.pc-mark-row { display: flex; align-items: center; gap: var(--s-3); justify-content: space-between; }
+.pc-mark-field { display: inline-flex; align-items: center; gap: var(--s-1); flex: none; }
+.pc-mark-field .marks-input { width: 80px; }

@@ -11,6 +11,7 @@ What you get:
   - Common REST API            http://localhost:4000/api
   - API documentation          http://localhost:4000/api/docs
   - PostgreSQL database        localhost:5544, database "holysai"
+  - Paper Correction service   http://127.0.0.1:8006 (internal; see section G)
 
 
 ----------------------------------------------------------------------
@@ -237,6 +238,58 @@ F. PROBLEMS
   Map is blank
       -> the map tiles come from OpenStreetMap, which needs an internet
          connection.
+
+
+----------------------------------------------------------------------
+G. PAPER CORRECTION (AI marking of answer sheets - exam-vision\)
+----------------------------------------------------------------------
+
+  Teachers upload handwritten answer sheets (PDF or photos); Claude reads
+  them and suggests marks against the teacher's rubric; the teacher checks
+  and approves every mark. Approved totals go into an assessment's marks
+  register (Assessments), from where they reach Student 360 and report cards.
+
+  Where:     sidebar Academics -> Paper Correction  (/paper-correction)
+  Who:       Teacher (exams assigned to them), Principal (creates exams,
+             assigns teachers, approves results), Super Admin / School
+             Admin (also AI configuration)
+
+  It is a separate Python service in exam-visionackend. Holy Sai signs
+  users in and forwards their requests, signed with EXAM_VISION_SECRET.
+  Students and teachers are copied from Holy Sai automatically (every
+  5 minutes while in use, or "Sync students & staff").
+
+  First time on a PC (Python 3.12+):
+     cd exam-visionackend
+     python -m venv .venv
+     .venv\Scripts\python.exe -m pip install -r requirements.txt
+
+  .env (already set on this PC):
+     EXAM_VISION_URL=http://127.0.0.1:8006
+     EXAM_VISION_SECRET=<long random value, 32+ characters>
+  Leave EXAM_VISION_URL empty to switch the module off.
+
+  "npm run dev" then starts it with the API and website ([exam] lines).
+
+  Claude key: sign in as Super Admin -> Paper Correction -> AI configuration.
+  Enter the key, acknowledge sending pages to Anthropic, Save, then
+  "Read a sample page". Without a key, sheets can be uploaded but not read.
+
+  Try it: Principal -> Paper Correction -> New examination (class, section,
+  subject) -> Questions & rubrics -> add questions, "Draft with AI" rubrics
+  -> Settings tab: assign Ms. Priya Raghavan. Teacher -> upload a sheet ->
+  Review -> confirm the student, check each answer, Approve. Principal ->
+  Mark as reviewed -> Approve results -> Results & reports -> Send to
+  assessment.
+
+  Tests of the service:  cd exam-visionackend
+                         .venv\Scripts\python.exe -m pytest tests -q
+
+  "Paper Correction is not connected"
+      -> the service is not running (look for [exam] lines in npm run dev),
+         or EXAM_VISION_URL / EXAM_VISION_SECRET are not set in .env.
+  "Paper Correction refused the gateway signature" in the API log
+      -> the service was started with a different secret; restart npm run dev.
 
 
 More detail: README.md and the docs\ folder

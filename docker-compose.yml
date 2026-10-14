@@ -27,6 +27,9 @@ services:
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set JWT_REFRESH_SECRET}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://school.example.com}
       COOKIE_SECURE: "true"
+      # Paper Correction (exam-vision/): reached only on the compose network
+      EXAM_VISION_URL: http://exam:8006
+      EXAM_VISION_SECRET: ${EXAM_VISION_SECRET:?set EXAM_VISION_SECRET (32+ characters)}
     volumes:
       - uploads:/data/uploads
     ports:
@@ -34,6 +37,17 @@ services:
     # Migrations + server, via the image's default entrypoint.
     command: ["node", "backend/dist/scripts/start.js"]
 
+  # Paper Correction service: Claude reads and marks answer sheets. No published port —
+  # only the app reaches it. The Claude key is entered in the web app (AI configuration).
+  exam:
+    build: ./exam-vision
+    restart: unless-stopped
+    environment:
+      EXAM_GATEWAY_SECRET: ${EXAM_VISION_SECRET:?set EXAM_VISION_SECRET (32+ characters)}
+    volumes:
+      - examdata:/data
+
 volumes:
   pgdata:
   uploads:
+  examdata:

@@ -1,0 +1,7 @@
+backend/.venv*
+backend/data
+backend/tests
+**/__pycache__
+.pytest_cache
+benchmarks
+sample-answer-sheets

@@ -14,6 +14,7 @@ import { routes as innovation } from './innovation/routes';
 import { routes as group } from './group/routes';
 import { routes as intelligence } from './intelligence/routes';
 import { routes as reports } from './reports/routes';
+import { routes as examCorrection } from './exam-correction/routes';
 
 export interface AppRoute {
   /** react-router path, e.g. '/fees' or '/student-360/:id' */
@@ -26,5 +27,5 @@ export interface AppRoute {
 export const APP_ROUTES: AppRoute[] = [
   ...core, ...students, ...tracking, ...parents,
   ...academics, ...admissions, ...finance, ...workforce, ...safety,
-  ...parentsExperience, ...operations, ...innovation, ...group, ...intelligence, ...reports,
+  ...parentsExperience, ...operations, ...innovation, ...group, ...intelligence, ...reports, ...examCorrection,
 ];

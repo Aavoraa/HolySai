@@ -68,10 +68,20 @@ const schema = z.object({
   SMS_API_KEY: z.string().optional(),
   SMTP_URL: z.string().optional(),
   PUSH_FCM_SERVER_KEY: z.string().optional(),
+  /**
+   * Paper Correction (EXAM Vision): the internal URL of the AI answer-sheet marking service
+   * (exam-vision/, e.g. http://127.0.0.1:8006) and the secret both sides use to sign requests
+   * (EXAM_GATEWAY_SECRET there). Unset = the module shows as "not connected".
+   */
+  EXAM_VISION_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
+  EXAM_VISION_SECRET: z.string().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 }).superRefine((c, ctx) => {
   if (c.OFFLINE_THRESHOLD_SECONDS <= c.ONLINE_THRESHOLD_SECONDS) {
     ctx.addIssue({ code: 'custom', path: ['OFFLINE_THRESHOLD_SECONDS'], message: 'must be greater than ONLINE_THRESHOLD_SECONDS' });
+  }
+  if (c.EXAM_VISION_URL && (c.EXAM_VISION_SECRET ?? '').length < 32) {
+    ctx.addIssue({ code: 'custom', path: ['EXAM_VISION_SECRET'], message: 'must be at least 32 characters when EXAM_VISION_URL is set' });
   }
   // Fail at boot rather than at the first upload attempt.
   if (c.STORAGE_DRIVER !== 'supabase') return;

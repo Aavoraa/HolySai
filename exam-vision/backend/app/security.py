@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import hashlib
 import hmac
@@ -12,6 +13,7 @@ from typing import Annotated
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -71,7 +73,64 @@ def _bearer(request: Request) -> str | None:
     return None
 
 
+# --- Holy Sai gateway ----------------------------------------------------------
+# In integrated mode the Holy Sai API signs in the user and forwards each request with
+# X-HS-User / X-HS-Role / X-HS-Name (base64url) / X-HS-Ts, signed in X-HS-Sig with
+# HMAC-SHA256(EXAM_GATEWAY_SECRET, "user\nrole\nname\nts").
+
+GATEWAY_ROLES = ("admin", "coordinator", "teacher")
+GATEWAY_MAX_SKEW = 120  # seconds
+
+
+def gateway_signature(*parts: str) -> str:
+    return hmac.new(settings.gateway_secret.encode(), "\n".join(parts).encode(), hashlib.sha256).hexdigest()
+
+
+def gateway_fresh(ts: str) -> bool:
+    try:
+        return abs(dt.datetime.now(dt.timezone.utc).timestamp() - int(ts)) <= GATEWAY_MAX_SKEW
+    except ValueError:
+        return False
+
+
+def gateway_user_id(holy_sai_user_id: str) -> str:
+    """Holy Sai user ids are UUIDs; their 32 hex digits are the EXAM Vision user id."""
+    return holy_sai_user_id.replace("-", "").lower()
+
+
+def _gateway_user(request: Request, db: Session) -> User:
+    h = request.headers
+    uid, role, name_b64, ts, sig = (h.get("x-hs-user", ""), h.get("x-hs-role", ""), h.get("x-hs-name", ""),
+                                    h.get("x-hs-ts", ""), h.get("x-hs-sig", ""))
+    if not (uid and sig) or not gateway_fresh(ts) or \
+            not hmac.compare_digest(gateway_signature(uid, role, name_b64, ts), sig):
+        raise HTTPException(401, "Sign in to Holy Sai first.")
+    if role not in GATEWAY_ROLES:
+        raise HTTPException(403, "You do not have permission for this.")
+    try:
+        name = base64.urlsafe_b64decode(name_b64 + "=" * (-len(name_b64) % 4)).decode()[:120] or "Staff"
+    except (ValueError, UnicodeDecodeError):
+        name = "Staff"
+    user_id = gateway_user_id(uid)
+    user = db.get(User, user_id)
+    if user is None:
+        user = User(id=user_id, username=f"hs:{uid}", name=name, role=role, password_hash="!", active=True)
+        db.add(user)
+        try:
+            db.commit()
+        except IntegrityError:  # a parallel first request created it
+            db.rollback()
+            user = db.get(User, user_id)
+    elif (user.name, user.role, user.active) != (name, role, True):
+        # Holy Sai is the source of truth for names and roles
+        user.name, user.role, user.active = name, role, True
+        db.commit()
+    return user
+
+
 def current_user(request: Request, db: Annotated[Session, Depends(get_db)]) -> User:
+    if settings.integrated:
+        return _gateway_user(request, db)
     token = _bearer(request)
     if not token:
         raise HTTPException(401, "Sign in first.")

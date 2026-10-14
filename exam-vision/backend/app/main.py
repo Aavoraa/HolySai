@@ -9,12 +9,12 @@ from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import BASE_DIR, settings
-from .routers import auth, exams, reports, settings as settings_router, submissions
+from .routers import auth, exams, integration, reports, settings as settings_router, submissions
 from .services import jobs
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(name)s: %(message)s")
@@ -57,7 +57,7 @@ async def guard(request: Request, call_next):
     return response
 
 
-for r in (auth.router, settings_router.router, exams.router, submissions.router, reports.router):
+for r in (auth.router, settings_router.router, exams.router, submissions.router, reports.router, integration.router):
     app.include_router(r)
 
 
@@ -69,6 +69,8 @@ def health() -> dict:
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-@app.get("/")
-def index() -> FileResponse:
+@app.get("/", response_model=None)
+def index() -> FileResponse | PlainTextResponse:
+    if settings.integrated:  # the UI is Holy Sai's "Paper Correction" module
+        return PlainTextResponse("EXAM Vision is running as the Holy Sai Paper Correction service.")
     return FileResponse(STATIC / "index.html")

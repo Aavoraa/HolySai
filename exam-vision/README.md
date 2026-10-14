@@ -5,7 +5,25 @@ control of every final mark. No local GPU, models or Vision API are needed — o
 access to Claude. (The original EXAM module, which reads with our own Vision AI, is unchanged
 in `D:\vision API\EXAM`, port 8004.)
 
-## Start
+## As the Holy Sai "Paper Correction" module
+
+This folder is the AI marking service behind **Academics → Paper Correction** in Holy Sai
+Smart School 360. In that setup:
+
+- Holy Sai signs users in and forwards their requests through `/api/exam-correction/api/*`,
+  signed with HMAC-SHA256 (`EXAM_VISION_SECRET` in Holy Sai = `EXAM_GATEWAY_SECRET` here).
+  Local sign-in, user and student management are switched off (`/api/auth/*` → 404).
+- Roles come from Holy Sai permissions: `settings.manage` → admin, other school-level
+  `assessments.manage` → coordinator, class-level (teachers) → teacher.
+- Holy Sai pushes active students (admission number, class as `Grade 5 · GDV`, section, roll)
+  and marking staff to `POST /api/integration/sync`.
+- Approved totals go back into a Holy Sai assessment (`POST /api/exam-correction/exams/{id}/push-marks`).
+- `npm run dev` in the project folder starts this service when `EXAM_VISION_URL` points at
+  this machine. See HOW-TO-RUN.txt, section G.
+
+The steps below run it **on its own** (no `EXAM_GATEWAY_SECRET`).
+
+## Start (standalone)
 
 1. Double-click `start-exam-vision.bat` → **http://localhost:8006** opens.
 2. First visit: create the administrator account.

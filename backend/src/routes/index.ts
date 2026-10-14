@@ -18,6 +18,7 @@ import operationsRoutes from './operations.routes.js';
 import innovationRoutes from './innovation.routes.js';
 import groupRoutes from './group.routes.js';
 import intelligenceRoutes from './intelligence.routes.js';
+import examCorrectionRoutes from './exam-correction.routes.js';
 
 export const api = Router();
 
@@ -48,3 +49,4 @@ api.use('/', operationsRoutes);
 api.use('/', innovationRoutes);
 api.use('/', groupRoutes);
 api.use('/', intelligenceRoutes);
+api.use('/', examCorrectionRoutes); // Paper Correction (AI answer-sheet marking, exam-vision/)

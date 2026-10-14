@@ -1,0 +1,65 @@
+/exam-correction/status:
+  get:
+    tags: [Paper Correction]
+    summary: Whether the Paper Correction service is connected, the caller's role in it, Claude readiness and the last roster sync
+    x-permission: assessments.manage
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/exam-correction/sync:
+  post:
+    tags: [Paper Correction]
+    summary: Push the active student roster and marking staff to the service now (it also syncs every 5 minutes on use)
+    description: School-level roles only. Students are matched by admission number; classes are labelled "<class> · <CAMPUS CODE>".
+    x-permission: assessments.manage
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/exam-correction/exams/{examId}/push-marks:
+  post:
+    tags: [Paper Correction]
+    summary: Send approved answer-sheet totals into an assessment's marks register
+    description: |
+      Exam results must be approved or published. Totals are scaled to the assessment's maximum when
+      they differ. Students not on the assessment roster, or without fully approved marks, are returned
+      in `skipped`. Moderation / Completed assessments are refused (409 ASSESSMENT_LOCKED).
+    x-permission: assessments.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: examId, in: path, required: true, schema: { type: string, pattern: '^[0-9a-f]{32}$' } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [assessmentId]
+            properties: { assessmentId: { type: string, format: uuid } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/exam-correction/api/{path}:
+  get:
+    tags: [Paper Correction]
+    summary: Forwarded to the Paper Correction service as the signed-in user
+    description: |
+      Exams, questions and rubrics, answer-sheet upload (multipart), reading and marking jobs, review,
+      reports (`exams/{id}/report`, `exams/{id}/report.csv`), page images and AI configuration
+      (`settings/ai`, administrators). JSON replies are wrapped in the standard envelope; images and CSV
+      pass through. Sign-in, account and roster writes are not exposed. See
+      exam-vision/docs/ai-paper-correction/API_SPECIFICATION.md for each endpoint.
+    x-permission: assessments.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: path, in: path, required: true, schema: { type: string }, example: exams }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '502': { description: The service is not responding or refused the gateway signature }
+      '503': { description: Paper Correction is not configured on this server }

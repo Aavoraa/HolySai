@@ -60,7 +60,13 @@ async function paramValues(token: string) {
   const s = await apiGet('/students/HS-2026-1041', token);
   const projects = await apiGet('/innovation/projects?pageSize=1', token).catch(() => []);
   const slips = await apiGet('/payslips?pageSize=1', token).catch(() => []);
+  // Paper Correction: an exam and an answer sheet, when the marking service is connected
+  const exams = await apiGet('/exam-correction/api/exams', token).catch(() => null);
+  const examId = Array.isArray(exams) ? exams[0]?.id as string | undefined : undefined;
+  const sheets = examId ? await apiGet(`/exam-correction/api/exams/${examId}/submissions`, token).catch(() => null) : null;
   return {
+    examId,
+    sheetId: (Array.isArray(sheets) ? sheets[0]?.id : undefined) as string | undefined,
     studentId: s.id as string,
     projectId: (Array.isArray(projects) ? projects[0]?.id : undefined) as string | undefined,
     payslipId: (Array.isArray(slips) ? slips[0]?.id : undefined) as string | undefined,
@@ -73,6 +79,8 @@ function resolvePath(path: string, p: Awaited<ReturnType<typeof paramValues>>, r
     .replace('/projects/:id', p.projectId ? `/projects/${p.projectId}` : '/projects/__missing__')
     .replace('/staff-self/payslips/:id', role === 'staff' ? '/staff-self' : '/staff-self')
     .replace('/payslips/:id', p.payslipId ? `/payslips/${p.payslipId}` : '/payslips')
+    .replace('/paper-correction/exams/:id', p.examId ? `/paper-correction/exams/${p.examId}` : '/paper-correction')
+    .replace('/paper-correction/sheets/:id', p.sheetId ? `/paper-correction/sheets/${p.sheetId}` : '/paper-correction')
     .replace(':studentId', p.studentId)
     .replace(':id', p.studentId);
 }
@@ -98,6 +106,7 @@ const TABS: Record<string, string[]> = {
   '/student-360/:id': ['academics', 'attendance', 'skills', 'activities', 'behaviour', 'wellbeing', 'achievements', 'portfolio', 'interventions', 'documents', 'tracking'],
   '/my-profile': ['academics', 'documents'],
   '/student-tracking/:id': [],
+  '/paper-correction/exams/:id': ['questions', 'results', 'setup'],
 };
 
 const errors: string[] = [];
@@ -124,6 +133,9 @@ const EXPECT: Record<string, RegExp[]> = {
   '/command-center': [/Total Students/, /Attendance Overview/],
   '/students': [/Aditya Kumar|Students/],
   // Sections 2–5 need audit.read, so only the parts every permitted role sees are asserted.
+  '/paper-correction': [/Paper Correction/, /Examinations/],
+  '/paper-correction/exams/:id': [/Answer sheets/, /Upload one answer sheet/],
+  '/paper-correction/sheets/:id': [/Reading/, /Q1/],
   '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /Fees collected/, /Net position/, /What families still owe/],
 };
 

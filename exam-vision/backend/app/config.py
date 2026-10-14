@@ -34,6 +34,13 @@ class Settings:
     session_hours: int = int(os.getenv("EXAM_SESSION_HOURS", "12"))
     workers: int = int(os.getenv("EXAM_WORKERS", "2"))
     run_jobs: bool = os.getenv("EXAM_RUN_JOBS", "1") == "1"  # tests run jobs inline instead
+    # Shared with the Holy Sai API. When set, EXAM Vision runs as a module of Holy Sai: every request
+    # must carry an identity signed by the Holy Sai API, and local sign-in is switched off.
+    gateway_secret: str = os.getenv("EXAM_GATEWAY_SECRET", "")
+
+    @property
+    def integrated(self) -> bool:
+        return bool(self.gateway_secret)
 
     @property
     def db_path(self) -> Path:
