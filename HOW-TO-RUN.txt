@@ -78,7 +78,8 @@ A. FIRST TIME ONLY (or on a new machine)
 
    This DROPS and recreates everything in the database named in
    DATABASE_URL, runs all migrations, then loads fictional sample data:
-   68 students, staff, parents, fees, payroll, admissions, academics,
+   about 300 students (at least 5 in every class section), staff,
+   parents, fees, payroll, admissions, academics,
    transport and sample GPS coordinates. Dates are generated relative to
    today, so the dashboards always look current. Re-run it any time you
    want a fresh demo (for example the next day).

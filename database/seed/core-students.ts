@@ -6,7 +6,8 @@
  * real children's locations.
  */
 import { addDays, bulkInsert, kolkataTime, type Db, type SeedContext, type SeedStudent } from './context.js';
-import { EMPLOYEES } from './core-org.js';
+import { EMPLOYEES, SECTION_PLAN } from './core-org.js';
+import { BOYS, GIRLS } from './admissions.js';
 
 // ---------------------------------------------------------------------------
 // Transport network (sample coordinates near each campus)
@@ -37,7 +38,11 @@ export const ROUTES: {
 // ---------------------------------------------------------------------------
 const FIRST = ['Aditya', 'Sanjana', 'Karthik', 'Meenakshi', 'Rohan', 'Divya', 'Arjun', 'Lakshmi', 'Vikram', 'Ananya', 'Hari', 'Nithya', 'Surya', 'Pooja', 'Manoj', 'Keerthi', 'Rahul', 'Swetha', 'Vishnu', 'Anjali', 'Naveen', 'Ishita', 'Aravind', 'Shreya', 'Gokul', 'Bhavana', 'Dinesh', 'Varsha', 'Praveen', 'Nandhini', 'Sathish', 'Tanya', 'Mohan', 'Reshma', 'Balaji', 'Harini'];
 const LAST = ['Kumar', 'Raman', 'Subramani', 'Natarajan', 'Venkatesh', 'Iyer', 'Pillai', 'Chandran', 'Selvam', 'Murthy', 'Anand', 'Prasad'];
-const FEMALE = new Set(['Sanjana', 'Meenakshi', 'Divya', 'Lakshmi', 'Ananya', 'Nithya', 'Pooja', 'Keerthi', 'Swetha', 'Anjali', 'Ishita', 'Shreya', 'Bhavana', 'Varsha', 'Nandhini', 'Tanya', 'Reshma', 'Harini']);
+// More names for the generated records that fill every section.
+const EXTRA_FIRST = ['Abinaya', 'Akash', 'Bharath', 'Charan', 'Deepika', 'Gayathri', 'Hemanth', 'Janani', 'Kavin', 'Madhan', 'Nila', 'Oviya',
+  'Pranav', 'Ragini', 'Sabari', 'Thenmozhi', 'Uday', 'Vaishnavi', 'Yazhini', 'Kiran', 'Lavanya', 'Mithran', 'Pavithra', 'Sriram', 'Tharun', 'Yamini'];
+const EXTRA_LAST = ['Balan', 'Menon', 'Krishnan', 'Rajan', 'Sekar', 'Ganesan', 'Mani', 'Shankar', 'Ravi', 'Srinivasan'];
+const FEMALE = new Set(['Abinaya', 'Deepika', 'Gayathri', 'Janani', 'Nila', 'Oviya', 'Ragini', 'Thenmozhi', 'Vaishnavi', 'Yazhini', 'Lavanya', 'Pavithra', 'Yamini', 'Sanjana', 'Meenakshi', 'Divya', 'Lakshmi', 'Ananya', 'Nithya', 'Pooja', 'Keerthi', 'Swetha', 'Anjali', 'Ishita', 'Shreya', 'Bhavana', 'Varsha', 'Nandhini', 'Tanya', 'Reshma', 'Harini']);
 const HOUSES = ['Emerald', 'Sapphire', 'Amber', 'Coral'];
 const FATHER = ['Suresh', 'Ramesh', 'Mahesh', 'Senthil', 'Balaji', 'Murali', 'Venkat', 'Prakash', 'Ganesan', 'Arun', 'Vijay', 'Karthikeyan', 'Saravanan', 'Mohan'];
 const MOTHER = ['Lakshmi', 'Priya', 'Deepa', 'Revathi', 'Kavitha', 'Uma', 'Anitha', 'Geetha', 'Malathi', 'Sangeetha', 'Vidya', 'Radha'];
@@ -109,6 +114,45 @@ function buildSpecs(): Spec[] {
     while (seen.has(sp.first + ' ' + sp.last)) sp.last = LAST[(LAST.indexOf(sp.last) + k++ + idx) % LAST.length];
     seen.add(sp.first + ' ' + sp.last);
   });
+
+  // Every section gets at least MIN_PER_SECTION students, so each class has a usable roster
+  // (attendance, marks entry, Paper Correction). Generated deterministically after the named
+  // records, with new admission numbers from HS-2026-1094.
+  const MIN_PER_SECTION = 5;
+  const count: Record<string, number> = {};
+  for (const sp of specs) count[`${sp.campus}:${sp.grade}:${sp.section}`] = (count[`${sp.campus}:${sp.grade}:${sp.section}`] ?? 0) + 1;
+  // Admissions enrols a few applicants later with these first names; keep generated names distinct from them.
+  const taken = new Set([...GIRLS, ...BOYS]);
+  const firsts = [...FIRST, ...EXTRA_FIRST].filter((f) => !taken.has(f));
+  const lasts = [...LAST, ...EXTRA_LAST];
+  let next = 1094, n = 0;
+  for (const [campus, grades, sections] of SECTION_PLAN) {
+    for (const grade of grades) {
+      for (const section of sections) {
+        const key = `${campus}:${grade}:${section}`;
+        for (let k = count[key] ?? 0; k < MIN_PER_SECTION; k++, n++) {
+          const r1 = seeded(n + 501), r2 = seeded(n + 701), r3 = seeded(n + 901), r4 = seeded(n + 1101);
+          let first = firsts[Math.floor(r1 * firsts.length)];
+          let last = lasts[Math.floor(r2 * lasts.length)];
+          for (let j = 1; seen.has(`${first} ${last}`); j++) {
+            first = firsts[(firsts.indexOf(first) + j) % firsts.length];
+            if (j % firsts.length === 0) last = lasts[(lasts.indexOf(last) + 1) % lasts.length];
+          }
+          seen.add(`${first} ${last}`);
+          const att = Math.round(80 + r3 * 19);
+          const avg = Math.round(50 + r4 * 44);
+          const trend = Math.round((seeded(n + 1301) - 0.5) * 16);
+          specs.push({
+            no: `HS-2026-${next++}`, first, last, gender: FEMALE.has(first) ? 'F' : 'M', campus, grade, section,
+            house: HOUSES[Math.floor(seeded(n + 1501) * 4)], att, avg, trend,
+            risk: att < 82 || avg < 55 ? 'At Risk' : att < 86 || avg < 62 || trend < -6 ? 'Developing Risk' : 'On Track',
+            fee: r4 > 0.85 ? 'Overdue' : r4 > 0.65 ? 'Partial' : 'Paid',
+            route: campus === 'plc' || r3 < 0.3 ? null : campus === 'vdv' ? 'V01' : ['R12', 'R04', 'R07', 'R09', 'R02', 'R15'][Math.floor(r1 * 6)],
+          });
+        }
+      }
+    }
+  }
   return specs;
 }
 

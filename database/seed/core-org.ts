@@ -24,6 +24,13 @@ export const SUBJECTS = [
 ];
 
 /** [code, name, dept, designation, type, category, campus, shift, todayStatus, basic, workload, cpd, userHandle?] */
+/** Classes and sections per campus: [campus, grades, sections]. */
+export const SECTION_PLAN: [string, number[], string[]][] = [
+  ['gdv', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], ['A', 'B', 'C']],
+  ['vdv', [1, 2, 3, 4, 5, 6, 7, 8, 9], ['A', 'B']],
+  ['plc', [6, 7, 8, 9], ['A']],
+];
+
 export const EMPLOYEES: [string, string, string, string, 'teaching' | 'non_teaching', string, string, string, string, number, number, number, string?][] = [
   ['EMP-1001', 'Dr. Meera Krishnan', 'Leadership', 'Principal', 'teaching', 'Leadership', 'gdv', 'General 08:00–16:00', 'Present', 145000, 4, 40, 'principal'],
   ['EMP-1021', 'Ms. Priya Raghavan', 'Academics', 'Teacher — Mathematics', 'teaching', 'Teachers', 'gdv', 'General 08:00–16:00', 'Present', 42000, 26, 18, 'teacher'],
@@ -187,17 +194,13 @@ export async function seedOrg(db: Db, ctx: SeedContext, demoPassword: string) {
     }
   }
 
-  // ---- Subjects, classes, sections --------------------------------------------
+  // ---- Subjects, classes, sections (plan: SECTION_PLAN) -------------------------
   for (const s of SUBJECTS) {
     const r = await db.query('INSERT INTO subjects (code, name, stage, is_core) VALUES ($1,$2,$3,$4) RETURNING id', [s.code, s.name, s.stage, !['ART', 'HIN'].includes(s.code)]);
     ctx.subjects[s.code] = r.rows[0].id;
   }
   const stageFor = (g: number) => (g <= 6 ? 'Cambridge Primary' : g <= 8 ? 'Cambridge Lower Secondary' : g <= 10 ? 'Cambridge IGCSE' : g === 11 ? 'Cambridge AS Level' : 'Cambridge A Level');
-  const plan: [string, number[], string[]][] = [
-    ['gdv', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], ['A', 'B', 'C']],
-    ['vdv', [1, 2, 3, 4, 5, 6, 7, 8, 9], ['A', 'B']],
-    ['plc', [6, 7, 8, 9], ['A']],
-  ];
+  const plan = SECTION_PLAN;
   const classTeacher: Record<string, string> = {
     'gdv:5:A': 'EMP-1021', 'gdv:7:B': 'EMP-1044', 'gdv:9:A': 'EMP-1088', 'gdv:6:B': 'EMP-1092', 'gdv:4:C': 'EMP-1098',
     'gdv:6:C': 'EMP-1103', 'gdv:8:B': 'EMP-6003', 'gdv:10:A': 'EMP-1096', 'gdv:7:C': 'EMP-6011',
