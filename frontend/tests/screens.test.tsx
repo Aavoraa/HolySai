@@ -126,7 +126,7 @@ const EXPECT: Record<string, RegExp[]> = {
   '/parent-360?tab=fees': [/Total outstanding/, /Tuition/],
   '/parent-360?tab=safety': [/Pickup authorisation/],
   '/parent-360?tab=more': [/Parent–teacher meeting/, /Circulars/],
-  '/student-360/:id': [/Aditya Kumar/, /HS-2026-1041/, /Growth timeline/],
+  '/student-360/:id': [/Aditya Kumar/, /HS-2026-1041/, /Growth timeline/, /Skill web/, /Strongest:/],
   '/student-360/:id?tab=tracking': [/Student Tracking/, /Latitude/, /Last Updated/],
   '/student-tracking': [/Student Tracking/, /Students tracked/],
   '/student-tracking/:id': [/Aditya Kumar/, /Latitude/],
@@ -138,6 +138,9 @@ const EXPECT: Record<string, RegExp[]> = {
   '/paper-correction/sheets/:id': [/Reading/, /Q1/],
   '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /Fees collected/, /Net position/, /What families still owe/],
 };
+
+// The student's home screen shows their skill web
+EXPECT['/my-profile'] = [/My skill web/, /Strongest:/];
 
 const onlyRoles = process.env.ROLES?.split(',');
 const report: string[] = [];
@@ -189,7 +192,9 @@ describe.each(Object.keys(ACCOUNTS).filter((r) => !onlyRoles || onlyRoles.includ
       // same reason (NOT_FOR_ADMINS in layouts/nav.ts).
       const personalTarget = /^\/(parent-360|my-profile|staff-self)/.test(target);
       const ownsRecord = !!(user.parentId ?? user.studentId ?? user.employeeId);
-      const skipContent = (trackingTarget && !canTrack) || (personalTarget && !ownsRecord);
+      // Paper Correction content needs its marking service; without it the page says "not connected".
+      const paperOffline = target.startsWith('/paper-correction') && !params.examId;
+      const skipContent = (trackingTarget && !canTrack) || (personalTarget && !ownsRecord) || paperOffline;
       const missing = (skipContent ? [] : EXPECT[target] ?? []).filter((re) => !re.test(text)).map(String);
       if (missing.length) failures.push(`${path}: missing ${missing.join(', ')}`);
       const heading = container.querySelector('h1')?.textContent?.trim() ?? '(no h1)';

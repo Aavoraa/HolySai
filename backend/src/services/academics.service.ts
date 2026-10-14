@@ -201,7 +201,9 @@ export async function listSubjects(campusId?: string) {
                 AND ta.academic_year_id = (SELECT id FROM academic_years WHERE is_current)) AS classes,
             (SELECT round(avg(r.score))::int FROM student_academic_records r JOIN students s ON s.id = r.student_id AND s.deleted_at IS NULL
               WHERE r.subject_id = sub.id AND r.academic_year_id = (SELECT id FROM academic_years WHERE is_current)
-                AND r.term_order = (SELECT max(term_order) FROM student_academic_records WHERE academic_year_id = r.academic_year_id)
+                -- latest term of the current year, computed once (not per record)
+                AND r.term_order = (SELECT max(term_order) FROM student_academic_records
+                                     WHERE academic_year_id = (SELECT id FROM academic_years WHERE is_current))
                 AND ($1::uuid IS NULL OR s.campus_id = $1)) AS average,
             (SELECT round(avg(o.coverage_pct))::int FROM learning_objectives o WHERE o.subject_id = sub.id) AS coverage,
             (SELECT count(*)::int FROM learning_objectives o WHERE o.subject_id = sub.id) AS objectives

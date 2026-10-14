@@ -138,6 +138,14 @@ describe('Paper Correction gateway', () => {
     expect(syncs()).toBe(before + 1);
   });
 
+  it('waits for a sleeping service instead of failing on its first 502', async () => {
+    let n = 0;
+    reply = () => (++n <= 2 ? { status: 502, type: 'text/html', body: '<html>waking</html>' } : { status: 200, body: '[]' });
+    const r = await (await as('teacher')).get('/api/exam-correction/api/exams');
+    expect(r.status).toBe(200);
+    expect(n).toBe(3);
+  }, 30_000);
+
   it('reports "not connected" when unconfigured', async () => {
     env.EXAM_VISION_URL = undefined;
     try {

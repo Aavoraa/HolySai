@@ -820,3 +820,125 @@ export async function topUpSections(db: Db, ctx: SeedContext, min = 5) {
   }
   return { added: added.length, sections: sections.length };
 }
+
+// ---------------------------------------------------------------------------
+// Student 360 fill: gives EVERY active student the development record a profile
+// needs — skills (the skill web), activities, an achievement, behaviour notes,
+// interests, a wellbeing check-in, a teacher observation, timeline entries and
+// documents. Only what a student is missing is added; existing rows are never
+// changed, so it is safe to run on any database and to run again.
+// Covers students added after seedDevelopment: admissions enrolments, top-ups and
+// students created in the app.
+// ---------------------------------------------------------------------------
+const SKILLS = ['Communication', 'Creativity', 'Leadership', 'Critical Thinking', 'Collaboration'];
+const FILL_ACH: [string, string][] = [
+  ['Inter-house Athletics — 100 m gold', 'Sports'], ['Spell Bee — school finalist', 'Academic'], ['Art Exhibition — featured work', 'Co-curricular'],
+  ['Math Olympiad — merit certificate', 'Competition'], ['Science Expo — best model', 'Competition'], ['Chess — district quarter-finalist', 'Competition'],
+  ['Story-writing contest — runner-up', 'Co-curricular'], ['Perfect attendance — Term 1', 'Attendance'], ['Quiz Club — house champions', 'Academic'],
+];
+const FILL_NOTES: [string, string][] = [
+  ['Positive', 'Showed excellent teamwork during the science practical.'], ['Positive', 'Volunteered to help organise the class library.'],
+  ['Positive', 'Consistently punctual and well prepared.'], ['Positive', 'Helped a classmate catch up after an absence.'],
+  ['Note', 'Homework incomplete twice this week.'], ['Note', 'Needs reminders to bring sports kit.'],
+];
+const OBSERVATIONS = [
+  (n: string) => `${n} takes part readily in class discussions and explains reasoning clearly.`,
+  (n: string) => `${n} works well in groups and is ready to take the lead on a small task.`,
+  (n: string) => `${n} is curious during practical work and asks thoughtful questions.`,
+  (n: string) => `${n}'s written work is neat and well organised; steady progress this term.`,
+  (n: string) => `${n} responds well to feedback and corrects mistakes independently.`,
+];
+const INTERESTS_FILL = ['Robotics', 'Football', 'Reading', 'Music', 'Painting', 'Coding', 'Chess', 'Astronomy', 'Dance', 'Nature', 'Cricket', 'Theatre'];
+
+export async function fillStudentProfiles(db: Db, ctx: SeedContext) {
+  const rows = (await db.query(
+    `SELECT s.id, s.first_name, s.risk_level, s.admitted_on::text AS admitted_on, c.name AS class_name, cp.code AS campus,
+            sec.class_teacher_id,
+            (SELECT ta.employee_id FROM teacher_assignments ta WHERE ta.section_id = sec.id LIMIT 1) AS subject_teacher,
+            (SELECT round(avg(score))::int FROM student_academic_records r WHERE r.student_id = s.id AND r.term = 'Current') AS avg,
+            (SELECT count(*)::int FROM student_skills x WHERE x.student_id = s.id) AS skills,
+            (SELECT count(*)::int FROM student_activities x WHERE x.student_id = s.id) AS activities,
+            (SELECT count(*)::int FROM achievements x WHERE x.student_id = s.id) AS achievements,
+            (SELECT count(*)::int FROM behaviour_records x WHERE x.student_id = s.id) AS behaviour,
+            (SELECT count(*)::int FROM student_interests x WHERE x.student_id = s.id) AS interests,
+            (SELECT count(*)::int FROM wellbeing_checkins x WHERE x.student_id = s.id) AS wellbeing,
+            (SELECT count(*)::int FROM teacher_observations x WHERE x.student_id = s.id) AS observations,
+            (SELECT count(*)::int FROM student_timeline_events x WHERE x.student_id = s.id AND x.category = 'admission') AS admitted_event,
+            (SELECT count(*)::int FROM student_timeline_events x WHERE x.student_id = s.id AND x.category <> 'admission') AS other_events,
+            (SELECT count(*)::int FROM documents x WHERE x.student_id = s.id) AS documents,
+            (SELECT array_agg(x.skill) FROM student_skills x WHERE x.student_id = s.id) AS have_skills
+       FROM students s
+       JOIN sections sec ON sec.id = s.section_id
+       JOIN classes c ON c.id = sec.class_id
+       JOIN campuses cp ON cp.id = c.campus_id
+      WHERE s.deleted_at IS NULL AND s.status = 'active'`)).rows;
+  const acts = (await db.query('SELECT id FROM activities ORDER BY name')).rows.map((r) => r.id as string);
+  const teachers = (await db.query(
+    "SELECT id FROM employees WHERE employee_type = 'teaching' AND deleted_at IS NULL ORDER BY employee_code")).rows.map((r) => r.id as string);
+  const counsellor = (await db.query("SELECT id FROM employees WHERE employee_code = 'EMP-6011'")).rows[0]?.id ?? teachers[0] ?? null;
+  const yearStart = (await db.query('SELECT starts_on::text AS s FROM academic_years WHERE is_current')).rows[0]?.s ?? ctx.day(-120);
+
+  const skills: unknown[][] = [], sa: unknown[][] = [], ach: unknown[][] = [], beh: unknown[][] = [], ints: unknown[][] = [];
+  const well: unknown[][] = [], obs: unknown[][] = [], tl: unknown[][] = [], docs: unknown[][] = [];
+  const termOne = addDays(yearStart, 70);
+  for (const s of rows) {
+    const avg = (s.avg as number | null) ?? ctx.int(60, 85);
+    const atRisk = s.risk_level === 'At Risk';
+    const teacher = s.class_teacher_id ?? s.subject_teacher ?? (teachers.length ? ctx.pick(teachers) : null);
+    if (s.skills < 3) {
+      const have = new Set<string>(s.have_skills ?? []);
+      for (const n of SKILLS) {
+        if (have.has(n)) continue;
+        const v = clamp(Math.round(avg + (ctx.rand() - 0.5) * 30), 35, 97);
+        skills.push([s.id, n, v, v >= 82 ? 'High' : v >= 68 ? 'Medium' : 'Emerging',
+          JSON.stringify([`Teacher rubric assessment — ${n.toLowerCase()} ${v}/100`, `Class work and participation, ${s.class_name}`]), ctx.day(-ctx.int(5, 40))]);
+      }
+    }
+    if (!s.activities && acts.length) {
+      const chosen = new Set<string>();
+      for (let i = ctx.int(1, 3); i > 0; i--) chosen.add(ctx.pick(acts));
+      for (const a of chosen) sa.push([s.id, a, ctx.pick(['Member', 'Member', 'Captain', 'Volunteer']), addDays(yearStart, -ctx.int(0, 300)), ctx.int(4, 60)]);
+    }
+    if (!s.achievements) {
+      const [title, type] = ctx.pick(FILL_ACH);
+      ach.push([s.id, title, type, ctx.pick(['School', 'School', 'District', 'State']), ctx.day(-ctx.int(10, 120)), true]);
+    }
+    if (!s.behaviour && teacher) {
+      beh.push([s.id, ctx.day(-ctx.int(2, 40)), 'Positive', ctx.pick(FILL_NOTES.slice(0, 4))[1], teacher]);
+      const [t, note] = atRisk ? ['Concern', 'Appeared withdrawn during group activities; counsellor informed.'] : ctx.pick(FILL_NOTES);
+      beh.push([s.id, ctx.day(-ctx.int(41, 90)), t, note, teacher]);
+    }
+    if (!s.interests) new Set([ctx.pick(INTERESTS_FILL), ctx.pick(INTERESTS_FILL)]).forEach((i) => ints.push([s.id, i]));
+    if (!s.wellbeing) {
+      well.push([s.id, ctx.day(-ctx.int(3, 40)), atRisk ? ctx.pick(['Anxious', 'Low', 'Unsettled']) : ctx.pick(['Settled', 'Settled', 'Positive']),
+        atRisk ? 'Follow-up agreed with class teacher.' : 'Routine check-in.', atRisk, counsellor]);
+    }
+    if (!s.observations && teacher) {
+      const text = atRisk ? `${s.first_name} needs encouragement to complete work on time; a check-in with home is suggested.` : ctx.pick(OBSERVATIONS)(s.first_name);
+      obs.push([s.id, teacher, ctx.day(-ctx.int(3, 30)), text]);
+    }
+    const place = CAMPUSES_PLACE[s.campus as string] ?? 'the';
+    if (!s.admitted_event) tl.push([s.id, s.admitted_on ?? yearStart, `Admitted to ${s.class_name}`, `Joined ${place} campus`, 'admission', 'teal']);
+    if (!s.other_events) {
+      if (termOne <= ctx.today) tl.push([s.id, termOne, 'Term 1 results', `Average ${avg}/100 across subjects.`, 'academic', avg >= 75 ? 'teal' : avg >= 60 ? 'neutral' : 'amber']);
+      tl.push([s.id, ctx.day(-ctx.int(5, 45)), 'Skills profile reviewed', 'Class teacher updated the skills rubric with recent evidence.', 'talent', 'neutral']);
+    }
+    if (!s.documents) {
+      docs.push(['student', s.id, s.id, 'Birth certificate', 'Identity', 'Verified', null]);
+      docs.push(['student', s.id, s.id, 'Immunisation record', 'Health', 'Verified', null]);
+    }
+  }
+  await bulkInsert(db, 'student_skills', ['student_id', 'skill', 'score', 'confidence', 'evidence', 'assessed_on'], skills, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'student_activities', ['student_id', 'activity_id', 'role', 'since', 'hours'], sa, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'achievements', ['student_id', 'title', 'achievement_type', 'level', 'achieved_on', 'is_verified'], ach);
+  await bulkInsert(db, 'behaviour_records', ['student_id', 'recorded_on', 'record_type', 'note', 'recorded_by'], beh);
+  await bulkInsert(db, 'student_interests', ['student_id', 'interest'], ints, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'wellbeing_checkins', ['student_id', 'checked_on', 'mood', 'notes', 'is_confidential', 'recorded_by'], well);
+  await bulkInsert(db, 'teacher_observations', ['student_id', 'employee_id', 'observed_on', 'observation'], obs);
+  await bulkInsert(db, 'student_timeline_events', ['student_id', 'occurred_on', 'title', 'body', 'category', 'tone'], tl);
+  await bulkInsert(db, 'documents', ['owner_type', 'owner_id', 'student_id', 'name', 'category', 'status', 'requested_on'], docs);
+  return {
+    students: rows.length, skills: skills.length, activities: sa.length, achievements: ach.length, behaviour: beh.length,
+    interests: ints.length, wellbeing: well.length, observations: obs.length, timeline: tl.length, documents: docs.length,
+  };
+}

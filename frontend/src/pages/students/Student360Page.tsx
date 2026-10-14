@@ -254,6 +254,7 @@ function Overview({ d, onTab }: { d: Profile; onTab: (t: Tab) => void }) {
         )}
       </div>
       <div className="col g-4">
+        <SkillWebCard d={d} onOpen={() => onTab('skills')} />
         <TalentCard d={d} />
         <Card icon="grid" title="At a glance">
           <div className="col g-4">
@@ -475,6 +476,32 @@ function AttendanceTab({ d }: { d: Profile }) {
         </Card>
       </div>
     </Grid>
+  );
+}
+
+/**
+ * The skill web: a radar of the student's skills (needs at least 3), with the
+ * strongest skill and the development area. Used on the Student 360 overview and
+ * on the student's own home screen.
+ */
+export function SkillWebCard({ d, onOpen, title = 'Skill web' }: { d: Profile; onOpen?: () => void; title?: string }) {
+  // A fixed axis order, so webs look alike from one student to the next
+  const skills = [...d.skills].sort((a, b) => a.name.localeCompare(b.name));
+  const ranked = [...d.skills].sort((a, b) => b.value - a.value);
+  const top = ranked[0], low = ranked[ranked.length - 1];
+  return (
+    <Card icon="activity" title={title} sub="Built from assessments, activities and teacher observation"
+      actions={onOpen && <Button size="sm" variant="quiet" iconRight="arrowRight" onClick={onOpen}>Details</Button>}>
+      {skills.length >= 3 ? (
+        <div className="col g-3 center">
+          <Chart svg={charts.radar({ size: 240, axes: skills.map((k) => k.name), series: [{ name: 'Current', values: skills.map((k) => k.value), color: 'var(--teal)' }] })} />
+          <div className="row g-2 wrap center">
+            {top && <Badge tone="success" icon="trending">Strongest: {top.name} {top.value}</Badge>}
+            {low && low.name !== top?.name && <Badge tone="warning">Develop: {low.name} {low.value}</Badge>}
+          </div>
+        </div>
+      ) : <Empty icon="sparkle" title="Not enough skill evidence yet" sub="The web appears once three or more skills are assessed." />}
+    </Card>
   );
 }
 

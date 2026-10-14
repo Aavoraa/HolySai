@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { Avatar, Badge, Button, Card, Empty, ErrorState, Icon, Meter, Page, PageSkeleton, Skeleton, Status, CampusBanner, DashLayout, DashRail, DonutCard, RankCard, TrendCard } from '@/components/ui';
 import { cx, fmt, todayKey } from '@/lib/format';
-import { Student360, type Profile } from './Student360Page';
+import { SkillWebCard, Student360, type Profile } from './Student360Page';
 
 interface Notice { id: string; tone: string; icon: string; title: string; route: string | null; createdAt: string; readAt: string | null }
 
@@ -149,6 +149,18 @@ function MyDay({ id, onProfile }: { id: string; onProfile: (tab?: string) => voi
       <RankCard title="My Subjects" icon="trending" middle="Teacher" valueLabel="Score"
         rows={ranked.map((x) => ({ key: x.name, name: x.name, meta: x.teacher ?? x.grade, value: `${x.score}%` }))}
         empty={{ title: 'No subject results yet', sub: 'Subjects are ranked here once assessment marks are entered.' }} />
+
+      <div className="grid dash__pair mt-4">
+        <SkillWebCard d={d} title="My skill web" onOpen={() => onProfile('skills')} />
+        <Card icon="award" title="My activities & achievements" actions={<button type="button" className="portal-link" onClick={() => onProfile('achievements')}>All<Icon name="chevronRight" size={13} /></button>}>
+          {d.activities.length || d.achievements.length ? (
+            <div className="portal-list">
+              {d.achievements.slice(0, 3).map((a) => <Item key={a.id} icon="award" tone="brand" title={a.title} meta={`${a.level ?? 'School'} · ${fmt.dateShort(a.date)}`} />)}
+              {d.activities.slice(0, 3).map((a) => <Item key={a.name} icon="star" title={a.name} meta={`${a.role} · ${a.hours} hours`} />)}
+            </div>
+          ) : <p className="t-sm t-muted">Your clubs, sports and achievements appear here.</p>}
+        </Card>
+      </div>
 
       <div className="grid g-main mt-4">
         <div className="portal-stack">

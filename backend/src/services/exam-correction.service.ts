@@ -59,12 +59,30 @@ function upstream(path: string) {
   return `${env.EXAM_VISION_URL!.replace(/\/$/, '')}/api/${path}`;
 }
 
-async function call(url: string, init: RequestInit & { duplex?: 'half' }): Promise<globalThis.Response> {
-  try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
-  } catch (err) {
-    logger.warn({ err: (err as Error).message, url }, 'Paper Correction service unreachable');
-    throw unreachable();
+/** How long a repeatable request keeps retrying while the service wakes from sleep (free hosting). */
+const WAKE_RETRY_MS = 90_000;
+const WAKE_STATUSES = new Set([502, 503, 504]);
+
+/**
+ * One request to the service. With `retry` (only for requests that are safe to repeat),
+ * a gateway error or a refused connection — what a host shows while the service is
+ * waking or restarting — is retried every 5 s for up to WAKE_RETRY_MS.
+ */
+async function call(url: string, init: RequestInit & { duplex?: 'half' }, retry = false): Promise<globalThis.Response> {
+  const until = Date.now() + WAKE_RETRY_MS;
+  for (;;) {
+    let res: globalThis.Response | null = null;
+    try {
+      res = await fetch(url, { ...init, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+      if (!retry || !WAKE_STATUSES.has(res.status) || Date.now() > until) return res;
+    } catch (err) {
+      if (!retry || Date.now() > until) {
+        logger.warn({ err: (err as Error).message, url }, 'Paper Correction service unreachable');
+        throw unreachable();
+      }
+    }
+    await res?.body?.cancel().catch(() => undefined);
+    await new Promise((ok) => setTimeout(ok, 5_000));
   }
 }
 
@@ -79,7 +97,7 @@ function detailOf(body: unknown, status: number): string {
 /** Calls the service as `user` and returns its JSON, throwing its error as an AppError. */
 async function getJson<T>(user: AuthUser, path: string): Promise<T> {
   if (!configured()) throw notConnected();
-  const res = await call(upstream(path), { headers: identityHeaders(user) });
+  const res = await call(upstream(path), { headers: identityHeaders(user) }, true);
   const body = await res.json().catch(() => null);
   if (!res.ok) throw new AppError(res.status === 401 ? 502 : res.status, `EXAM_VISION_${res.status}`, detailOf(body, res.status));
   return body as T;
@@ -123,7 +141,7 @@ export async function forward(req: Request, res: Response, path: string) {
     }
   }
   const query = new URLSearchParams(req.query as Record<string, string>).toString();
-  const up = await call(upstream(path) + (query ? `?${query}` : ''), { method: req.method, headers, body, duplex });
+  const up = await call(upstream(path) + (query ? `?${query}` : ''), { method: req.method, headers, body, duplex }, req.method === 'GET');
 
   const upType = up.headers.get('content-type') ?? '';
   if (upType.includes('application/json')) {
@@ -200,7 +218,7 @@ export async function syncRoster(): Promise<Record<string, number>> {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-hs-ts': ts, 'x-hs-sig': sign('sync', ts, createHash('sha256').update(body).digest('hex')) },
         body,
-      });
+      }, true); // the roster upsert is safe to repeat
       const out = await res.json().catch(() => null);
       if (!res.ok) {
         logger.error({ status: res.status, detail: out?.detail }, 'Paper Correction roster sync failed');
@@ -226,7 +244,7 @@ async function ensureSynced() {
 
 /** The service's process start time; a change means it restarted (and may have lost its data). */
 async function startedAt(): Promise<number | null> {
-  const res = await call(upstream('health'), {});
+  const res = await call(upstream('health'), {}, true);
   const body = await res.json().catch(() => null);
   return typeof body?.started === 'number' ? body.started : null;
 }

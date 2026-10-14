@@ -5,7 +5,7 @@
 import type pg from 'pg';
 import { addDays, kolkataTime, listSchoolDays, mulberry32, todayInKolkata, type SeedContext } from './context.js';
 import { seedOrg } from './core-org.js';
-import { seedStudents } from './core-students.js';
+import { fillStudentProfiles, seedStudents } from './core-students.js';
 import { seedInbox } from './core-inbox.js';
 import * as academics from './academics.js';
 import * as admissions from './admissions.js';
@@ -73,6 +73,8 @@ export async function seedAll(client: pg.PoolClient, demoPassword: string, log =
     await step('organisation, roles, users, staff, classes', () => seedOrg(client, ctx, demoPassword));
     await step('transport, families, students, attendance, Student 360, GPS tracking', () => seedStudents(client, ctx));
     for (const [name, mod] of DOMAINS) await step(name, () => mod.seed(client, ctx));
+    // Admissions enrols students after the Student 360 seed; give everyone a full profile.
+    await step('Student 360 profiles for every student', async () => { await fillStudentProfiles(client, ctx); });
     await step('notifications and tasks', () => seedInbox(client, ctx));
     await client.query(
       `INSERT INTO audit_logs (user_id, user_name, role_key, action, module, description, device, metadata, created_at)
