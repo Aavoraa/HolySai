@@ -9,6 +9,7 @@ import { routeMeta } from '@/layouts/routeMeta';
 import { iconPaths, brandDivider } from '@/lib/legacy-icons';
 import { charts } from '@/lib/legacy-charts';
 import { cx, fmt } from '@/lib/format';
+import { LotusArt, LotusDivider } from './LotusArt';
 import { riskTone, statusTone, toneFor, type Tone } from '@/lib/tones';
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ export function Svg({ html, className, style }: { html: string; className?: stri
 export function Lotus({ size = 36 }: { size?: number }) {
   return (
     <img
-      src="/logo-mark.png"
+      src="/logo-mark.webp"
       alt="Holy Sai International School"
       width={size}
       height={size}
@@ -56,7 +57,10 @@ export function Lotus({ size = 36 }: { size?: number }) {
 export function LogoLockup({ height = 48, className }: { height?: number; className?: string }) {
   return (
     <img
-      src="/logo-full.png"
+      src="/logo-full.webp"
+      width={600}
+      height={192}
+      decoding="async"
       alt="Holy Sai International School"
       className={cx('brandlockup', className)}
       style={{ height, width: 'auto', objectFit: 'contain', flex: 'none' }}
@@ -308,7 +312,7 @@ export function Dl({ items }: { items: [ReactNode, ReactNode][] }) {
 export function Empty({ title, sub, icon = 'search', action }: { title: string; sub?: ReactNode; icon?: string; action?: ReactNode }) {
   return (
     <div className="empty">
-      <div className="empty__ico"><Icon name={icon} size={22} /></div>
+      <div className="empty__art"><LotusArt /><span className="empty__badge"><Icon name={icon} size={13} /></span></div>
       <div className="h3">{title}</div>
       {sub && <p className="t-sm t-muted mt-2">{sub}</p>}
       {action && <div className="row center mt-4">{action}</div>}
@@ -389,6 +393,7 @@ export function PageHead({ title, sub, crumbs, actions }: { title: ReactNode; su
           </nav>
         )}
         <h1 className="pagehead__title">{title}</h1>
+        <LotusDivider className="pagehead__divider" />
         {sub && <p className="pagehead__sub">{sub}</p>}
       </div>
       {actions && <div className="pagehead__actions">{actions}</div>}
@@ -692,7 +697,7 @@ export function Funnel({ rows, onSelect }: { rows: { label: string; value: numbe
           <button type="button" className="funnel__row" key={r.label} onClick={() => onSelect?.(r.label)}>
             <span className="funnel__label">{r.label}</span>
             <span className="funnel__track">
-              <span className="funnel__bar" style={{ width: `${Math.max(10, (r.value / top) * 100)}%`, background: r.color ?? SERIES[i % 8] }}>{fmt.n(r.value)}</span>
+              <span className="funnel__bar" style={{ width: `${Math.max(10, (r.value / top) * 100)}%`, background: r.color ?? SERIES[i % 8] }}><span className="funnel__val">{fmt.n(r.value)}</span></span>
             </span>
             <span className="funnel__conv">{i ? `${conv}%` : ' '}</span>
           </button>

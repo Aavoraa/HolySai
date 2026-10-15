@@ -29,6 +29,18 @@ export default defineConfig(() => {
       // In development the SPA calls /api on its own origin; Vite forwards to the API.
       proxy: { '/api': { target: proxyTarget || 'http://127.0.0.1:4000', changeOrigin: false } },
     },
-    build: { sourcemap: true, chunkSizeWarningLimit: 1200 },
+    build: {
+      sourcemap: true,
+      chunkSizeWarningLimit: 1200,
+      rolldownOptions: {
+        output: {
+          // The framework changes rarely, so it gets its own long-cached chunk; a
+          // release then only invalidates the much smaller application code.
+          codeSplitting: {
+            groups: [{ name: 'framework', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|@tanstack)[\\/]/ }],
+          },
+        },
+      },
+    },
   };
 });

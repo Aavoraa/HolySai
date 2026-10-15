@@ -1,14 +1,14 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const InnovationDashboardPage = lazy(() => import('./InnovationDashboardPage'));
-const IdeasPage = lazy(() => import('./IdeasPage'));
-const ProjectsPage = lazy(() => import('./ProjectsPage'));
-const ProjectPage = lazy(() => import('./ProjectPage'));
-const MentorsPage = lazy(() => import('./MentorsPage'));
-const MilestonesPage = lazy(() => import('./MilestonesPage'));
-const CompetitionsPage = lazy(() => import('./CompetitionsPage'));
-const AchievementsPage = lazy(() => import('./AchievementsPage'));
+const InnovationDashboardPage = page(() => import('./InnovationDashboardPage'));
+const IdeasPage = page(() => import('./IdeasPage'));
+const ProjectsPage = page(() => import('./ProjectsPage'));
+const ProjectPage = page(() => import('./ProjectPage'));
+const MentorsPage = page(() => import('./MentorsPage'));
+const MilestonesPage = page(() => import('./MilestonesPage'));
+const CompetitionsPage = page(() => import('./CompetitionsPage'));
+const AchievementsPage = page(() => import('./AchievementsPage'));
 
 const perm = ['innovation.read'];
 

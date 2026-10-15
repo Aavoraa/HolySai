@@ -5,3 +5,5 @@ export * from './states';
 export * from './CampusBanner';
 export * from './dashboard';
 export * from './dashboardWidgets';
+export * from './dashboardViz';
+export { LotusArt, LotusDivider } from './LotusArt';

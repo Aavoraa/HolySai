@@ -1,21 +1,21 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
 /**
  * safety screens. Each route declares the permissions that may open it (any of);
  * the API enforces the same rule. Pages are lazy-loaded.
  */
-const SmartGatePage = lazy(() => import('./SmartGatePage'));
-const GateLogPage = lazy(() => import('./GateLogPage'));
-const PickupPage = lazy(() => import('./PickupPage'));
-const VisitorsPage = lazy(() => import('./VisitorsPage'));
-const BusTrackingPage = lazy(() => import('./BusTrackingPage'));
-const RoutesPage = lazy(() => import('./RoutesPage'));
-const BoardingPage = lazy(() => import('./BoardingPage'));
-const EmergencyPage = lazy(() => import('./EmergencyPage'));
-const SafeguardingPage = lazy(() => import('./SafeguardingPage'));
-const InfirmaryPage = lazy(() => import('./InfirmaryPage'));
-const CounsellingPage = lazy(() => import('./CounsellingPage'));
+const SmartGatePage = page(() => import('./SmartGatePage'));
+const GateLogPage = page(() => import('./GateLogPage'));
+const PickupPage = page(() => import('./PickupPage'));
+const VisitorsPage = page(() => import('./VisitorsPage'));
+const BusTrackingPage = page(() => import('./BusTrackingPage'));
+const RoutesPage = page(() => import('./RoutesPage'));
+const BoardingPage = page(() => import('./BoardingPage'));
+const EmergencyPage = page(() => import('./EmergencyPage'));
+const SafeguardingPage = page(() => import('./SafeguardingPage'));
+const InfirmaryPage = page(() => import('./InfirmaryPage'));
+const CounsellingPage = page(() => import('./CounsellingPage'));
 
 export const routes: AppRoute[] = [
   { path: '/smart-gate', perm: ['safety.read'], element: <SmartGatePage /> },

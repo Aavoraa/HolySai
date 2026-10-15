@@ -9,7 +9,6 @@ import { ConfirmProvider, ToastProvider } from '@/components/ui';
 import { initTheme } from '@/theme/theme';
 import App from './App';
 
-import 'leaflet/dist/leaflet.css';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';

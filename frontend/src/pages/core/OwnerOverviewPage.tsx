@@ -197,18 +197,32 @@ export default function OwnerOverviewPage() {
   const head = (
     <CampusBanner
       title={<>{greet}, {user?.fullName}</>}
-      sub={<>{scopeLabel} · {school.yearLabel} · figures for this academic year to date.</>}
+      sub={school.scope === 'group' ? "Here's what's happening across all campuses today." : <>Here's what's happening at {scopeLabel} today.</>}
       actions={(
         <>
-          <Button variant="ghost" icon="activity" to="/audit">Full audit trail</Button>
-          <Button variant="ghost" icon="pulse" to="/command-center">Daily operations</Button>
+          {can('audit.read') && <Button variant="primary" icon="pulse" iconRight="arrowRight" to="/audit">View Audit Trail</Button>}
+          <Button variant="ghost" icon="calendar" iconRight="chevronRight" to="/command-center">Daily Operations</Button>
         </>
       )}
     />
   );
 
-  if (q.isLoading) return <Page>{head}<PageSkeleton kpis={4} /></Page>;
-  if (q.error || !q.data) return <Page>{head}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
+  // The dashboard top (metrics, charts, rail) loads its own data, in parallel with the overview below it.
+  const top = (
+    <DashLayout rail={<DashRail events={false} actions={[
+      { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
+      { label: 'Users & Roles', icon: 'users', to: '/admin/users', show: can('users.manage') },
+      { label: 'Fee Collection', icon: 'wallet', to: '/fees', show: can('finance.read') },
+      { label: 'Audit Trail', icon: 'list', to: '/audit', show: can('audit.read') },
+      { label: 'Report Centre', icon: 'barChart', to: '/admin/reports', show: can('users.manage') },
+      { label: 'System Settings', icon: 'settings', to: '/admin/settings', show: can('settings.manage') },
+    ]} />}>
+      <SchoolPulse events={false} metrics />
+    </DashLayout>
+  );
+
+  if (q.isLoading) return <Page>{head}{top}<div className="mt-4"><PageSkeleton /></div></Page>;
+  if (q.error || !q.data) return <Page>{head}{top}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
 
   const d = q.data;
   const { previousVisit: visit, welcome, revenue, activity, school: sc } = d;
@@ -234,18 +248,10 @@ export default function OwnerOverviewPage() {
   return (
     <Page>
       {head}
-      <DashLayout rail={<DashRail events={false} actions={[
-        { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
-        { label: 'Users & Roles', icon: 'users', to: '/admin/users', show: can('users.manage') },
-        { label: 'Fee Collection', icon: 'wallet', to: '/fees', show: can('finance.read') },
-        { label: 'Audit Trail', icon: 'list', to: '/audit', show: can('audit.read') },
-        { label: 'Report Centre', icon: 'barChart', to: '/admin/reports', show: can('users.manage') },
-        { label: 'System Settings', icon: 'settings', to: '/admin/settings', show: can('settings.manage') },
-      ]} />}>
-      <SchoolPulse events={false} />
+      {top}
 
       {/* ---- Welcome strip ---------------------------------------------- */}
-      <section className="card oi-ov-welcome">
+      <section className="card oi-ov-welcome mt-4">
         <div className="row g-4 wrap between">
           <div className="row g-3 grow oi-minw0">
             <span className="avatar avatar--gold none"><Icon name="shield" size={18} /></span>
@@ -272,8 +278,9 @@ export default function OwnerOverviewPage() {
       </section>
 
       {/* ---- The campus panel: five numbered sections -------------------- */}
-      <section className="card ov-panel mt-5">
+      <section className="ov-panel mt-4">
         {/* 1. School overview */}
+        <div className="ov-box">
         <div className="ov-head">
           <h2 className="ov-head__title grow"><Icon name="grid" size={20} />1. School overview</h2>
           <div className="row g-3 wrap t-sm t-muted">
@@ -326,6 +333,7 @@ export default function OwnerOverviewPage() {
             <FinanceDetail revenue={revenue} />
           </details>
         )}
+        </div>
 
         {/* 2. Strategic goals and management performance */}
         {sc && (
@@ -340,22 +348,23 @@ export default function OwnerOverviewPage() {
               <strong className="t-sm t-num none">{sc.goals.overall != null ? `${sc.goals.overall}% overall` : 'No targets yet'}</strong>
             </div>
 
-            <Grid cols="g-4col" className="mt-5">
-              <div className="col g-3">
+            <Grid cols="g-4col" className="ov-goals">
+              <div className="ov-tile ov-col">
                 <div className="ov-label">Institutional targets</div>
                 {sc.goals.targets.map((t) => (
                   <Meter key={t.label} label={t.label} value={t.pct ?? 0} right={t.pct != null ? `${t.pct}%` : '—'}
                     tone={t.pct != null && t.pct < 60 ? 'critical' : 'teal'} />
                 ))}
               </div>
-              <div className="col g-3">
+              <div className="ov-tile ov-col">
                 <div className="ov-label">Department progress</div>
                 {sc.goals.departments.length ? sc.goals.departments.map((d) => (
-                  <Meter key={d.module} label={moduleLabel(d.module)} value={pctOf(d.done, d.total)} right={`${d.done}/${d.total}`}
-                    tone={d.overdue > 0 ? 'critical' : 'teal'} hint={d.overdue > 0 ? `${d.overdue} overdue` : 'On track'} />
+                  <Meter key={d.module} label={moduleLabel(d.module)} value={pctOf(d.done, d.total)}
+                    right={d.overdue > 0 ? `${d.done}/${d.total} · ${d.overdue} late` : `${d.done}/${d.total}`}
+                    tone={d.overdue > 0 ? 'critical' : 'teal'} />
                 )) : <div className="t-sm t-muted">No tasks assigned yet.</div>}
               </div>
-              <div className="col g-2">
+              <div className="ov-tile ov-col">
                 <div className="ov-label">Staff accountability</div>
                 {sc.goals.staff.length ? sc.goals.staff.map((p) => (
                   <div key={p.name} className="row between g-3">
@@ -366,11 +375,16 @@ export default function OwnerOverviewPage() {
                   </div>
                 )) : <div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />Nobody is behind on their tasks.</div>}
               </div>
-              <div className="col g-2">
+              <div className="ov-tile ov-col">
                 <div className="ov-label">Project blockers</div>
                 {sc.goals.blockers.length ? sc.goals.blockers.map((b, i) => (
-                  <AlertItem key={i} tone={b.daysLate > 30 ? 'critical' : 'warning'} icon={b.kind === 'Project' ? 'rocket' : 'clipboard'}
-                    title={b.title} meta={`${b.meta} · ${b.daysLate} day${b.daysLate === 1 ? '' : 's'} late`} to={b.to} />
+                  <Link key={i} to={b.to} className="ov-blocker">
+                    <span className={`ov-blocker__dot ov-blocker__dot--${b.daysLate > 30 ? 'critical' : 'warning'}`} aria-hidden="true" />
+                    <span className="grow oi-minw0">
+                      <span className="ov-blocker__title">{b.title}</span>
+                      <span className="ov-blocker__meta">{b.meta} · <strong>{b.daysLate} day{b.daysLate === 1 ? '' : 's'} late</strong></span>
+                    </span>
+                  </Link>
                 )) : <div className="row g-2 t-sm t-muted"><Icon name="check" size={16} />No project is past a deadline.</div>}
               </div>
             </Grid>
@@ -522,7 +536,6 @@ export default function OwnerOverviewPage() {
           <Banner tone="neutral" icon="lock">Goals, approvals, exceptions and governance need audit access.</Banner>
         )}
       </section>
-      </DashLayout>
     </Page>
   );
 }

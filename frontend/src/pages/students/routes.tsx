@@ -1,10 +1,10 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const StudentsPage = lazy(() => import('./StudentsPage'));
-const Student360Page = lazy(() => import('./Student360Page'));
-const MyProfilePage = lazy(() => import('./MyProfilePage'));
-const MyIdeasPage = lazy(() => import('./MyIdeasPage'));
+const StudentsPage = page(() => import('./StudentsPage'));
+const Student360Page = page(() => import('./Student360Page'));
+const MyProfilePage = page(() => import('./MyProfilePage'));
+const MyIdeasPage = page(() => import('./MyIdeasPage'));
 
 const STAFF = ['students.read', 'students.read_assigned'];
 

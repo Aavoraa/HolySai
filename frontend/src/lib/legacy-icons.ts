@@ -77,6 +77,8 @@ const HS: any = {};
     chevronDown: '<path d="m6 9 6 6 6-6"/>',
     chevronRight:'<path d="m9 18 6-6-6-6"/>',
     chevronLeft: '<path d="m15 18-6-6 6-6"/>',
+    chevronsLeft: '<path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/>',
+    trophy:      '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>',
     chevronUp:   '<path d="m18 15-6-6-6 6"/>',
     arrowRight:  '<path d="M5 12h14M13 6l6 6-6 6"/>',
     arrowLeft:   '<path d="M19 12H5M11 18l-6-6 6-6"/>',

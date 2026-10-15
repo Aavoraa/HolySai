@@ -1,14 +1,14 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const CommandCenterPage = lazy(() => import('./CommandCenterPage'));
-const OwnerOverviewPage = lazy(() => import('./OwnerOverviewPage'));
-const NotificationsPage = lazy(() => import('./NotificationsPage'));
-const MyTasksPage = lazy(() => import('./MyTasksPage'));
-const AccountPage = lazy(() => import('./AccountPage'));
-const HelpPage = lazy(() => import('./HelpPage'));
-const AdminUsersPage = lazy(() => import('./AdminUsersPage'));
-const AdminSettingsPage = lazy(() => import('./AdminSettingsPage'));
+const CommandCenterPage = page(() => import('./CommandCenterPage'));
+const OwnerOverviewPage = page(() => import('./OwnerOverviewPage'));
+const NotificationsPage = page(() => import('./NotificationsPage'));
+const MyTasksPage = page(() => import('./MyTasksPage'));
+const AccountPage = page(() => import('./AccountPage'));
+const HelpPage = page(() => import('./HelpPage'));
+const AdminUsersPage = page(() => import('./AdminUsersPage'));
+const AdminSettingsPage = page(() => import('./AdminSettingsPage'));
 
 export const routes: AppRoute[] = [
   { path: '/command-center', perm: ['students.read'], element: <CommandCenterPage /> },

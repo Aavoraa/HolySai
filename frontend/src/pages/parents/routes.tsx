@@ -1,8 +1,8 @@
-import { lazy } from 'react';
+import { page } from '@/lib/page';
 import type { AppRoute } from '../registry';
 
-const Parent360Page = lazy(() => import('./Parent360Page'));
-const TrackChildPage = lazy(() => import('./Parent360Page').then((m) => ({ default: m.TrackChildPage })));
+const Parent360Page = page(() => import('./Parent360Page'));
+const TrackChildPage = page(() => import('./Parent360Page').then((m) => ({ default: m.TrackChildPage })));
 
 export const routes: AppRoute[] = [
   { path: '/parent-360', perm: ['parent_portal.use'], element: <Parent360Page /> },
