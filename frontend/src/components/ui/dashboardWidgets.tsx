@@ -147,7 +147,7 @@ export function useTopStudents(limit = 5) {
 interface Pulse {
   students: { total: number; atRisk: number; developing: number; onTrack: number };
   attendance: {
-    trend: { label: string; day: string; value: number }[]; staffTrend?: (number | null)[];
+    trend: { label: string; day?: string; date?: string; value: number }[]; staffTrend?: (number | null)[];
     byGrade: { grade: string; present: number }[]; lateByTime: { label: string; value: number }[]; weekdayAbsences: { day: string; absences: number }[]; todayPct: number | null;
   };
   staff: { total: number; present: number };
@@ -164,6 +164,9 @@ const MONTH = (iso: string, withDay = false) => {
     ? d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '')
     : d.toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
 };
+/** The school day of a trend point: `day` (YYYY-MM-DD) from current APIs, or the timestamp from older ones, read in IST. */
+const dayOf = (t: { day?: string; date?: string }) =>
+  t.day ?? (t.date ? new Date(t.date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }) : '');
 const change = (now: number, before: number | undefined) => (before ? Math.round(((now - before) / before) * 1000) / 10 : null);
 const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 
@@ -191,6 +194,7 @@ export function SchoolPulse({ events = true, metrics = false }: { events?: boole
   if (!q.data) return null;
   const d = q.data;
   const a = d.attendance;
+  const trend = a.trend.map((t) => ({ ...t, day: dayOf(t) }));
   const s = d.students;
   const h = d.history;
 
@@ -213,7 +217,7 @@ export function SchoolPulse({ events = true, metrics = false }: { events?: boole
     if (a.staffTrend?.some((v) => v != null)) series.push({ name: 'Staff', values: a.staffTrend, color: '#B4ACD3', area: false });
     chart = (
       <>
-        <LineChart labels={a.trend.map((t) => MONTH(t.day))} tips={a.trend.map((t) => MONTH(t.day, true))} series={series}
+        <LineChart labels={trend.map((t) => MONTH(t.day))} tips={trend.map((t) => MONTH(t.day, true))} series={series}
           height={158} label="Attendance over recent school days" />
         <div className="vizlegend">{series.map((x) => <span key={x.name}><i style={{ background: x.color }} />{x.name}</span>)}</div>
       </>
@@ -227,7 +231,7 @@ export function SchoolPulse({ events = true, metrics = false }: { events?: boole
   }
   const grades = d.academic.byGrade;
   const overall = grades.length ? Math.round(grades.reduce((sum, g) => sum + g.average, 0) / grades.length) : null;
-  const range = a.trend.length > 1 ? `${new Date(`${a.trend[0].day}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(`${a.trend[a.trend.length - 1].day}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : null;
+  const range = trend.length > 1 ? `${new Date(`${trend[0].day}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(`${trend[trend.length - 1].day}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : null;
 
   return (
     <>
