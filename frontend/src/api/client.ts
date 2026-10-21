@@ -122,6 +122,8 @@ export interface RequestOptions {
   form?: FormData;
   signal?: AbortSignal;
   raw?: boolean; // return the Response (downloads)
+  /** Overrides the default timeout (30 s; 120 s for uploads), e.g. for AI calls that take minutes. */
+  timeoutMs?: number;
 }
 
 async function request<T>(method: string, path: string, opts: RequestOptions = {}, retried = false): Promise<Envelope<T>> {
@@ -136,7 +138,7 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
 
   let res: Response;
   try {
-    const timeout = AbortSignal.timeout(opts.form ? 120_000 : 30_000);
+    const timeout = AbortSignal.timeout(opts.timeoutMs ?? (opts.form ? 120_000 : 30_000));
     const signal = opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout;
     res = await fetch(`${API_BASE}${path}${buildQuery(opts.params)}`, { method, headers, body, credentials: 'include', signal });
   } catch (err) {
@@ -171,7 +173,11 @@ export const api = {
   put: async <T>(path: string, body?: unknown) => request<T>('PUT', path, { body }),
   patch: async <T>(path: string, body?: unknown) => request<T>('PATCH', path, { body }),
   delete: async <T>(path: string) => request<T>('DELETE', path),
-  upload: async <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
+  upload: async <T>(path: string, form: FormData, timeoutMs?: number) => request<T>('POST', path, { form, timeoutMs }),
+  /** POST that may run for minutes (AI drafting/testing); default 10 minutes. */
+  postLong: async <T>(path: string, body?: unknown, timeoutMs = 600_000) => request<T>('POST', path, { body: body ?? {}, timeoutMs }),
+  /** A protected binary (e.g. an image) as a Blob, for object URLs. */
+  blob: async (path: string, signal?: AbortSignal) => (await (await request<Response>('GET', path, { raw: true, signal })).data.blob()),
   /** Downloads a protected file and saves it with the server-provided name. */
   download: async (path: string, fallbackName = 'download') => {
     const r = await request<Response>('GET', path, { raw: true });

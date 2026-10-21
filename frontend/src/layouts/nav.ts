@@ -97,6 +97,7 @@ export const NAV: NavGroup[] = [
       { label: 'Homework', icon: 'edit', to: '/homework', perm: ['academics.read'] },
       { label: 'Question Bank', icon: 'helpCircle', to: '/question-bank', perm: ['academics.read'] },
       { label: 'Assessments', icon: 'checkSquare', to: '/assessments', perm: ['academics.read'] },
+      { label: 'Paper Correction', icon: 'scan', to: '/paper-correction', perm: ['assessments.manage'] },
       { label: 'Report Cards', icon: 'fileText', to: '/report-cards', perm: ['academics.read'] },
       { label: 'Cambridge Objectives', icon: 'target', to: '/objectives', perm: ['academics.read'] },
     ],

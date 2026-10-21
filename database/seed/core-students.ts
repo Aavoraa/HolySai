@@ -6,7 +6,8 @@
  * real children's locations.
  */
 import { addDays, bulkInsert, kolkataTime, type Db, type SeedContext, type SeedStudent } from './context.js';
-import { EMPLOYEES } from './core-org.js';
+import { EMPLOYEES, SECTION_PLAN } from './core-org.js';
+import { BOYS, GIRLS } from './admissions.js';
 
 // ---------------------------------------------------------------------------
 // Transport network (sample coordinates near each campus)
@@ -37,7 +38,11 @@ export const ROUTES: {
 // ---------------------------------------------------------------------------
 const FIRST = ['Aditya', 'Sanjana', 'Karthik', 'Meenakshi', 'Rohan', 'Divya', 'Arjun', 'Lakshmi', 'Vikram', 'Ananya', 'Hari', 'Nithya', 'Surya', 'Pooja', 'Manoj', 'Keerthi', 'Rahul', 'Swetha', 'Vishnu', 'Anjali', 'Naveen', 'Ishita', 'Aravind', 'Shreya', 'Gokul', 'Bhavana', 'Dinesh', 'Varsha', 'Praveen', 'Nandhini', 'Sathish', 'Tanya', 'Mohan', 'Reshma', 'Balaji', 'Harini'];
 const LAST = ['Kumar', 'Raman', 'Subramani', 'Natarajan', 'Venkatesh', 'Iyer', 'Pillai', 'Chandran', 'Selvam', 'Murthy', 'Anand', 'Prasad'];
-const FEMALE = new Set(['Sanjana', 'Meenakshi', 'Divya', 'Lakshmi', 'Ananya', 'Nithya', 'Pooja', 'Keerthi', 'Swetha', 'Anjali', 'Ishita', 'Shreya', 'Bhavana', 'Varsha', 'Nandhini', 'Tanya', 'Reshma', 'Harini']);
+// More names for the generated records that fill every section.
+const EXTRA_FIRST = ['Abinaya', 'Akash', 'Bharath', 'Charan', 'Deepika', 'Gayathri', 'Hemanth', 'Janani', 'Kavin', 'Madhan', 'Nila', 'Oviya',
+  'Pranav', 'Ragini', 'Sabari', 'Thenmozhi', 'Uday', 'Vaishnavi', 'Yazhini', 'Kiran', 'Lavanya', 'Mithran', 'Pavithra', 'Sriram', 'Tharun', 'Yamini'];
+const EXTRA_LAST = ['Balan', 'Menon', 'Krishnan', 'Rajan', 'Sekar', 'Ganesan', 'Mani', 'Shankar', 'Ravi', 'Srinivasan'];
+const FEMALE = new Set(['Abinaya', 'Deepika', 'Gayathri', 'Janani', 'Nila', 'Oviya', 'Ragini', 'Thenmozhi', 'Vaishnavi', 'Yazhini', 'Lavanya', 'Pavithra', 'Yamini', 'Sanjana', 'Meenakshi', 'Divya', 'Lakshmi', 'Ananya', 'Nithya', 'Pooja', 'Keerthi', 'Swetha', 'Anjali', 'Ishita', 'Shreya', 'Bhavana', 'Varsha', 'Nandhini', 'Tanya', 'Reshma', 'Harini']);
 const HOUSES = ['Emerald', 'Sapphire', 'Amber', 'Coral'];
 const FATHER = ['Suresh', 'Ramesh', 'Mahesh', 'Senthil', 'Balaji', 'Murali', 'Venkat', 'Prakash', 'Ganesan', 'Arun', 'Vijay', 'Karthikeyan', 'Saravanan', 'Mohan'];
 const MOTHER = ['Lakshmi', 'Priya', 'Deepa', 'Revathi', 'Kavitha', 'Uma', 'Anitha', 'Geetha', 'Malathi', 'Sangeetha', 'Vidya', 'Radha'];
@@ -109,6 +114,45 @@ function buildSpecs(): Spec[] {
     while (seen.has(sp.first + ' ' + sp.last)) sp.last = LAST[(LAST.indexOf(sp.last) + k++ + idx) % LAST.length];
     seen.add(sp.first + ' ' + sp.last);
   });
+
+  // Every section gets at least MIN_PER_SECTION students, so each class has a usable roster
+  // (attendance, marks entry, Paper Correction). Generated deterministically after the named
+  // records, with new admission numbers from HS-2026-1094.
+  const MIN_PER_SECTION = 5;
+  const count: Record<string, number> = {};
+  for (const sp of specs) count[`${sp.campus}:${sp.grade}:${sp.section}`] = (count[`${sp.campus}:${sp.grade}:${sp.section}`] ?? 0) + 1;
+  // Admissions enrols a few applicants later with these first names; keep generated names distinct from them.
+  const taken = new Set([...GIRLS, ...BOYS]);
+  const firsts = [...FIRST, ...EXTRA_FIRST].filter((f) => !taken.has(f));
+  const lasts = [...LAST, ...EXTRA_LAST];
+  let next = 1094, n = 0;
+  for (const [campus, grades, sections] of SECTION_PLAN) {
+    for (const grade of grades) {
+      for (const section of sections) {
+        const key = `${campus}:${grade}:${section}`;
+        for (let k = count[key] ?? 0; k < MIN_PER_SECTION; k++, n++) {
+          const r1 = seeded(n + 501), r2 = seeded(n + 701), r3 = seeded(n + 901), r4 = seeded(n + 1101);
+          let first = firsts[Math.floor(r1 * firsts.length)];
+          let last = lasts[Math.floor(r2 * lasts.length)];
+          for (let j = 1; seen.has(`${first} ${last}`); j++) {
+            first = firsts[(firsts.indexOf(first) + j) % firsts.length];
+            if (j % firsts.length === 0) last = lasts[(lasts.indexOf(last) + 1) % lasts.length];
+          }
+          seen.add(`${first} ${last}`);
+          const att = Math.round(80 + r3 * 19);
+          const avg = Math.round(50 + r4 * 44);
+          const trend = Math.round((seeded(n + 1301) - 0.5) * 16);
+          specs.push({
+            no: `HS-2026-${next++}`, first, last, gender: FEMALE.has(first) ? 'F' : 'M', campus, grade, section,
+            house: HOUSES[Math.floor(seeded(n + 1501) * 4)], att, avg, trend,
+            risk: att < 82 || avg < 55 ? 'At Risk' : att < 86 || avg < 62 || trend < -6 ? 'Developing Risk' : 'On Track',
+            fee: r4 > 0.85 ? 'Overdue' : r4 > 0.65 ? 'Partial' : 'Paid',
+            route: campus === 'plc' || r3 < 0.3 ? null : campus === 'vdv' ? 'V01' : ['R12', 'R04', 'R07', 'R09', 'R02', 'R15'][Math.floor(r1 * 6)],
+          });
+        }
+      }
+    }
+  }
   return specs;
 }
 
@@ -689,4 +733,212 @@ async function seedStaffAttendance(db: Db, ctx: SeedContext) {
     }
   }
   await bulkInsert(db, 'staff_attendance', ['employee_id', 'attendance_date', 'status', 'check_in', 'check_out', 'source'], rows);
+}
+
+// ---------------------------------------------------------------------------
+// Top-up for an existing database: adds students to every section that has fewer
+// than `min`, without touching anything already there (npm run db:top-up).
+// New students get a guardian, an enrolment, attendance since the start of the year
+// and term results, like the seeded ones; transport and GPS are left out.
+// ---------------------------------------------------------------------------
+export async function topUpSections(db: Db, ctx: SeedContext, min = 5) {
+  const year = (await db.query('SELECT id, starts_on::text AS starts FROM academic_years WHERE is_current')).rows[0];
+  if (!year) throw new Error('No current academic year.');
+  ctx.yearId = year.id;
+  ctx.yearStart = year.starts;
+  for (const r of (await db.query('SELECT id, code FROM subjects')).rows) ctx.subjects[r.code] = r.id;
+  for (const r of (await db.query('SELECT id, employee_code FROM employees')).rows) ctx.employees[r.employee_code] = r.id;
+  const teacher = (await db.query("SELECT id FROM users WHERE email = 'priya.raghavan.demo@holysai.edu'")).rows[0]
+    ?? (await db.query("SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id WHERE r.key = 'teacher' LIMIT 1")).rows[0];
+  ctx.users.teacher = teacher?.id ?? null;
+
+  const sections = (await db.query(
+    `SELECT sec.id, sec.name, c.id AS class_id, c.grade_level, cp.id AS campus_id, cp.code, cp.latitude, cp.longitude,
+            (SELECT count(*)::int FROM students s WHERE s.section_id = sec.id AND s.deleted_at IS NULL AND s.status = 'active') AS n,
+            (SELECT COALESCE(max(roll_no), 0)::int FROM enrollments e WHERE e.section_id = sec.id) AS last_roll
+       FROM sections sec JOIN classes c ON c.id = sec.class_id JOIN campuses cp ON cp.id = c.campus_id
+      WHERE sec.academic_year_id = $1
+      ORDER BY cp.code, c.grade_level, sec.name`, [ctx.yearId])).rows;
+  const seen = new Set((await db.query("SELECT first_name || ' ' || last_name AS n FROM students")).rows.map((r) => r.n as string));
+  let nextNo = Number((await db.query(
+    String.raw`SELECT COALESCE(max(substring(admission_no from '\d+$')::int), 1093) AS n FROM students WHERE admission_no LIKE 'HS-2026-%'`)).rows[0].n) + 1;
+  let nextParent = Number((await db.query(
+    String.raw`SELECT COALESCE(max(substring(parent_code from '\d+$')::int), 0) AS n FROM parents`)).rows[0].n) + 1;
+
+  const firsts = [...FIRST, ...EXTRA_FIRST];
+  const lasts = [...LAST, ...EXTRA_LAST];
+  const added: SeedStudent[] = [];
+  for (const sec of sections) {
+    let roll = sec.last_roll as number;
+    for (let k = sec.n as number; k < min; k++) {
+      let first = ctx.pick(firsts), last = ctx.pick(lasts);
+      for (let j = 0; seen.has(`${first} ${last}`); j++) {
+        first = ctx.pick(firsts);
+        if (j % 20 === 19) last = ctx.pick(lasts);
+      }
+      seen.add(`${first} ${last}`);
+      const grade = sec.grade_level as number;
+      const att = ctx.int(80, 99), avg = ctx.int(50, 94), trend = ctx.int(-8, 8);
+      const risk = att < 82 || avg < 55 ? 'At Risk' : att < 86 || avg < 62 || trend < -6 ? 'Developing Risk' : 'On Track';
+      const gender: 'M' | 'F' = FEMALE.has(first) ? 'F' : 'M';
+      const no = `HS-2026-${nextNo++}`;
+      const place = CAMPUSES_PLACE[sec.code] ?? 'Campus';
+      const dob = `${new Date(ctx.today).getUTCFullYear() - (grade + 5)}-${String(ctx.int(1, 12)).padStart(2, '0')}-${String(ctx.int(1, 28)).padStart(2, '0')}`;
+      const s = await db.query(
+        `INSERT INTO students (admission_no, first_name, last_name, date_of_birth, gender, blood_group, campus_id, section_id,
+                               academic_year_id, house, address, city, pincode, admitted_on, risk_level)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+        [no, first, last, dob, gender, ctx.pick(['A+', 'B+', 'O+', 'AB+', 'O-', 'B-']), sec.campus_id, sec.id, ctx.yearId,
+          ctx.pick(HOUSES), `No. ${ctx.int(2, 140)}, ${ctx.pick(['Gandhi Street', 'Nehru Nagar', 'Temple View Road', 'Park Avenue', 'Bharathi Street', 'Lake Road'])}, ${place}`,
+          sec.code === 'gdv' ? 'Chengalpattu' : 'Coimbatore', sec.code === 'gdv' ? '603202' : sec.code === 'vdv' ? '641041' : '642001',
+          ctx.yearStart, risk],
+      );
+      const id = s.rows[0].id as string;
+      await db.query('INSERT INTO enrollments (student_id, section_id, academic_year_id, roll_no, enrolled_on) VALUES ($1,$2,$3,$4,$5)',
+        [id, sec.id, ctx.yearId, ++roll, ctx.yearStart]);
+      const guardian = `${ctx.pick(FATHER)} ${last}`;
+      const p = await db.query(
+        `INSERT INTO parents (parent_code, full_name, phone, email, preferred_channel, engagement_score)
+         VALUES ($1,$2,$3,$4,'whatsapp',$5) RETURNING id`,
+        [`PAR-${String(nextParent++).padStart(4, '0')}`, guardian, `+91 9${ctx.int(100000000, 999999999)}`,
+          `${guardian.toLowerCase().replace(/[^a-z]+/g, '.')}.${no.slice(-4)}@example.com`, ctx.int(38, 96)],
+      );
+      await db.query('INSERT INTO student_guardians (student_id, parent_id, relationship, is_primary, can_pickup, can_view_tracking) VALUES ($1,$2,$3,true,true,true)',
+        [id, p.rows[0].id, 'Father']);
+      added.push({
+        id, admissionNo: no, fullName: `${first} ${last}`, firstName: first, lastName: last, gender,
+        campusCode: sec.code, campusId: sec.campus_id, classId: sec.class_id, sectionId: sec.id, gradeLevel: grade, grade: `Grade ${grade}`,
+        section: sec.name, house: '', targetAttendance: att, targetAverage: avg, targetTrend: trend, risk, feeProfile: 'Paid',
+        routeCode: null, home: { lat: Number(sec.latitude), lng: Number(sec.longitude) }, parentId: p.rows[0].id,
+      });
+    }
+  }
+  ctx.students = added;
+  if (added.length) {
+    await seedAttendance(db, ctx);
+    await seedAcademicRecords(db, ctx);
+  }
+  return { added: added.length, sections: sections.length };
+}
+
+// ---------------------------------------------------------------------------
+// Student 360 fill: gives EVERY active student the development record a profile
+// needs — skills (the skill web), activities, an achievement, behaviour notes,
+// interests, a wellbeing check-in, a teacher observation, timeline entries and
+// documents. Only what a student is missing is added; existing rows are never
+// changed, so it is safe to run on any database and to run again.
+// Covers students added after seedDevelopment: admissions enrolments, top-ups and
+// students created in the app.
+// ---------------------------------------------------------------------------
+const SKILLS = ['Communication', 'Creativity', 'Leadership', 'Critical Thinking', 'Collaboration'];
+const FILL_ACH: [string, string][] = [
+  ['Inter-house Athletics — 100 m gold', 'Sports'], ['Spell Bee — school finalist', 'Academic'], ['Art Exhibition — featured work', 'Co-curricular'],
+  ['Math Olympiad — merit certificate', 'Competition'], ['Science Expo — best model', 'Competition'], ['Chess — district quarter-finalist', 'Competition'],
+  ['Story-writing contest — runner-up', 'Co-curricular'], ['Perfect attendance — Term 1', 'Attendance'], ['Quiz Club — house champions', 'Academic'],
+];
+const FILL_NOTES: [string, string][] = [
+  ['Positive', 'Showed excellent teamwork during the science practical.'], ['Positive', 'Volunteered to help organise the class library.'],
+  ['Positive', 'Consistently punctual and well prepared.'], ['Positive', 'Helped a classmate catch up after an absence.'],
+  ['Note', 'Homework incomplete twice this week.'], ['Note', 'Needs reminders to bring sports kit.'],
+];
+const OBSERVATIONS = [
+  (n: string) => `${n} takes part readily in class discussions and explains reasoning clearly.`,
+  (n: string) => `${n} works well in groups and is ready to take the lead on a small task.`,
+  (n: string) => `${n} is curious during practical work and asks thoughtful questions.`,
+  (n: string) => `${n}'s written work is neat and well organised; steady progress this term.`,
+  (n: string) => `${n} responds well to feedback and corrects mistakes independently.`,
+];
+const INTERESTS_FILL = ['Robotics', 'Football', 'Reading', 'Music', 'Painting', 'Coding', 'Chess', 'Astronomy', 'Dance', 'Nature', 'Cricket', 'Theatre'];
+
+export async function fillStudentProfiles(db: Db, ctx: SeedContext) {
+  const rows = (await db.query(
+    `SELECT s.id, s.first_name, s.risk_level, s.admitted_on::text AS admitted_on, c.name AS class_name, cp.code AS campus,
+            sec.class_teacher_id,
+            (SELECT ta.employee_id FROM teacher_assignments ta WHERE ta.section_id = sec.id LIMIT 1) AS subject_teacher,
+            (SELECT round(avg(score))::int FROM student_academic_records r WHERE r.student_id = s.id AND r.term = 'Current') AS avg,
+            (SELECT count(*)::int FROM student_skills x WHERE x.student_id = s.id) AS skills,
+            (SELECT count(*)::int FROM student_activities x WHERE x.student_id = s.id) AS activities,
+            (SELECT count(*)::int FROM achievements x WHERE x.student_id = s.id) AS achievements,
+            (SELECT count(*)::int FROM behaviour_records x WHERE x.student_id = s.id) AS behaviour,
+            (SELECT count(*)::int FROM student_interests x WHERE x.student_id = s.id) AS interests,
+            (SELECT count(*)::int FROM wellbeing_checkins x WHERE x.student_id = s.id) AS wellbeing,
+            (SELECT count(*)::int FROM teacher_observations x WHERE x.student_id = s.id) AS observations,
+            (SELECT count(*)::int FROM student_timeline_events x WHERE x.student_id = s.id AND x.category = 'admission') AS admitted_event,
+            (SELECT count(*)::int FROM student_timeline_events x WHERE x.student_id = s.id AND x.category <> 'admission') AS other_events,
+            (SELECT count(*)::int FROM documents x WHERE x.student_id = s.id) AS documents,
+            (SELECT array_agg(x.skill) FROM student_skills x WHERE x.student_id = s.id) AS have_skills
+       FROM students s
+       JOIN sections sec ON sec.id = s.section_id
+       JOIN classes c ON c.id = sec.class_id
+       JOIN campuses cp ON cp.id = c.campus_id
+      WHERE s.deleted_at IS NULL AND s.status = 'active'`)).rows;
+  const acts = (await db.query('SELECT id FROM activities ORDER BY name')).rows.map((r) => r.id as string);
+  const teachers = (await db.query(
+    "SELECT id FROM employees WHERE employee_type = 'teaching' AND deleted_at IS NULL ORDER BY employee_code")).rows.map((r) => r.id as string);
+  const counsellor = (await db.query("SELECT id FROM employees WHERE employee_code = 'EMP-6011'")).rows[0]?.id ?? teachers[0] ?? null;
+  const yearStart = (await db.query('SELECT starts_on::text AS s FROM academic_years WHERE is_current')).rows[0]?.s ?? ctx.day(-120);
+
+  const skills: unknown[][] = [], sa: unknown[][] = [], ach: unknown[][] = [], beh: unknown[][] = [], ints: unknown[][] = [];
+  const well: unknown[][] = [], obs: unknown[][] = [], tl: unknown[][] = [], docs: unknown[][] = [];
+  const termOne = addDays(yearStart, 70);
+  for (const s of rows) {
+    const avg = (s.avg as number | null) ?? ctx.int(60, 85);
+    const atRisk = s.risk_level === 'At Risk';
+    const teacher = s.class_teacher_id ?? s.subject_teacher ?? (teachers.length ? ctx.pick(teachers) : null);
+    if (s.skills < 3) {
+      const have = new Set<string>(s.have_skills ?? []);
+      for (const n of SKILLS) {
+        if (have.has(n)) continue;
+        const v = clamp(Math.round(avg + (ctx.rand() - 0.5) * 30), 35, 97);
+        skills.push([s.id, n, v, v >= 82 ? 'High' : v >= 68 ? 'Medium' : 'Emerging',
+          JSON.stringify([`Teacher rubric assessment — ${n.toLowerCase()} ${v}/100`, `Class work and participation, ${s.class_name}`]), ctx.day(-ctx.int(5, 40))]);
+      }
+    }
+    if (!s.activities && acts.length) {
+      const chosen = new Set<string>();
+      for (let i = ctx.int(1, 3); i > 0; i--) chosen.add(ctx.pick(acts));
+      for (const a of chosen) sa.push([s.id, a, ctx.pick(['Member', 'Member', 'Captain', 'Volunteer']), addDays(yearStart, -ctx.int(0, 300)), ctx.int(4, 60)]);
+    }
+    if (!s.achievements) {
+      const [title, type] = ctx.pick(FILL_ACH);
+      ach.push([s.id, title, type, ctx.pick(['School', 'School', 'District', 'State']), ctx.day(-ctx.int(10, 120)), true]);
+    }
+    if (!s.behaviour && teacher) {
+      beh.push([s.id, ctx.day(-ctx.int(2, 40)), 'Positive', ctx.pick(FILL_NOTES.slice(0, 4))[1], teacher]);
+      const [t, note] = atRisk ? ['Concern', 'Appeared withdrawn during group activities; counsellor informed.'] : ctx.pick(FILL_NOTES);
+      beh.push([s.id, ctx.day(-ctx.int(41, 90)), t, note, teacher]);
+    }
+    if (!s.interests) new Set([ctx.pick(INTERESTS_FILL), ctx.pick(INTERESTS_FILL)]).forEach((i) => ints.push([s.id, i]));
+    if (!s.wellbeing) {
+      well.push([s.id, ctx.day(-ctx.int(3, 40)), atRisk ? ctx.pick(['Anxious', 'Low', 'Unsettled']) : ctx.pick(['Settled', 'Settled', 'Positive']),
+        atRisk ? 'Follow-up agreed with class teacher.' : 'Routine check-in.', atRisk, counsellor]);
+    }
+    if (!s.observations && teacher) {
+      const text = atRisk ? `${s.first_name} needs encouragement to complete work on time; a check-in with home is suggested.` : ctx.pick(OBSERVATIONS)(s.first_name);
+      obs.push([s.id, teacher, ctx.day(-ctx.int(3, 30)), text]);
+    }
+    const place = CAMPUSES_PLACE[s.campus as string] ?? 'the';
+    if (!s.admitted_event) tl.push([s.id, s.admitted_on ?? yearStart, `Admitted to ${s.class_name}`, `Joined ${place} campus`, 'admission', 'teal']);
+    if (!s.other_events) {
+      if (termOne <= ctx.today) tl.push([s.id, termOne, 'Term 1 results', `Average ${avg}/100 across subjects.`, 'academic', avg >= 75 ? 'teal' : avg >= 60 ? 'neutral' : 'amber']);
+      tl.push([s.id, ctx.day(-ctx.int(5, 45)), 'Skills profile reviewed', 'Class teacher updated the skills rubric with recent evidence.', 'talent', 'neutral']);
+    }
+    if (!s.documents) {
+      docs.push(['student', s.id, s.id, 'Birth certificate', 'Identity', 'Verified', null]);
+      docs.push(['student', s.id, s.id, 'Immunisation record', 'Health', 'Verified', null]);
+    }
+  }
+  await bulkInsert(db, 'student_skills', ['student_id', 'skill', 'score', 'confidence', 'evidence', 'assessed_on'], skills, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'student_activities', ['student_id', 'activity_id', 'role', 'since', 'hours'], sa, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'achievements', ['student_id', 'title', 'achievement_type', 'level', 'achieved_on', 'is_verified'], ach);
+  await bulkInsert(db, 'behaviour_records', ['student_id', 'recorded_on', 'record_type', 'note', 'recorded_by'], beh);
+  await bulkInsert(db, 'student_interests', ['student_id', 'interest'], ints, 'ON CONFLICT DO NOTHING');
+  await bulkInsert(db, 'wellbeing_checkins', ['student_id', 'checked_on', 'mood', 'notes', 'is_confidential', 'recorded_by'], well);
+  await bulkInsert(db, 'teacher_observations', ['student_id', 'employee_id', 'observed_on', 'observation'], obs);
+  await bulkInsert(db, 'student_timeline_events', ['student_id', 'occurred_on', 'title', 'body', 'category', 'tone'], tl);
+  await bulkInsert(db, 'documents', ['owner_type', 'owner_id', 'student_id', 'name', 'category', 'status', 'requested_on'], docs);
+  return {
+    students: rows.length, skills: skills.length, activities: sa.length, achievements: ach.length, behaviour: beh.length,
+    interests: ints.length, wellbeing: well.length, observations: obs.length, timeline: tl.length, documents: docs.length,
+  };
 }

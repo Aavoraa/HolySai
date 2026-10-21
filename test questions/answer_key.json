@@ -1,0 +1,143 @@
+{
+  "exam": {
+    "name": "Unit Test 2 — Science (Class 5 handwritten test)",
+    "academic_year": "2026-27",
+    "class_name": "5",
+    "section": "A",
+    "subject": "Science",
+    "grade_level": "Class 5",
+    "instructions": "Answer all the questions. Write neatly."
+  },
+  "questions": [
+    {
+      "number": "1",
+      "qtype": "short",
+      "max_marks": 4,
+      "mark_increment": 1,
+      "text": "Fill in the blanks: a) Plants make their own food by the process of ____. b) Water changes into water vapour by ____. c) The hardest part of our body is the ____ of the teeth. d) The planet closest to the Sun is ____.",
+      "model_answer": "a) photosynthesis b) evaporation c) enamel d) Mercury"
+    },
+    {
+      "number": "2",
+      "qtype": "short",
+      "max_marks": 3,
+      "mark_increment": 1,
+      "text": "Write True or False: a) A bat is a bird. b) Magnets attract iron nails. c) Sound travels faster than light.",
+      "model_answer": "a) False b) True c) False"
+    },
+    {
+      "number": "3",
+      "qtype": "short",
+      "max_marks": 3,
+      "mark_increment": 1,
+      "text": "Name the following: a) The gas we breathe in to stay alive. b) The largest planet in our solar system. c) The organ that pumps blood in our body.",
+      "model_answer": "a) Oxygen b) Jupiter c) Heart"
+    },
+    {
+      "number": "4",
+      "qtype": "science",
+      "max_marks": 2,
+      "mark_increment": 0.5,
+      "text": "Why should we not waste water? Give two reasons.",
+      "model_answer": "Any two: very little of Earth's water is fresh/drinkable; all living things need water; wasting it causes shortage; saving water saves energy/money."
+    },
+    {
+      "number": "5",
+      "qtype": "science",
+      "max_marks": 2,
+      "mark_increment": 0.5,
+      "text": "Write two differences between solids and liquids.",
+      "model_answer": "Solids have a fixed shape, liquids take the shape of the container; solids cannot flow, liquids can flow. (1 mark each)"
+    },
+    {
+      "number": "6",
+      "qtype": "science",
+      "max_marks": 3,
+      "mark_increment": 0.5,
+      "text": "Draw a neat diagram of the water cycle and label it.",
+      "model_answer": "Diagram 1 mark; labels evaporation, condensation, precipitation, collection 0.5 each."
+    },
+    {
+      "number": "7",
+      "qtype": "science",
+      "max_marks": 3,
+      "mark_increment": 0.5,
+      "text": "What is a balanced diet? Name two nutrients and one food source for each.",
+      "model_answer": "Definition (1): food containing all nutrients in the right amounts. Two nutrients with a correct source (1 each)."
+    }
+  ],
+  "students": [
+    {
+      "admission_no": "S5001",
+      "name": "Meena R",
+      "roll_no": "4",
+      "answers": {
+        "1": "a) photosynthesis b) evaporation c) enamel d) Mercury",
+        "2": "a) False b) True c) False",
+        "3": "a) Oxygen b) Jupiter c) Heart",
+        "4": "Only a small amount of water on Earth is fresh and safe to drink. People, plants and animals all need water to live, so wasting it will cause shortage in future.",
+        "5": "(i) Solids have a fixed shape but liquids take the shape of the container. (ii) Solids have a fixed volume and cannot flow, but liquids can flow easily.",
+        "6": "[Diagram: sun, sea, cloud, mountain; labels: evaporation, condensation, rain (precipitation), collection, Sun]",
+        "7": "A balanced diet is food that has all the nutrients in the right amount which our body needs to stay healthy. Proteins - eggs, dal. Carbohydrates - rice, chapati."
+      },
+      "expected_marks": {
+        "1": 4,
+        "2": 3,
+        "3": 3,
+        "4": 2,
+        "5": 2,
+        "6": 3,
+        "7": 3
+      },
+      "expected_total": 20
+    },
+    {
+      "admission_no": "S5002",
+      "name": "Sanjay K",
+      "roll_no": "7",
+      "answers": {
+        "1": "a) Photosynthesis b) evaporation c) enamel (bone crossed out) d) Venus",
+        "2": "a) False b) True c) True",
+        "3": "a) oxygen b) Jupiter c) heart",
+        "4": "We should not waste water because water is very precious and we need it for drinking and cooking.",
+        "5": "Solids have fixed shape. Liquids do not have fixed shape. Solids are hard and liquids can flow.",
+        "6": "[Diagram: sun, sea, cloud, mountain; labels: evaporation, rain, sun, clouds — condensation and collection not labelled]",
+        "7": "Balanced diet means eating all types of food in correct quantity. Protein - egg. Carbohydrate - rice."
+      },
+      "expected_marks": {
+        "1": 3,
+        "2": 2,
+        "3": 3,
+        "4": 1,
+        "5": 2,
+        "6": 2,
+        "7": 3
+      },
+      "expected_total": 16
+    },
+    {
+      "admission_no": "S5003",
+      "name": "Harish P",
+      "roll_no": "12",
+      "answers": {
+        "1": "a. fotosynthesis b. boiling (boil crossed out) c. enamel d. Mercury",
+        "2": "a. True b. True c. False",
+        "3": "a. oxigen b. Saturn c. hart",
+        "4": "we need water for drinking. water is less so dont waste",
+        "5": "solid is hard. liquid is water",
+        "6": "rain comes from clouds and goes to sea. sun makes water hot and it goes up (no diagram)",
+        "7": "balanced diet is good food we eat daily. vitamins - fruits"
+      },
+      "expected_marks": {
+        "1": 3,
+        "2": 2,
+        "3": 2,
+        "4": 1,
+        "5": 0.5,
+        "6": 1,
+        "7": 1
+      },
+      "expected_total": 10.5
+    }
+  ]
+}

@@ -41,6 +41,7 @@ tags:
   - { name: Innovation }
   - { name: Group }
   - { name: Intelligence }
+  - { name: Paper Correction, description: 'AI marking of handwritten answer sheets (EXAM Vision service, exam-vision/). Claude suggests; teachers approve.' }
 paths: {}
 components:
   securitySchemes:

@@ -10,7 +10,7 @@ Where the brief or the wireframe was silent or ambiguous, these choices were mad
 | Student role | Students see only their own Student 360 ("My Profile"), notifications and tasks. |
 | Student IDs | The wireframe's `HS-YYYY-NNNN` admission numbers are used (the brief's `STU001` was an example). APIs accept the UUID or the admission number. |
 | The brief's example student | "Aarav Kumar" was added as HS-2026-1091 at the Vadavalli (Coimbatore) campus with the exact coordinates and history from the brief. |
-| Wireframe statistics | Hard-coded wireframe figures (e.g. 1,284 students) are not reproduced; every number is computed from the database. The sample data is smaller (68 students), so figures are smaller. |
+| Wireframe statistics | Hard-coded wireframe figures (e.g. 1,284 students) are not reproduced; every number is computed from the database. The sample data is smaller (about 300 students, at least 5 in every class section), so figures are smaller. |
 | Cards with no data source | Where a wireframe card had no possible data source (e.g. "staff trained 96%", "payslips downloaded", Parent NPS on some screens), it was replaced with the closest computable measure. |
 | Next.js vs React | A Vite React SPA was chosen (see ARCHITECTURE.md). Every screen is behind sign-in, so server rendering adds no value. |
 | Languages | English, Tamil and Hindi dictionaries from the wireframe are used for interface chrome; data stays in English, as in the wireframe. |

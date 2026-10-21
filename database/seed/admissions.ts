@@ -94,8 +94,8 @@ const FATHERS = ['Karthik Raja', 'Senthil Kumar', 'Vivek Anand', 'Naveen Prasad'
 const MOTHERS = ['Kavya Raja', 'Priya Senthil', 'Deepa Anand', 'Anitha Prasad', 'Revathi Babu', 'Shalini Kannan', 'Meena Krishnan', 'Radhika Mohan',
   'Swathi Ram', 'Nisha Kumar', 'Pooja Varma', 'Sangeetha Pillai', 'Janani Chandra', 'Aishwarya Raman', 'Lakshmi Nair', 'Bhuvana Murugan', 'Hema Rao',
   'Vidya Srinivasan', 'Anjali Menon', 'Keerthana Iyer', 'Rekha Sharma'];
-const GIRLS = ['Aadhya', 'Diya', 'Ishani', 'Kavya', 'Myra', 'Navya', 'Riya', 'Saanvi', 'Tanvi', 'Vaishnavi', 'Anika', 'Pranavi', 'Sahana', 'Yazhini', 'Mithra', 'Charvi', 'Nivedha', 'Oviya', 'Harshini', 'Lekha', 'Suhana'];
-const BOYS = ['Aarav', 'Dhruv', 'Ishaan', 'Kiaan', 'Nakul', 'Pranav', 'Rohan', 'Sai Krishna', 'Tejas', 'Vihaan', 'Arjun', 'Kavin', 'Mithran', 'Nilan', 'Sharvesh', 'Yuvan', 'Adhvik', 'Hrithik', 'Jeevan', 'Lohith', 'Surya'];
+export const GIRLS = ['Aadhya', 'Diya', 'Ishani', 'Kavya', 'Myra', 'Navya', 'Riya', 'Saanvi', 'Tanvi', 'Vaishnavi', 'Anika', 'Pranavi', 'Sahana', 'Yazhini', 'Mithra', 'Charvi', 'Nivedha', 'Oviya', 'Harshini', 'Lekha', 'Suhana'];
+export const BOYS = ['Aarav', 'Dhruv', 'Ishaan', 'Kiaan', 'Nakul', 'Pranav', 'Rohan', 'Sai Krishna', 'Tejas', 'Vihaan', 'Arjun', 'Kavin', 'Mithran', 'Nilan', 'Sharvesh', 'Yuvan', 'Adhvik', 'Hrithik', 'Jeevan', 'Lohith', 'Surya'];
 const CAMPAIGNS: Record<string, string[]> = {
   WhatsApp: ['Sep Admissions', 'Summer Admissions', 'WhatsApp AI'], Website: ['Organic', 'Admissions page'], 'Meta Ads': ['IGCSE Awareness', 'Early Years Open House'],
   Referral: ['Parent referral'], Google: ['Search — CBSE alt', 'Search — Cambridge school'], 'Walk-in': ['Walk-in'], Instagram: ['Campus reel'], Phone: ['Phone enquiry'],

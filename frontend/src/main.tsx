@@ -22,6 +22,7 @@ import './styles/modules/finance-workforce.css';
 import './styles/modules/safety-tracking.css';
 import './styles/modules/portals.css';
 import './styles/modules/operations-intel.css';
+import './styles/modules/exam-correction.css';
 import './styles/system.css';
 import './styles/hues.css';
 

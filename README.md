@@ -13,7 +13,8 @@ application today and the mobile applications next; all data lives in **PostgreS
 Highlights: Student 360, **GPS student tracking** with interactive maps and location history,
 Parent 360 portal (own children only), Command Center, admissions CRM, academics, finance,
 workforce & payroll, safety & transport, operations, innovation lab, multi-campus group
-management, role-based access enforced on every API call, audit logging and OpenAPI docs.
+management, **Paper Correction** (Claude reads handwritten answer sheets and suggests marks;
+teachers approve), role-based access enforced on every API call, audit logging and OpenAPI docs.
 
 > **Sample data.** Development databases are seeded with fictional records, including
 > **generated GPS coordinates**. No record is a real person, transaction or location.
@@ -142,6 +143,8 @@ database/
   migrations/       ordered SQL migrations (schema source of truth)
   seed/             sample data generators (relative to today's date)
 docs/               architecture, database, security, tracking, deployment, mobile, OpenAPI
+exam-vision/        Paper Correction service (Python/FastAPI): Claude reads and marks
+                    handwritten answer sheets; reached only through the API (/api/exam-correction)
 wireframe/          the approved prototype (UI reference)
 ```
 

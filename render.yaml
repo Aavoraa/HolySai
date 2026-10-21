@@ -90,3 +90,56 @@ services:
         value: 20
       - key: LOG_LEVEL
         value: info
+
+      # --- Paper Correction (exam-vision/) ------------------------------------
+      # The marking service below. Requests are signed with a secret both
+      # services share; the service refuses anything unsigned.
+      # If Render gave the service a different address, correct it here.
+      - key: EXAM_VISION_URL
+        value: https://holy-sai-exam.onrender.com
+      - key: EXAM_VISION_SECRET
+        fromService:
+          type: web
+          name: holy-sai-exam
+          envVarKey: EXAM_GATEWAY_SECRET
+
+  # ---------------------------------------------------------------------------
+  # Paper Correction service (exam-vision/): Claude reads and marks answer sheets.
+  #
+  # Free plan: the instance has no persistent disk, so everything (exams, sheet
+  # images, marks, settings) is stored in the same Supabase Postgres as the main
+  # app, in its own "exam_vision" schema. Sleeps, restarts and deploys lose
+  # nothing. The main app wakes it on start and keeps it awake while in use.
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: holy-sai-exam
+    runtime: docker
+    dockerfilePath: ./exam-vision/Dockerfile
+    dockerContext: ./exam-vision
+    region: singapore
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      # Shared with the main service (EXAM_VISION_SECRET). Generated once by Render.
+      - key: EXAM_GATEWAY_SECRET
+        generateValue: true
+      # Its data lives in the main app's Supabase database (schema exam_vision).
+      - key: EXAM_DATABASE_URL
+        fromService:
+          type: web
+          name: holy-sai
+          envVarKey: DATABASE_URL
+      # Optional defaults for the Claude key and the acknowledgement that student
+      # pages are sent to Anthropic (what is saved in AI configuration wins).
+      - key: EXAM_CLAUDE_API_KEY
+        sync: false
+      # Type 1 once the school's consent covers sending pages to Anthropic.
+      - key: EXAM_EXTERNAL_PROCESSING_ACKNOWLEDGED
+        sync: false
+      # One sheet at a time: the free instance has 512 MB.
+      - key: EXAM_WORKERS
+        value: "1"
+      # SAMPLE demo: two Grade 5 A tests (Science, Maths) already read and marked,
+      # rebuilt automatically after every wipe. Set to 0 to switch off.
+      - key: EXAM_DEMO
+        value: "1"
