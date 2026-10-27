@@ -10,11 +10,13 @@ import {
 } from '@/components/ui';
 import type { AccountRow, ConcessionRow, ConcessionSummary } from './types';
 import { fieldErrors, ListCount, Money, ReasonModal, StudentPicker, TotalsBar } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 export const CONCESSION_TYPES = ['Sibling concession', 'Staff ward concession', 'Merit scholarship', 'Need-based support', 'Sports quota'];
 
 /** Approve / reject / review buttons shared by Concessions and Scholarships. */
 export function useConcessionDecisions() {
+  const { can } = useAuth();
   const confirm = useConfirm();
   const [rejecting, setRejecting] = useState<ConcessionRow | null>(null);
   const opts = { invalidate: ['/finance'], body: () => ({}) };
@@ -25,7 +27,8 @@ export function useConcessionDecisions() {
   });
   const actions = (r: ConcessionRow) => (['Submitted', 'Under Review'].includes(r.status) ? (
     <div className="row g-2 end">
-      {r.status === 'Submitted' && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
+      {r.status === 'Submitted' && can('finance.manage') && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
+      {!can('approvals.decide') ? <AwaitingSuperAdmin short /> : <>
       <Button size="sm" variant="teal" icon="check" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
         if (await confirm({
           title: `Approve ${r.type.toLowerCase()}?`,
@@ -34,6 +37,7 @@ export function useConcessionDecisions() {
         })) approve.mutate(r.id);
       }}>Approve</Button>
       <Button size="sm" icon="x" onClick={() => setRejecting(r)}>Reject</Button>
+      </>}
     </div>
   ) : null);
   const modal = (
@@ -110,7 +114,7 @@ export default function ConcessionsPage() {
               { key: 'amount', label: 'Value', className: 'num', render: (r) => <><Money v={r.amount} strong />{r.percent ? <div className="t-micro t-muted">{r.percent}% of tuition</div> : null}</> },
               { key: 'date', label: 'Requested', render: (r) => <>{fmt.date(r.createdAt)}<div className="t-micro t-muted">{r.requestedBy ?? ''}</div></> },
               { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.decidedBy && <div className="t-micro t-muted">{r.decidedBy}</div>}</> },
-              { key: 'a', label: '', className: 'num', sortable: false, render: (r) => can('finance.approve') && decisions.actions(r) },
+              { key: 'a', label: '', className: 'num', sortable: false, render: (r) => decisions.actions(r) },
             ]} />
         )}
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />

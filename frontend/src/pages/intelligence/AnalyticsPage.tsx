@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useApiQuery } from '@/hooks/useApi';
 import { fmt } from '@/lib/format';
+import { gradeColor } from '@/lib/grades';
 import { SERIES } from '@/lib/tones';
 import { Button, Card, Chart, charts, Chips, Empty, ErrorState, Funnel, Legend, Page, PageHead, PageSkeleton } from '@/components/ui';
 import { useCsvDownload } from './shared';
@@ -117,7 +118,6 @@ function AreaBody({ area, d }: { area: string; d: any }) {
   if (area === 'academics') {
     const subj: LV[] = d.subjects;
     const avg = subj.length ? Math.round(subj.reduce((a, s) => a + s.value, 0) / subj.length) : 0;
-    const DIST = ['var(--teal)', 'var(--teal)', 'var(--navy)', 'var(--navy)', 'var(--amber)', 'var(--critical)'];
     return (
       <div className="grid g-2col g-4">
         <ChartCard title="Subject averages" sub="Latest term, against the school average" empty={!subj.length}>
@@ -133,8 +133,8 @@ function AreaBody({ area, d }: { area: string; d: any }) {
           ], yMax: 100, height: 230 })} />
           <div className="mt-3"><Legend items={[{ label: 'Coverage', color: 'var(--navy)' }, { label: 'Mastery', color: 'var(--teal)' }]} /></div>
         </ChartCard>
-        <ChartCard title="Grade distribution" sub="Latest-term subject results" empty={!d.distribution.some((x: LV) => x.value)}>
-          <Chart svg={charts.bar({ labels: d.distribution.map((x: LV) => x.label), series: [{ name: 'Results', values: d.distribution.map((x: LV) => x.value), colors: DIST }], height: 220 })} />
+        <ChartCard title="Grade distribution" sub="Latest-term subject results · Cambridge IGCSE A*–G, U" empty={!d.distribution.some((x: LV) => x.value)}>
+          <Chart svg={charts.bar({ labels: d.distribution.map((x: LV) => x.label), series: [{ name: 'Results', values: d.distribution.map((x: LV) => x.value), colors: d.distribution.map((x: LV) => gradeColor(x.label)) }], height: 220 })} />
         </ChartCard>
         <ChartCard title="Assessment completion" sub={`${d.completion?.assessments ?? 0} assessments held this year`} empty={!d.completion?.expected}>
           <Chart svg={charts.gauge({ percent: d.completion?.pct ?? 0, value: `${d.completion?.pct ?? 0}%`, sub: `${fmt.n(d.completion?.entered)} of ${fmt.n(d.completion?.expected)} marks entered`, color: 'var(--teal)' })} />

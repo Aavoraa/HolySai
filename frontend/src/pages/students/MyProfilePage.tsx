@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n/I18nProvider';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { Avatar, Badge, Button, Card, Empty, ErrorState, Icon, Meter, Page, PageSkeleton, Skeleton, Status, CampusBanner, DashLayout, DashRail, DonutCard, RankCard, TrendCard } from '@/components/ui';
 import { cx, fmt, todayKey } from '@/lib/format';
+import { gradeMeterTone } from '@/lib/grades';
 import { SkillWebCard, Student360, type Profile } from './Student360Page';
 
 interface Notice { id: string; tone: string; icon: string; title: string; route: string | null; createdAt: string; readAt: string | null }
@@ -77,7 +78,7 @@ function MyDay({ id, onProfile }: { id: string; onProfile: (tab?: string) => voi
 
   return (
     <Page className="portal">
-      <CampusBanner bleed={false} title={<>{greet}, {s.firstName}</>} sub="Your day at school — classes, attendance, results and notices." />
+      <CampusBanner bleed={false} welcome title={<>{greet}, <span className="campusbanner__name">{s.firstName}</span></>} sub="Your day at school — classes, attendance, results and notices." />
       <DashLayout rail={<DashRail actions={[
         { label: 'My Full Profile', icon: 'user', to: '/my-profile?view=profile' },
         { label: 'My Ideas', icon: 'lightbulb', to: '/my-ideas' },
@@ -168,7 +169,7 @@ function MyDay({ id, onProfile }: { id: string; onProfile: (tab?: string) => voi
             {d.academics.subjects.length ? (
               <div className="col g-3">
                 {d.academics.subjects.slice(0, 6).map((x) => (
-                  <Meter key={x.name} label={x.name} value={x.score} right={`${x.score} · ${x.grade}`} tone={x.score >= 80 ? 'teal' : x.score >= 70 ? 'info' : 'amber'}
+                  <Meter key={x.name} label={x.name} value={x.score} right={`${x.score} · ${x.grade}`} tone={gradeMeterTone(x.grade)}
                     hint={x.target != null && x.score < x.target ? `Target ${x.target}` : undefined} />
                 ))}
               </div>

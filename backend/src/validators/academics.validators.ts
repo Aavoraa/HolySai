@@ -75,6 +75,8 @@ export const assessmentCreate = z.object({
   assessmentType: z.enum(ASSESSMENT_TYPES).default('test'),
   heldOn: isoDate,
   maxMarks: z.coerce.number().positive('Must be above 0').max(1000),
+  /** Optional Cambridge IGCSE paper this assessment mirrors (grading then applies Core/Extended tier rules). */
+  syllabusComponentId: z.uuid().nullable().optional(),
 });
 export const marksSave = z.object({
   marks: z.array(z.object({

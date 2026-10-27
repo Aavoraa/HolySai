@@ -11,6 +11,7 @@ import {
 import { fmt, todayKey } from '@/lib/format';
 import { PayslipModal, TotalsBar, monthLabel } from './shared';
 import type { PayrollRun, PayslipRow, RunDetail } from './types';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 export default function PayrollPage() {
   const { can } = useAuth();
@@ -71,6 +72,8 @@ export default function PayrollPage() {
       </Button>;
     } else if (r.status === 'Under Review' && a.makerChecker) {
       primary = <Button variant="primary" icon="lock" disabled title="The person who calculated this run cannot approve it">Awaiting another approver</Button>;
+    } else if (r.status === 'Under Review') {
+      primary = <AwaitingSuperAdmin />;
     } else if (r.status === 'Approved' && a.canRelease) {
       primary = <Button variant="primary" icon="send" loading={release.isPending} disabled={busy} onClick={async () => {
         if (await confirm({ title: `Release ${r.monthLabel} payslips?`, body: `${r.employeeCount} payslips become visible in the staff app and employees with accounts are notified.`, confirmLabel: 'Release payslips' })) release.mutate();

@@ -10,6 +10,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
 import { FormError, FormGrid, StudentPicker, req, useForm, type StudentPick } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface Cert {
   id: string; certificateType: string; status: string; purpose: string | null; requestedOn: string; verificationCode: string | null; issuedAt: string | null;
@@ -74,7 +75,7 @@ export default function CertificatesPage() {
           { label: 'Requested', meta: s ? `${s.requested} waiting` : 'By parent or office', state: st === 'Submitted' ? 'active' : 'done' },
           { label: 'Records checked', meta: 'Fees, documents, clearance', state: 'done' },
           { label: 'Under Review', meta: s ? `${s.underReview} pending` : '', state: !st || st === 'Under Review' ? 'active' : undefined },
-          { label: 'Approved', meta: s ? `${s.approved} ready to issue` : 'By the Principal', state: st === 'Approved' ? 'active' : undefined },
+          { label: 'Approved', meta: s ? `${s.approved} ready to issue` : 'By the Super Admin', state: st === 'Approved' ? 'active' : undefined },
           { label: 'Issued with QR', meta: s ? `${s.issued} issued · verifiable` : 'Verifiable by anyone', state: st === 'Issued' ? 'active' : undefined },
         ]} />
       </Card>
@@ -87,7 +88,7 @@ export default function CertificatesPage() {
         </Toolbar>
         {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : !q.isLoading && q.data && !q.data.rows.length && !list.hasFilters ? (
           <Empty icon="award" title="No certificate requests yet"
-            sub="Requests from parents or the office appear here. Each certificate is checked, approved by the Principal and issued with a verification code."
+            sub="Requests from parents or the office appear here. Each certificate is checked, approved by the Super Admin and issued with a verification code."
             action={manage ? <Button variant="primary" icon="plus" onClick={() => setIssue(true)}>Issue a certificate</Button> : undefined} />
         ) : (
           <DataTable<Cert>
@@ -177,6 +178,8 @@ function IssueModal({ onClose }: { onClose: () => void }) {
 }
 
 function DecisionModal({ cert, onClose }: { cert: Cert; onClose: () => void }) {
+  const { can } = useAuth();
+  const decider = can('approvals.decide');
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const blocking = useBlocking(cert.studentId, cert.certificateType);
@@ -189,9 +192,10 @@ function DecisionModal({ cert, onClose }: { cert: Cert; onClose: () => void }) {
     <Modal open onClose={onClose} title={`Review ${cert.certificateType.toLowerCase()}`} sub={`${cert.studentName} · ${cert.grade ?? ''}${cert.section ?? ''} · requested ${fmt.date(cert.requestedOn)}`} size="wide" busy={act.isPending}
       foot={<>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="danger" loading={act.isPending && act.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>
+        {decider && <Button variant="danger" loading={act.isPending && act.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>}
         {cert.status === 'Submitted' && <Button loading={act.isPending && act.variables?.action === 'review'} onClick={() => run('review')}>Mark under review</Button>}
-        <Button variant="primary" disabled={blocking} loading={act.isPending && act.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>
+        {!decider && <AwaitingSuperAdmin />}
+        {decider && <Button variant="primary" disabled={blocking} loading={act.isPending && act.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>}
       </>}>
       <div className="eyebrow mb-2">Automatic checks</div>
       <ChecksList studentId={cert.studentId} type={cert.certificateType} />

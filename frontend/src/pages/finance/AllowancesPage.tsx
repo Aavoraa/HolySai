@@ -9,6 +9,7 @@ import {
 } from '@/components/ui';
 import type { AllowanceRow, AllowanceSummaryRow } from './types';
 import { fieldErrors, Money, TotalsBar, useFinanceLookups } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 /** Serves both /allowances (Finance) and /staff-allowances (HR); the wireframe renders the same page with different copy. */
 export default function AllowancesPage({ sub }: { sub: string }) {
@@ -19,7 +20,7 @@ export default function AllowancesPage({ sub }: { sub: string }) {
   const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const canManage = can(['finance.manage', 'hr.manage']);
-  const canApprove = can(['finance.approve', 'hr.approve']);
+  const canApprove = can('approvals.decide');
   const rows = q.data ?? [];
   const pending = rows.filter((r) => r.pendingCount > 0);
   const decide = useApiMutation<{ allowanceType: string; decision: string }>('post', '/finance/allowances/decide', {
@@ -42,7 +43,7 @@ export default function AllowancesPage({ sub }: { sub: string }) {
         actions={canManage && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Add allowance</Button>} />
       {pending.length > 0 && (
         <div className="mb-4"><Banner tone="warning" icon="clock">
-          <strong>{pending.reduce((acc, r) => acc + r.pendingCount, 0)} proposed allowance(s) awaiting approval</strong> across {pending.length} type{pending.length === 1 ? '' : 's'} — {fmt.money(pending.reduce((acc, r) => acc + r.pendingCost, 0))} a month.{canApprove ? ' Approve or reject them below.' : ''}
+          <strong>{pending.reduce((acc, r) => acc + r.pendingCount, 0)} proposed allowance(s) awaiting approval</strong> across {pending.length} type{pending.length === 1 ? '' : 's'} — {fmt.money(pending.reduce((acc, r) => acc + r.pendingCost, 0))} a month.{canApprove ? ' Approve or reject them below.' : ' Only the Super Admin can approve or reject them.'}
         </Banner></div>
       )}
       <Card flush
@@ -66,12 +67,12 @@ export default function AllowancesPage({ sub }: { sub: string }) {
               { key: 'total', label: 'Monthly cost', className: 'num', render: (r) => <><Money v={r.monthlyCost} strong />{r.pendingCost > 0 && <div className="t-micro t-muted">+{fmt.money(r.pendingCost)} proposed</div>}</> },
               { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.pendingCount > 0 && <div className="mt-1"><Status value="Pending" label={`${r.pendingCount} proposed`} /></div>}</> },
               {
-                key: 'a', label: '', className: 'num', render: (r) => canApprove && (
+                key: 'a', label: '', className: 'num', render: (r) => (canApprove || canManage) && (
                   <div className="row g-2 end" onClick={(e) => e.stopPropagation()}>
-                    {r.pendingCount > 0 ? <>
+                    {r.pendingCount > 0 && !canApprove ? <AwaitingSuperAdmin short /> : r.pendingCount > 0 ? <>
                       <Button size="sm" variant="teal" icon="check" loading={decide.isPending && decide.variables?.allowanceType === r.allowanceType && decide.variables?.decision === 'Approved'} onClick={() => ask(r, 'Approved')}>Approve {r.pendingCount}</Button>
                       <Button size="sm" icon="x" loading={decide.isPending && decide.variables?.allowanceType === r.allowanceType && decide.variables?.decision === 'Rejected'} onClick={() => ask(r, 'Rejected')}>Reject</Button>
-                    </> : r.status === 'Active' && <Button size="sm" variant="quiet" onClick={() => ask(r, 'Stopped')}>Stop</Button>}
+                    </> : r.status === 'Active' && canManage && <Button size="sm" variant="quiet" onClick={() => ask(r, 'Stopped')}>Stop</Button>}
                   </div>
                 ),
               },

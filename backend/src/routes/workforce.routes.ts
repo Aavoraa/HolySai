@@ -11,19 +11,19 @@ import * as me from '../services/workforce-self.service.js';
 
 /**
  * Workforce & payroll. Mounted at /api behind authentication.
- *   /workforce/*  HR screens (hr.read / hr.manage / hr.approve)
- *   /payroll/*, /payslips/*  payroll (payroll.read / payroll.manage / payroll.approve)
+ *   /workforce/*  HR screens (hr.read / hr.manage); approve / reject = approvals.decide (Super Admin only)
+ *   /payroll/*, /payslips/*  payroll (payroll.read / payroll.manage); approve / return = approvals.decide
  *   /me/*  staff self-service (selfservice.use) — always the signed-in employee
  */
 const r = Router();
 
 const READ = requirePermission('hr.read');
 const MANAGE = requirePermission('hr.manage');
-const APPROVE = requirePermission('hr.approve');
+const APPROVE = requirePermission('approvals.decide');
 const PAY_READ = requirePermission('payroll.read');
 const PAY_MANAGE = requirePermission('payroll.manage');
-const PAY_APPROVE = requirePermission('payroll.approve');
-const PAY_RELEASE = requireAny('payroll.manage', 'payroll.approve');
+const PAY_APPROVE = requirePermission('approvals.decide');
+const PAY_RELEASE = requireAny('payroll.manage', 'approvals.decide');
 const SELF = requirePermission('selfservice.use');
 const idParam = validate(V.idParam, 'params');
 
@@ -144,7 +144,7 @@ r.patch('/workforce/leave-requests/:id', MANAGE, idParam, validate(V.leaveUpdate
   return ok(res, await leave.getLeave(v(req, 'params').id), 'Cover arrangement saved');
 });
 
-r.post('/workforce/leave-requests/:id/review', APPROVE, idParam, async (req: Request, res: Response) => {
+r.post('/workforce/leave-requests/:id/review', MANAGE, idParam, async (req: Request, res: Response) => {
   await leave.reviewLeave(req, v(req, 'params').id);
   return ok(res, await leave.getLeave(v(req, 'params').id), 'Moved to review');
 });
@@ -178,7 +178,7 @@ r.post('/workforce/overtime', MANAGE, validate(V.overtimeCreateSchema), async (r
   return created(res, await leave.createOvertime(req, b.employeeId, b), 'Overtime claim submitted');
 });
 
-r.post('/workforce/overtime/:id/review', APPROVE, idParam, async (req: Request, res: Response) => {
+r.post('/workforce/overtime/:id/review', MANAGE, idParam, async (req: Request, res: Response) => {
   await leave.reviewOvertime(req, v(req, 'params').id);
   return ok(res, null, 'Overtime moved to review');
 });

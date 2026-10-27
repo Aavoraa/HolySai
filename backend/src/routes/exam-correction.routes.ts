@@ -5,6 +5,7 @@ import { validate, v } from '../middleware/validate.js';
 import { ok } from '../utils/response.js';
 import { forbidden } from '../utils/errors.js';
 import * as svc from '../services/exam-correction.service.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Paper Correction — AI marking of handwritten answer sheets (EXAM Vision).
@@ -33,6 +34,8 @@ r.post('/exam-correction/exams/:examId/push-marks', MARKS,
 // Everything else under /exam-correction/api/ is forwarded to the service as the signed-in user.
 r.all('/exam-correction/api/*path', MARKS, async (req: Request, res: Response) => {
   const path = (req.params as { path: string[] }).path.join('/');
+  // Approving an examination's results is an approval decision — Super Admin only.
+  if (req.method === 'POST' && /^exams\/[^/]+\/results\/approved\/?$/.test(path)) assertDecider(req.user, 'Approving examination results');
   await svc.forward(req, res, path);
 });
 

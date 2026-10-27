@@ -676,7 +676,7 @@
   patch:
     tags: [Core]
     summary: Verify or reject a document
-    x-permission: documents.manage
+    x-permission: approvals.decide
     responses:
       '200': { $ref: '#/components/responses/Ok' }
 

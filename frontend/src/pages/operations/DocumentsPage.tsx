@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { cx, fmt } from '@/lib/format';
 import { CRITICAL_ROW, FormError, FormGrid, bytes, req, useForm } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface Summary { total: number; school: number; student: number; pendingVerification: number; awaitingUpload: number; rejected: number; expired: number; collections: number; storageBytes: number }
 interface Collection { name: string; count: number; pending: number; files: number; updatedAt: string; owner: string | null }
@@ -107,7 +108,13 @@ function useDownload() {
   };
 }
 
-function VerifyButtons({ id, name, invalidate }: { id: string; name: string; invalidate: string[] }) {
+function VerifyButtons(props: { id: string; name: string; invalidate: string[] }) {
+  // Verifying or rejecting a document is a Super Admin decision.
+  const { can } = useAuth();
+  return can('approvals.decide') ? <VerifyActions {...props} /> : <AwaitingSuperAdmin short />;
+}
+
+function VerifyActions({ id, name, invalidate }: { id: string; name: string; invalidate: string[] }) {
   const [reject, setReject] = useState(false);
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');

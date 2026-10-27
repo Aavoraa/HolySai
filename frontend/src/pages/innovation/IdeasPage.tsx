@@ -11,6 +11,7 @@ import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
 import { FormGrid, req, useForm } from '../operations/shared';
 import { AREAS, IdeaSubmitModal, MilestoneDrafts, cleanMilestones, useMentorOptions } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface Idea {
   id: string; title: string; problem: string | null; category: string | null; status: string; submittedOn: string; ageDays: number; reviewedBy: string | null;
@@ -88,6 +89,8 @@ export default function IdeasPage() {
 }
 
 function ReviewModal({ idea, onClose, onConvert }: { idea: Idea; onClose: () => void; onConvert: () => void }) {
+  const { can } = useAuth();
+  const decider = can('approvals.decide'); // accepting / declining is the Super Admin's decision
   const [note, setNote] = useState('');
   const [err, setErr] = useState('');
   const confirm = useConfirm();
@@ -109,9 +112,9 @@ function ReviewModal({ idea, onClose, onConvert }: { idea: Idea; onClose: () => 
     <Modal open onClose={onClose} title="Review idea" sub={`${idea.studentName} · ${idea.grade ?? ''}${idea.section ?? ''} · submitted ${fmt.date(idea.submittedOn)}`} busy={act.isPending}
       foot={<>
         <Button onClick={onClose}>Cancel</Button>
-        <Button variant="danger" loading={act.isPending && act.variables?.action === 'decline'} onClick={() => run('decline')}>Decline</Button>
+        {decider && <Button variant="danger" loading={act.isPending && act.variables?.action === 'decline'} onClick={() => run('decline')}>Decline</Button>}
         {idea.status === 'Submitted' && <Button loading={act.isPending && act.variables?.action === 'start'} onClick={() => run('start')}>Start review</Button>}
-        <Button variant="primary" loading={act.isPending && act.variables?.action === 'accept'} onClick={() => run('accept')}>Accept</Button>
+        {decider ? <Button variant="primary" loading={act.isPending && act.variables?.action === 'accept'} onClick={() => run('accept')}>Accept</Button> : <AwaitingSuperAdmin />}
       </>}>
       {act.error && <div className="mb-3"><InlineError error={act.error} /></div>}
       <div className="h3">{idea.title}</div>

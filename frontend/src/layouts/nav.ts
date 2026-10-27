@@ -50,6 +50,7 @@ export const NAV: NavGroup[] = [
     group: 'Overview', hue: 'brand', icon: 'grid', items: [
       { label: 'Dashboard', icon: 'home', to: '/command-center', dynamicHome: true },
       { label: 'Owner Overview', icon: 'shield', to: '/overview', perm: ['audit.read'], roles: ['super_admin', 'school_admin'] },
+      { label: 'Approvals', icon: 'shieldCheck', to: '/approvals', perm: ['approvals.decide'], tone: 'amber' },
       { label: 'Command Center', icon: 'pulse', to: '/command-center', perm: ['dashboard.group'] },
       { label: 'Teacher Dashboard', icon: 'bookOpen', to: '/teacher', perm: ['attendance.mark'], hideRoles: NOT_FOR_ADMINS },
       { label: 'Parent 360', icon: 'heart', to: '/parent-360', perm: ['parent_portal.use'], hideRoles: NOT_FOR_ADMINS },
@@ -100,6 +101,8 @@ export const NAV: NavGroup[] = [
       { label: 'Paper Correction', icon: 'scan', to: '/paper-correction', perm: ['assessments.manage'] },
       { label: 'Report Cards', icon: 'fileText', to: '/report-cards', perm: ['academics.read'] },
       { label: 'Cambridge Objectives', icon: 'target', to: '/objectives', perm: ['academics.read'] },
+      { label: 'IGCSE Syllabus', icon: 'graduation', to: '/syllabus', perm: ['academics.read'] },
+      { label: 'Grading Scheme', icon: 'award', to: '/grading', perm: ['academics.read'] },
     ],
   },
   {
@@ -110,6 +113,7 @@ export const NAV: NavGroup[] = [
       { label: 'Circulars', icon: 'megaphone', to: '/circulars', perm: ['communication.read'] },
       { label: 'Events', icon: 'star', to: '/events', perm: ['communication.read'] },
       { label: 'Acknowledgements', icon: 'checkSquare', to: '/acknowledgements', perm: ['communication.read'] },
+      { label: 'Parent Contact Log', icon: 'phone', to: '/parent-log', perm: ['parentlog.read', 'parentlog.manage'] },
     ],
   },
   {
@@ -148,6 +152,12 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
+    section: 'Finance', group: 'Budget & Planning', hue: 'sage', icon: 'pieChart', items: [
+      { label: 'Budget Plans', icon: 'pieChart', to: '/budget-planning', perm: ['planning.read'] },
+      { label: 'Approvals', icon: 'shieldCheck', to: '/approvals', perm: ['approvals.decide'] },
+    ],
+  },
+  {
     section: 'HR & Workforce', group: 'Workforce', hue: 'amber', label: 'Staff', quick: [{ to: '/staff-attendance', label: 'Attendance' }, { to: '/leave' }, { to: '/payroll' }], icon: 'users', items: [
       { label: 'Employee Directory', icon: 'users', to: '/workforce', perm: ['hr.read'] },
       { label: 'Teaching Staff', icon: 'graduation', to: '/teaching-staff', perm: ['hr.read'] },
@@ -161,6 +171,12 @@ export const NAV: NavGroup[] = [
       { label: 'CPD', icon: 'award', to: '/cpd', perm: ['hr.read'] },
       { label: 'Payroll', icon: 'wallet', to: '/payroll', perm: ['payroll.read'], tone: 'amber' },
       { label: 'Payslips', icon: 'receipt', to: '/payslips', perm: ['payroll.read'] },
+    ],
+  },
+  {
+    section: 'Operations', group: 'Job Cards', hue: 'steel', icon: 'clipboard', items: [
+      { label: 'Job Cards', icon: 'clipboard', to: '/job-cards', perm: ['jobcards.use', 'jobcards.manage'] },
+      { label: 'Departments', icon: 'building', to: '/departments', perm: ['jobcards.manage'] },
     ],
   },
   {

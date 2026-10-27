@@ -8,6 +8,7 @@ import {
 } from '@/components/ui';
 import { cx, fmt } from '@/lib/format';
 import { ApplicationCard, DocumentsCard } from './ApplicationPanel';
+import { AdmissionFormCard } from './AdmissionForm';
 import { CloseFollowUpModal, CommunicationModal, FollowUpModal, StageModal } from './LeadForms';
 import { ScoreCell, SourceBadge, dueLabel, dueState, stageTone, useCounsellors, useLeadParam } from './shared';
 import { STAGES, type FollowUp, type LeadProfile } from './types';
@@ -64,6 +65,7 @@ function LeadProfileModal({ code, onClose }: { code: string; onClose: () => void
             <div className="col g-4">
               <LeadDetail lead={l} />
               <ApplicationCard lead={l} />
+              {l.application && <AdmissionFormCard app={l.application} />}
               <DocumentsCard app={l.application} />
             </div>
             <div className="col g-4">

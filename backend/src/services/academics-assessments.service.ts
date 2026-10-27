@@ -6,7 +6,8 @@ import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
 import { isRestricted, requireSchoolScope, schoolToday } from './academics.service.js';
-import { GRADE_BANDS, gradeFor } from './academics-shared.js';
+import { EFFECTIVE_TIER_JOINS, EFFECTIVE_TIER_SQL, getActiveScale, gradeOrder } from './grading.service.js';
+import { gradeFromScale, type Tier } from './grading-shared.js';
 import type { AuthUser } from '../types.js';
 
 /**
@@ -48,12 +49,16 @@ function baseSelect(minePh: string | null) {
                     AND m.student_id IN (${rosterSql(minePh)})) AS entered,
                  (SELECT round(avg(100.0 * m.marks / a.max_marks))::int FROM assessment_marks m WHERE m.assessment_id = a.id AND m.marks IS NOT NULL
                     AND m.student_id IN (${rosterSql(minePh)})) AS "averagePct",
-                 u.full_name AS "createdBy"
+                 u.full_name AS "createdBy",
+                 a.syllabus_component_id AS "syllabusComponentId",
+                 CASE WHEN sc.id IS NOT NULL THEN concat_ws(' · ', sy.syllabus_code, sc.name) END AS "igcsePaper"
             FROM assessments a
             JOIN classes c ON c.id = a.class_id
             LEFT JOIN sections sec ON sec.id = a.section_id
             JOIN subjects sub ON sub.id = a.subject_id
-            LEFT JOIN users u ON u.id = a.created_by`;
+            LEFT JOIN users u ON u.id = a.created_by
+            LEFT JOIN syllabus_components sc ON sc.id = a.syllabus_component_id
+            LEFT JOIN syllabuses sy ON sy.id = sc.syllabus_id`;
 }
 
 export async function listAssessments(user: AuthUser, f: Pagination & { campusId?: string; status?: string; subjectId?: string; classId?: string }) {
@@ -102,7 +107,8 @@ export async function assessmentSummary(user: AuthUser, campusId?: string) {
       [latest.id],
     );
     const by = Object.fromEntries(d.map((x) => [x.grade, x.n]));
-    const bands = GRADE_BANDS.filter((g) => by[g] || ['A+', 'A', 'B+', 'B', 'C', 'D'].includes(g));
+    // Cambridge IGCSE order A*, A … G, U — every band shown so the shape of the cohort is visible.
+    const bands = await gradeOrder();
     distribution = { assessment: `${latest.grade} — ${latest.name}`, labels: [...bands], values: bands.map((g) => by[g] ?? 0) };
   }
 
@@ -144,9 +150,12 @@ async function loadAssessment(user: AuthUser, id: string, db?: Queryable, lock =
   const w = new Where().add('a.id = ?', id);
   assessmentScope(user, w);
   const a = await one(
-    `SELECT a.*, c.name AS class_name, c.campus_id, sec.name AS section_name, sub.name AS subject_name
+    `SELECT a.*, c.name AS class_name, c.campus_id, sec.name AS section_name, sub.name AS subject_name,
+            sc.name AS component_name, sc.paper_no, sc.tier AS component_tier, sy.id AS syllabus_id, sy.syllabus_code, sy.title AS syllabus_title, sy.tiered
        FROM assessments a JOIN classes c ON c.id = a.class_id LEFT JOIN sections sec ON sec.id = a.section_id
-       JOIN subjects sub ON sub.id = a.subject_id ${w.sql} ${lock ? 'FOR UPDATE OF a' : ''}`,
+       JOIN subjects sub ON sub.id = a.subject_id
+       LEFT JOIN syllabus_components sc ON sc.id = a.syllabus_component_id
+       LEFT JOIN syllabuses sy ON sy.id = sc.syllabus_id ${w.sql} ${lock ? 'FOR UPDATE OF a' : ''}`,
     w.params, db,
   );
   if (!a) throw notFound('Assessment not found', 'ASSESSMENT_NOT_FOUND');
@@ -160,13 +169,17 @@ export async function getAssessment(user: AuthUser, id: string) {
   if (mine) params.push(user.employeeId);
   const students = await many(
     `SELECT s.id, s.admission_no AS "admissionNo", s.full_name AS "fullName", c.name || sec.name AS section, en.roll_no AS roll,
-            m.marks, m.is_absent AS "isAbsent", m.grade, m.remarks, u.full_name AS "enteredBy", m.updated_at AS "updatedAt"
+            m.marks, m.is_absent AS "isAbsent", m.grade, m.remarks, u.full_name AS "enteredBy", m.updated_at AS "updatedAt",
+            ${EFFECTIVE_TIER_SQL} AS tier
        FROM assessments a
        JOIN students s ON s.id IN (${rosterSql(mine)})
        JOIN sections sec ON sec.id = s.section_id JOIN classes c ON c.id = sec.class_id
        LEFT JOIN enrollments en ON en.student_id = s.id AND en.academic_year_id = a.academic_year_id
        LEFT JOIN assessment_marks m ON m.assessment_id = a.id AND m.student_id = s.id
        LEFT JOIN users u ON u.id = m.entered_by
+       LEFT JOIN syllabus_components scx ON scx.id = a.syllabus_component_id
+       LEFT JOIN syllabuses syx ON syx.id = scx.syllabus_id
+       LEFT JOIN student_syllabus_entries sex ON sex.syllabus_id = syx.id AND sex.student_id = s.id
       WHERE a.id = $1
       ORDER BY sec.name, en.roll_no NULLS LAST, s.full_name`,
     params,
@@ -176,6 +189,10 @@ export async function getAssessment(user: AuthUser, id: string) {
   return {
     id: a.id, code: a.code, name: a.name, assessmentType: a.assessment_type, status: a.status,
     heldOn: a.held_on, maxMarks: a.max_marks, grade: `${a.class_name}${a.section_name ?? ''}`, subject: a.subject_name,
+    component: a.syllabus_component_id ? {
+      id: a.syllabus_component_id, paperNo: a.paper_no, name: a.component_name, tier: a.component_tier,
+      syllabusId: a.syllabus_id, syllabusCode: a.syllabus_code, syllabusTitle: a.syllabus_title, tiered: a.tiered,
+    } : null,
     locked,
     canEnter: !locked && a.held_on <= today,
     lockReason: locked ? `Marks are locked — the assessment is in ${a.status}.` : a.held_on > today ? 'Marks can be entered once the assessment has been held.' : null,
@@ -185,7 +202,7 @@ export async function getAssessment(user: AuthUser, id: string) {
   };
 }
 
-export async function createAssessment(req: Request, input: { name: string; classId: string; sectionId?: string | null; subjectId: string; assessmentType: string; heldOn: string; maxMarks: number }) {
+export async function createAssessment(req: Request, input: { name: string; classId: string; sectionId?: string | null; subjectId: string; assessmentType: string; heldOn: string; maxMarks: number; syllabusComponentId?: string | null }) {
   const user = req.user!;
   return tx(async (db) => {
     const cls = await one<{ id: string; name: string }>('SELECT id, name FROM classes WHERE id = $1', [input.classId], db);
@@ -196,6 +213,13 @@ export async function createAssessment(req: Request, input: { name: string; clas
     }
     const sub = await one('SELECT 1 FROM subjects WHERE id = $1', [input.subjectId], db);
     if (!sub) throw badRequest('Subject not found', 'SUBJECT_NOT_FOUND', [{ field: 'subjectId', message: 'Choose a subject' }]);
+    if (input.syllabusComponentId) {
+      const comp = await one(
+        `SELECT 1 FROM syllabus_components sc JOIN syllabuses sy ON sy.id = sc.syllabus_id WHERE sc.id = $1 AND sy.subject_id = $2`,
+        [input.syllabusComponentId, input.subjectId], db,
+      );
+      if (!comp) throw badRequest('That IGCSE paper does not belong to this subject', 'COMPONENT_SUBJECT_MISMATCH', [{ field: 'syllabusComponentId', message: 'Choose a paper from this subject\'s syllabus' }]);
+    }
     if (isRestricted(user)) {
       const teaches = await one(
         `SELECT 1 FROM teacher_assignments ta JOIN sections sx ON sx.id = ta.section_id
@@ -211,9 +235,9 @@ export async function createAssessment(req: Request, input: { name: string; clas
     }
     const code = await nextCode('assessments', 'code', 'AS-', db);
     const a = await one<{ id: string }>(
-      `INSERT INTO assessments (code, name, class_id, section_id, subject_id, academic_year_id, assessment_type, held_on, max_marks, status, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Scheduled',$10) RETURNING id`,
-      [code, input.name, input.classId, input.sectionId ?? null, input.subjectId, year.id, input.assessmentType, input.heldOn, input.maxMarks, user.id], db,
+      `INSERT INTO assessments (code, name, class_id, section_id, subject_id, academic_year_id, assessment_type, held_on, max_marks, status, created_by, syllabus_component_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Scheduled',$10,$11) RETURNING id`,
+      [code, input.name, input.classId, input.sectionId ?? null, input.subjectId, year.id, input.assessmentType, input.heldOn, input.maxMarks, user.id, input.syllabusComponentId ?? null], db,
     );
     await audit(req, { action: 'create', module: 'assessments', description: `Created assessment ${code} — ${input.name} (${cls.name})`, entityType: 'assessment', entityId: a!.id }, db);
     return { id: a!.id, code };
@@ -246,8 +270,20 @@ export async function saveMarks(req: Request, id: string, input: { marks: { stud
     });
     if (errors.length) throw badRequest('Some marks are invalid', 'VALIDATION_ERROR', errors);
 
+    // Cambridge IGCSE grade on the active scale, with the Core/Extended tier when the assessment mirrors a syllabus paper.
+    const scale = await getActiveScale();
+    const tiers = new Map<string, Tier | null>();
+    if (a.syllabus_component_id && input.marks.length) {
+      const t = await many<{ student_id: string; tier: Tier | null }>(
+        `SELECT m.student_id, ${EFFECTIVE_TIER_SQL} AS tier
+           FROM assessments a CROSS JOIN unnest($2::uuid[]) AS m(student_id) ${EFFECTIVE_TIER_JOINS}
+          WHERE a.id = $1`,
+        [id, input.marks.map((m) => m.studentId)], db,
+      );
+      for (const x of t) tiers.set(x.student_id, x.tier);
+    }
     for (const m of input.marks) {
-      const grade = m.marks == null ? null : gradeFor((100 * m.marks) / Number(a.max_marks));
+      const grade = m.marks == null ? null : gradeFromScale(scale, (100 * m.marks) / Number(a.max_marks), tiers.get(m.studentId) ?? null);
       await query(
         `INSERT INTO assessment_marks (assessment_id, student_id, marks, is_absent, grade, remarks, entered_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7)

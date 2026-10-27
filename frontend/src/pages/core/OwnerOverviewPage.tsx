@@ -196,7 +196,8 @@ export default function OwnerOverviewPage() {
 
   const head = (
     <CampusBanner
-      title={<>{greet}, {user?.fullName}</>}
+      welcome
+      title={<>{greet}, <span className="campusbanner__name">{user?.fullName}</span></>}
       sub={school.scope === 'group' ? "Here's what's happening across all campuses today." : <>Here's what's happening at {scopeLabel} today.</>}
       actions={(
         <>
@@ -209,7 +210,7 @@ export default function OwnerOverviewPage() {
 
   // The dashboard top (metrics, charts, rail) loads its own data, in parallel with the overview below it.
   const top = (
-    <DashLayout rail={<DashRail events={false} actions={[
+    <DashLayout rail={<DashRail quote={false} notes={4} eventCount={1} actions={[
       { label: 'Add New Student', icon: 'plus', to: '/students?new=1', show: can('students.create') },
       { label: 'Users & Roles', icon: 'users', to: '/admin/users', show: can('users.manage') },
       { label: 'Fee Collection', icon: 'wallet', to: '/fees', show: can('finance.read') },
@@ -217,12 +218,13 @@ export default function OwnerOverviewPage() {
       { label: 'Report Centre', icon: 'barChart', to: '/admin/reports', show: can('users.manage') },
       { label: 'System Settings', icon: 'settings', to: '/admin/settings', show: can('settings.manage') },
     ]} />}>
-      <SchoolPulse events={false} metrics />
+      {head}
+      <SchoolPulse events={false} metrics promo />
     </DashLayout>
   );
 
-  if (q.isLoading) return <Page>{head}{top}<div className="mt-4"><PageSkeleton /></div></Page>;
-  if (q.error || !q.data) return <Page>{head}{top}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
+  if (q.isLoading) return <Page>{top}<div className="mt-4"><PageSkeleton /></div></Page>;
+  if (q.error || !q.data) return <Page>{top}<ErrorState error={q.error} onRetry={() => q.refetch()} /></Page>;
 
   const d = q.data;
   const { previousVisit: visit, welcome, revenue, activity, school: sc } = d;
@@ -247,7 +249,6 @@ export default function OwnerOverviewPage() {
 
   return (
     <Page>
-      {head}
       {top}
 
       {/* ---- Welcome strip ---------------------------------------------- */}
@@ -408,6 +409,7 @@ export default function OwnerOverviewPage() {
                 {sc.approvals.total > 0
                   ? <Badge tone="warning">Action required</Badge>
                   : <Badge tone="success">All clear</Badge>}
+                {can('approvals.decide') && <Link to="/approvals" className="t-xs t-bold">Open the Approvals inbox →</Link>}
                 {sc.approvals.total > 0 && (
                   <span className="t-xs t-muted">
                     {sc.approvals.total} waiting · {fmt.money(sc.approvals.amount, { compact: true })} at stake

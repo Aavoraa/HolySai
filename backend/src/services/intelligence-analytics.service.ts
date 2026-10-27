@@ -4,6 +4,8 @@ import { Where } from '../utils/sql.js';
 import { forbidden, notFound } from '../utils/errors.js';
 import type { AuthUser } from '../types.js';
 import { studentScope } from './access.service.js';
+import { getActiveScale } from './grading.service.js';
+import { gradeFromScale, ordered } from './grading-shared.js';
 import { STUDENT_ROW_SQL } from './students.service.js';
 import {
   INTERVENTION_SQL, STAGES, col, schoolToday,
@@ -110,14 +112,12 @@ async function academicsArea(user: AuthUser, campusId?: string) {
       SELECT r.student_id, r.subject_id, r.score, r.term, r.term_order, max(r.term_order) OVER () AS mx
         FROM student_academic_records r JOIN academic_years ay ON ay.id = r.academic_year_id AND ay.is_current
         JOIN students s ON s.id = r.student_id ${w.sql})`;
-  const [subjects, terms, distribution, coverage, completion] = await Promise.all([
+  const [subjects, terms, scoreCounts, coverage, completion, scale] = await Promise.all([
     many(`${latest} SELECT sub.name AS label, round(avg(r.score))::int AS value FROM r JOIN subjects sub ON sub.id = r.subject_id
            WHERE r.term_order = r.mx GROUP BY sub.name ORDER BY sub.name`, w.params),
     many(`${latest} SELECT r.term AS label, round(avg(r.score))::int AS value FROM r GROUP BY r.term, r.term_order ORDER BY r.term_order`, w.params),
-    many(`${latest} SELECT b.label, count(r.score)::int AS value
-            FROM (VALUES (1, 'A*', 90, 101), (2, 'A', 80, 90), (3, 'B', 70, 80), (4, 'C', 60, 70), (5, 'D', 50, 60), (6, 'E', 0, 50)) b(o, label, lo, hi)
-            LEFT JOIN r ON r.term_order = r.mx AND r.score >= b.lo AND r.score < b.hi
-           GROUP BY b.o, b.label ORDER BY b.o`, w.params),
+    // Latest-term scores, bucketed below onto the Cambridge IGCSE scale (A*–G, U).
+    many<{ score: number; n: number }>(`${latest} SELECT r.score::float AS score, count(*)::int AS n FROM r WHERE r.term_order = r.mx GROUP BY r.score`, w.params),
     many(`SELECT sub.name AS label, round(avg(o.coverage_pct))::int AS coverage, round(avg(o.mastery_pct))::int AS mastery, count(*)::int AS objectives
             FROM learning_objectives o JOIN subjects sub ON sub.id = o.subject_id GROUP BY sub.name ORDER BY sub.name`),
     (() => {
@@ -135,7 +135,14 @@ async function academicsArea(user: AuthUser, campusId?: string) {
                     FROM assessments a JOIN classes c ON c.id = a.class_id
                    ${aw.sql}`, aw.params);
     })(),
+    getActiveScale(),
   ]);
+  const counts = new Map<string, number>();
+  for (const x of scoreCounts) {
+    const g = gradeFromScale(scale, x.score);
+    counts.set(g, (counts.get(g) ?? 0) + x.n);
+  }
+  const distribution = ordered(scale).map((b) => ({ label: b.grade, value: counts.get(b.grade) ?? 0 }));
   return {
     subjects, terms, distribution, coverage,
     completion: { ...completion, pct: completion?.expected ? Math.round((completion.entered / completion.expected) * 100) : null },

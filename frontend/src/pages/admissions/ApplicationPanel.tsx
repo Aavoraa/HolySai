@@ -1,15 +1,17 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApiMutation } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, SelectField, Status, TextArea, TextField, useConfirm,
+  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, Icon, SelectField, Status, TextArea, TextField, errorMessage, useConfirm, useToast,
 } from '@/components/ui';
+import { NewApplicationModal, useFileUpload, viewFile } from './AdmissionForm';
 import { fmt, todayKey } from '@/lib/format';
 import { FormModal, useFieldErrors } from './LeadForms';
 import { EMAIL_RE, PHONE_RE, localInput, localToIso } from './shared';
 import type { Application, LeadProfile } from './types';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 const INVALIDATE = ['/enquiries', '/admissions', '/applications', '/visits', '/follow-ups', '/referrals', '/students', '/notifications'];
 const FLOW = ['Submitted', 'Under Review', 'Assessment Scheduled', 'Offer Made', 'Accepted', 'Enrolled'];
@@ -30,6 +32,7 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
   const app = lead.application;
   const [target, setTarget] = useState<Target | null>(null);
   const [enrolling, setEnrolling] = useState(false);
+  const [formFlow, setFormFlow] = useState(false);
   const open = useApiMutation<Record<string, unknown>>('post', '/applications', { invalidate: INVALIDATE, success: 'Application opened' });
 
   if (!app) {
@@ -37,8 +40,14 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
     return (
       <Card icon="grid" title="Application" tight>
         <Empty icon="fileText" title="No application yet"
-          sub={closed ? 'This lead is closed.' : 'Opening an application requests the standard documents and moves the lead to Application.'}
-          action={manage && !closed ? <Button variant="primary" icon="plus" loading={open.isPending} onClick={() => open.mutate({ enquiryId: lead.id })}>Open application</Button> : undefined} />
+          sub={closed ? 'This lead is closed.' : 'When the family returns the filled admission form, add it here — type it in or upload the scan. The standard documents are requested and the lead moves to Application.'}
+          action={manage && !closed ? (
+            <span className="row g-2 wrap" style={{ justifyContent: 'center' }}>
+              <Button variant="primary" icon="clipboard" onClick={() => setFormFlow(true)}>Add admission form</Button>
+              <Button icon="plus" loading={open.isPending} onClick={() => open.mutate({ enquiryId: lead.id })}>Open application only</Button>
+            </span>
+          ) : undefined} />
+        {formFlow && <NewApplicationModal lead={lead} onClose={() => setFormFlow(false)} onDone={() => setFormFlow(false)} />}
       </Card>
     );
   }
@@ -61,6 +70,10 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
   if (app.status === 'Accepted' && can('students.create')) actions.push({ label: 'Enrol student', enrol: true, variant: 'primary', icon: 'userCheck' });
   if (['Submitted', 'Under Review', 'Assessment Scheduled', 'Offer Made'].includes(app.status)) actions.push({ label: 'Reject', to: 'Rejected', variant: 'danger' });
   if (!terminal) actions.push({ label: 'Withdraw', to: 'Withdrawn' });
+  // Making an offer or rejecting is the Super Admin's decision.
+  const decider = can('approvals.decide');
+  const awaitingDecision = !decider && actions.some((a) => a.to === 'Offer Made' || a.to === 'Rejected');
+  if (!decider) for (let i = actions.length - 1; i >= 0; i--) if (actions[i].to === 'Offer Made' || actions[i].to === 'Rejected') actions.splice(i, 1);
 
   return (
     <Card icon="grid" title={`Application ${app.applicationNo}`} sub={`Opened ${fmt.date(app.createdAt)}${app.decidedBy ? ` · last decision by ${app.decidedBy}` : ''}`} tight
@@ -91,6 +104,7 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
         </div>
       )}
       {actions.some((a) => a.disabled) && manage && <p className="t-micro t-muted mt-2">Offers need every document verified first.</p>}
+      {awaitingDecision && manage && <div className="mt-3"><AwaitingSuperAdmin /> <span className="t-micro t-muted">Only the Super Admin makes the offer or rejects.</span></div>}
       {app.studentId && (
         <div className="mt-4">
           <Button icon="user" onClick={() => navigate(`/student-360/${app.studentId}`)}>Open Student 360 · {app.admissionNo}</Button>
@@ -104,10 +118,22 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
 
 export function DocumentsCard({ app }: { app: Application | null }) {
   const { can } = useAuth();
+  const toast = useToast();
   const manage = can('admissions.manage') && !!app && !['Enrolled', 'Rejected', 'Withdrawn'].includes(app.status);
+  const canFiles = can('documents.read');
   const save = useApiMutation<{ docId: string; status: string }>('patch', (x) => `/applications/${app?.id}/documents/${x.docId}`, {
     body: (x) => ({ status: x.status }), invalidate: INVALIDATE,
   });
+  const { upload, busy } = useFileUpload();
+  const pickRef = useRef<HTMLInputElement>(null);
+  const [target, setTarget] = useState<string | null>(null);
+  const pick = (docId: string) => { setTarget(docId); pickRef.current?.click(); };
+  const onPicked = async (f: File | undefined) => {
+    if (!f || !target || !app) return;
+    if (!['application/pdf', 'image/png', 'image/jpeg', 'image/webp'].includes(f.type)) { toast('Choose a PDF, JPG, PNG or WebP file', 'critical'); return; }
+    if (f.size > 10 * 1024 * 1024) { toast('Files must be 10 MB or smaller', 'critical'); return; }
+    await upload(target, `/applications/${app.id}/documents/${target}/upload`, f, {}, 'Document uploaded — verify it next');
+  };
   if (!app) {
     return <Card icon="folder" title="Documents" tight><p className="t-sm t-muted">Birth certificate, previous report card, address proof and a photograph are requested when the application opens.</p></Card>;
   }
@@ -115,11 +141,25 @@ export function DocumentsCard({ app }: { app: Application | null }) {
     <Card icon="folder" title="Documents" sub={app.documentsComplete ? 'All documents verified' : `${app.documents.filter((d) => d.status !== 'Verified').length} outstanding`} tight>
       <DataTable compact stack={false} rows={app.documents} rowKey={(d) => d.id}
         columns={[
-          { key: 'name', label: 'Document' },
+          {
+            key: 'name', label: 'Document', render: (d) => (
+              <>
+                <span>{d.name}</span>
+                {d.hasFile && canFiles && (
+                  <button type="button" className="t-micro t-link" style={{ display: 'block', background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+                    onClick={() => viewFile(`/applications/${app.id}/documents/${d.id}/download`, (e) => toast(errorMessage(e), 'critical'))}>
+                    <Icon name="eye" size={11} /> {d.fileName ?? 'View file'}
+                  </button>
+                )}
+              </>
+            ),
+          },
           { key: 'status', label: 'Status', render: (d) => <Status value={d.status} /> },
           ...(manage ? [{
             key: 'act', label: '', className: 'num', render: (d: Application['documents'][number]) => (
               <span className="adm-actions">
+                <Button size="sm" variant="quiet" icon="upload" loading={busy === d.id} onClick={() => pick(d.id)}
+                  title={d.hasFile ? 'Replace the uploaded file' : 'Upload the scanned document'}>{d.hasFile ? 'Replace' : 'Upload'}</Button>
                 {d.status !== 'Verified' && (
                   <Button size="sm" icon="check" loading={save.isPending && save.variables?.docId === d.id}
                     onClick={() => save.mutate({ docId: d.id, status: 'Verified' })}>Verify</Button>
@@ -134,6 +174,8 @@ export function DocumentsCard({ app }: { app: Application | null }) {
             ),
           }] : []),
         ]} />
+      <input ref={pickRef} type="file" hidden accept=".pdf,.png,.jpg,.jpeg,.webp" aria-label="Document file"
+        onChange={(e) => { void onPicked(e.target.files?.[0]); e.target.value = ''; }} />
     </Card>
   );
 }
@@ -203,12 +245,20 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
     [lookups, app.campusId, app.grade],
   );
   const routes = (lookups?.routes ?? []).filter((r) => r.campusId === app.campusId);
+  // Prefilled from the admission form, so nothing the family wrote has to be retyped.
+  const f = (app.formData ?? {}) as Record<string, string | boolean | undefined>;
+  const s = (k: string) => (typeof f[k] === 'string' ? (f[k] as string) : '');
+  const pc = s('primaryContact') || (s('fatherName') && s('fatherPhone') ? 'Father' : s('motherName') && s('motherPhone') ? 'Mother' : '');
+  const pk = pc === 'Mother' ? 'mother' : pc === 'Guardian' ? 'guardian' : 'father';
   const [v, setV] = useState({
-    firstName: first ?? '', lastName: rest.join(' '), dateOfBirth: app.dateOfBirth ?? lead.studentDob ?? '', gender: app.gender ?? '',
-    sectionId: '', admittedOn: todayKey(), address: '', city: '', pincode: '',
-    guardianName: lead.parentName, guardianPhone: lead.phone, guardianEmail: lead.email ?? '', relationship: 'Father',
-    useTransport: lead.transportRequired && routes.length > 0, routeId: '', stopId: '',
+    firstName: s('studentFirstName') || first || '', lastName: s('studentLastName') || rest.join(' '),
+    dateOfBirth: s('dateOfBirth') || app.dateOfBirth || lead.studentDob || '', gender: s('gender') || app.gender || '',
+    sectionId: '', admittedOn: todayKey(), address: app.address ?? '', city: app.city ?? '', pincode: app.pincode ?? '',
+    guardianName: (pc && s(`${pk}Name`)) || lead.parentName, guardianPhone: (pc && s(`${pk}Phone`)) || lead.phone,
+    guardianEmail: (pc && s(`${pk}Email`)) || lead.email || '', relationship: pc || 'Father',
+    useTransport: (typeof f.transportRequired === 'boolean' ? f.transportRequired : lead.transportRequired) && routes.length > 0, routeId: '', stopId: '',
   });
+  const secondParent = pc === 'Mother' ? s('fatherName') : pc === 'Guardian' ? '' : s('motherName');
   const set = (k: keyof typeof v, val: string | boolean) => { setV((s) => ({ ...s, [k]: val })); fe.clear(k); };
   const stops = routes.find((r) => r.id === v.routeId)?.stops ?? [];
   const save = useApiMutation<Record<string, unknown>, { studentId: string; admissionNo: string; section: string }>('post', `/applications/${app.id}/enrol`, {
@@ -278,7 +328,10 @@ function EnrolModal({ lead, app, onClose }: { lead: LeadProfile; app: Applicatio
         </div>
         <div className="formsection">
           <div className="formsection__title">Primary guardian</div>
-          <p className="formsection__sub">An existing parent with the same phone number is linked instead of creating a duplicate.</p>
+          <p className="formsection__sub">
+            An existing parent with the same phone number is linked instead of creating a duplicate.
+            {secondParent ? ` ${secondParent} is also linked from the admission form as a second guardian.` : ''}
+          </p>
           <div className="form-grid">
             <TextField label="Full name" required value={v.guardianName} onChange={(x) => set('guardianName', x)} error={fe.errors['guardian.fullName']} maxLength={120} />
             <SelectField label="Relationship" value={v.relationship} onChange={(x) => set('relationship', x)} options={['Father', 'Mother', 'Guardian']} />

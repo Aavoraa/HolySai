@@ -59,7 +59,7 @@ export default function ScholarshipsPage() {
               { key: 'amount', label: 'Value', className: 'num', render: (r) => <Money v={r.amount} strong /> },
               { key: 'basis', label: 'Basis', sortable: false, render: (r) => r.reason ?? '—' },
               { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
-              { key: 'a', label: '', className: 'num', sortable: false, render: (r) => can('finance.approve') && decisions.actions(r) },
+              { key: 'a', label: '', className: 'num', sortable: false, render: (r) => decisions.actions(r) },
             ]} />
         )}
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />

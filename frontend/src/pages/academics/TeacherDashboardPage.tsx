@@ -150,7 +150,7 @@ export default function TeacherDashboardPage() {
 
   const head = (
     <CampusBanner
-      title={<>{greeting()}, {name}</>}
+      welcome title={<>{greeting()}, <span className="campusbanner__name">{name}</span></>}
       sub={<>{d.lede}</>}
       actions={(
         <>

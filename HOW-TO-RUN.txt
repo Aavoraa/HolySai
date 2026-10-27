@@ -153,7 +153,31 @@ Things to try:
                      (payment is simulated - no real gateway)
   Attendance         Teacher -> Attendance -> Grade 5A (not yet marked today)
   Admissions         Office -> Leads -> open a lead -> move it to Enrolled
-  Payroll            HR prepares the run, Principal approves it
+  Payroll            HR prepares the run, Super Admin approves it
+
+  Approvals          ONLY the Super Admin approves or rejects - in every module
+                     (expenses, leave, payroll, circulars, report cards,
+                     admissions offers, budget plans ...). Other roles prepare
+                     and submit; they see "Awaiting Super Admin approval".
+                     Super Admin -> sidebar "Approvals" = one inbox for all.
+  Budget planning    Finance / HR / Office / Principal -> Budget & Planning ->
+                     Budget Plans -> New plan -> Submit. Super Admin approves
+                     (optionally a lower amount); the amount is added to Budgets.
+  Job cards          Any staff -> Job Cards -> New job card (from your
+                     department to another). The receiving department assigns,
+                     works and completes it; the raiser closes it.
+                     Principal -> Departments (heads, open cards in/out).
+  Parent contact log Principal / Office -> Parent Experience -> Parent Contact
+                     Log: how often parents and teachers tried to reach the
+                     principal or staff, repeat-contact alerts, "Log a contact".
+                     Messages, calls, PTM meetings and parent visitors are
+                     included automatically.
+  IGCSE syllabus     Academics -> IGCSE Syllabus (Grades 9-10: papers, topics,
+                     coverage, Core/Extended entries) and Grading Scheme
+                     (A* to G, then U; boundaries editable by the Principal).
+  Admission forms    Office -> Applications -> New application, or a lead ->
+                     "Add admission form": type the filled form in, upload the
+                     scanned form (PDF/photo), or both. "Import forms" takes a CSV.
 
   Example student from the brief: Aarav Kumar (HS-2026-1091),
   location 11.0168, 76.9558 (Coimbatore).

@@ -127,13 +127,138 @@ export const applicationListQuery = paginationSchema.extend({
   status: z.enum([...APP_STATUSES, 'live']).optional(),
   grade: z.string().max(20).optional(),
   documents: z.enum(['complete', 'incomplete']).optional(),
+  form: z.enum(['none', 'manual', 'upload', 'both', 'received']).optional(),
 });
 
+// ---- Admission form (the filled paper / PDF form behind an application) -----------
+/** Today in school time (Asia/Kolkata), so a form received this morning is never "in the future". */
+export const schoolToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+export const pastDate = isoDate.refine((d) => d <= schoolToday(), { message: 'Date cannot be in the future' });
+const formText = (max: number) => z.string().trim().max(max).optional().transform((s) => (s === '' ? undefined : s));
+const formPhone = z.string().trim().optional().transform((s) => (s === '' ? undefined : s))
+  .refine((s) => !s || /^\+?[0-9 ]{8,16}$/.test(s), { message: 'Enter a valid phone number' });
+const formEmail = z.string().trim().optional().transform((s) => (s === '' ? undefined : s))
+  .refine((s) => !s || z.email().safeParse(s).success, { message: 'Enter a valid email' });
+export const FORM_SOURCES = ['Manual', 'Upload', 'Online'] as const;
+export const PRIMARY_CONTACTS = ['Father', 'Mother', 'Guardian'] as const;
+export const GRADE_RE = /^Grade (1[0-2]|[1-9])$/;
+
+/** Every field on the school's admission form. All optional — completeness is checked on submit. */
+export const admissionFormFields = z.object({
+  // Student details
+  studentFirstName: formText(60),
+  studentLastName: formText(60),
+  dateOfBirth: pastDate.optional(),
+  gender: z.enum(['M', 'F', 'O']).optional(),
+  gradeApplied: z.string().trim().regex(GRADE_RE, 'Choose a grade').optional(),
+  placeOfBirth: formText(80),
+  nationality: formText(60),
+  religion: formText(60),
+  motherTongue: formText(60),
+  bloodGroup: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']).optional(),
+  // Parents / guardian
+  fatherName: formText(120),
+  fatherOccupation: formText(120),
+  fatherPhone: formPhone,
+  fatherEmail: formEmail,
+  motherName: formText(120),
+  motherOccupation: formText(120),
+  motherPhone: formPhone,
+  motherEmail: formEmail,
+  guardianName: formText(120),
+  guardianRelationship: formText(60),
+  guardianPhone: formPhone,
+  guardianEmail: formEmail,
+  primaryContact: z.enum(PRIMARY_CONTACTS).optional(),
+  // Address & contact
+  address: formText(300),
+  city: formText(60),
+  state: formText(60),
+  pincode: z.string().trim().optional().transform((s) => (s === '' ? undefined : s))
+    .refine((s) => !s || /^[0-9]{6}$/.test(s), { message: 'PIN code must be 6 digits' }),
+  emergencyContactName: formText(120),
+  emergencyContactPhone: formPhone,
+  // Previous schooling
+  previousSchool: formText(160),
+  previousBoard: formText(60),
+  previousGrade: formText(30),
+  reasonForLeaving: formText(300),
+  // Health & other
+  siblingsInSchool: z.boolean().optional(),
+  siblingDetails: formText(300),
+  medicalNotes: formText(500),
+  allergies: formText(300),
+  specialNeeds: formText(300),
+  transportRequired: z.boolean().optional(),
+  // Declaration
+  declarationSignedBy: formText(120),
+  declarationDate: pastDate.optional(),
+});
+export type AdmissionForm = z.infer<typeof admissionFormFields>;
+
+/** Fields a submitted (complete) form must carry; the primary contact's name and phone are checked separately. */
+export const REQUIRED_FORM_FIELDS: [keyof AdmissionForm, string][] = [
+  ['studentFirstName', 'Enter the student’s first name'],
+  ['studentLastName', 'Enter the student’s last name'],
+  ['dateOfBirth', 'Enter the date of birth'],
+  ['gender', 'Select a gender'],
+  ['primaryContact', 'Choose the primary contact'],
+  ['address', 'Enter the address'],
+  ['city', 'Enter the city'],
+  ['declarationSignedBy', 'Enter who signed the declaration'],
+];
+
+export const applicationFormSchema = z.object({
+  form: admissionFormFields.prefault({}),
+  receivedOn: pastDate.optional(),
+  /** true = the form is complete: every required field is checked and a Draft application is submitted. */
+  submit: z.boolean().default(false),
+});
+
+const walkInSchema = z.object({
+  campusId: uuid,
+  parentName: z.string().trim().min(2).max(120),
+  phone,
+  email: z.email().optional(),
+  studentName: z.string().trim().min(2).max(120),
+  gradeApplied: z.string().trim().regex(GRADE_RE, 'Choose a grade'),
+  curriculum: optText(60),
+  source: z.enum(SOURCES).default('Walk-in'),
+  counsellorId: uuid.nullable().optional(),
+});
+
+/**
+ * Open an application either for an existing lead ({ enquiryId }) or for a
+ * family with no lead yet ({ walkIn }) — the lead is then created at the
+ * Application stage. The admission form may be entered in the same call.
+ */
 export const applicationCreateSchema = z.object({
-  enquiryId: uuid,
+  enquiryId: uuid.optional(),
+  walkIn: walkInSchema.optional(),
   dateOfBirth: isoDate.optional(),
   gender: z.enum(['M', 'F', 'O']).optional(),
   previousSchool: optText(160),
+  form: admissionFormFields.optional(),
+  formSource: z.enum(FORM_SOURCES).optional(),
+  receivedOn: pastDate.optional(),
+  submit: z.boolean().default(false),
+}).refine((o) => !!o.enquiryId !== !!o.walkIn, { message: 'Choose an existing lead or enter the new family', path: ['enquiryId'] });
+
+/** One row of the bulk import CSV (column headers = these keys). */
+export const importRowSchema = admissionFormFields.extend({
+  parentName: z.string().trim().min(2, 'Parent name is required').max(120),
+  phone,
+  email: formEmail,
+  studentName: z.string().trim().min(2, 'Student name is required').max(120),
+  gradeApplied: z.string().trim().regex(GRADE_RE, 'Grade must look like "Grade 4"'),
+  source: z.enum(SOURCES).default('Walk-in'),
+  receivedOn: pastDate.optional(),
+});
+
+/** Multipart fields sent with the import file. */
+export const applicationImportSchema = z.object({
+  campusId: uuid,
+  dryRun: z.stringbool().default(false),
 });
 
 export const applicationUpdateSchema = z.object({
@@ -157,12 +282,13 @@ export const applicationStatusSchema = z.object({
 
 export const documentStatusSchema = z.object({ status: z.enum(['Pending', 'Submitted', 'Verified', 'Rejected']) });
 
+/** Student / guardian fields left out are filled from the admission form saved on the application. */
 export const enrolSchema = z.object({
   sectionId: uuid,
-  firstName: z.string().trim().min(1).max(60),
-  lastName: z.string().trim().min(1).max(60),
-  dateOfBirth: isoDate,
-  gender: z.enum(['M', 'F', 'O']),
+  firstName: z.string().trim().min(1).max(60).optional(),
+  lastName: z.string().trim().min(1).max(60).optional(),
+  dateOfBirth: isoDate.optional(),
+  gender: z.enum(['M', 'F', 'O']).optional(),
   admittedOn: isoDate.optional(),
   house: optText(30),
   address: optText(300),
@@ -173,8 +299,8 @@ export const enrolSchema = z.object({
     fullName: z.string().trim().min(2).max(120).optional(),
     phone: phone.optional(),
     email: z.email().optional(),
-    relationship: z.enum(['Father', 'Mother', 'Guardian']),
-  }),
+    relationship: z.enum(['Father', 'Mother', 'Guardian']).optional(),
+  }).optional(),
   transport: z.object({ routeId: uuid, stopId: uuid.optional() }).optional(),
 });
 

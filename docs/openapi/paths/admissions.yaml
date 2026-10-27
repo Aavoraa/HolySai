@@ -411,12 +411,18 @@
       - { name: status, in: query, schema: { type: string, enum: [live, Draft, Submitted, Under Review, Assessment Scheduled, Offer Made, Accepted, Enrolled, Rejected, Withdrawn] } }
       - { name: grade, in: query, schema: { type: string } }
       - { name: documents, in: query, schema: { type: string, enum: [complete, incomplete] } }
+      - { name: form, in: query, description: 'Admission form status — none (not received), manual, upload, both, received (any)', schema: { type: string, enum: [none, manual, upload, both, received] } }
     responses:
       '200': { $ref: '#/components/responses/Paged' }
       '403': { $ref: '#/components/responses/Forbidden' }
   post:
     tags: [Admissions]
-    summary: Open an application for a lead (creates the standard document checklist; lead → Application)
+    summary: Open an application for an existing lead or a walk-in family, optionally with the admission form
+    description: >
+      Send either enquiryId (existing lead) or walkIn (a lead is created and moved to Application). Creates the
+      standard document checklist. With `form` (the manually entered admission form) the application stays a Draft
+      until submit=true and every required field is present. formSource records how the form arrived; upload the
+      scan with POST /applications/{id}/form/upload.
     x-permission: admissions.manage
     security: [{ bearerAuth: [] }]
     requestBody:
@@ -425,17 +431,213 @@
         application/json:
           schema:
             type: object
-            required: [enquiryId]
             properties:
               enquiryId: { type: string, format: uuid }
+              walkIn:
+                type: object
+                required: [campusId, parentName, phone, studentName, gradeApplied]
+                properties:
+                  campusId: { type: string, format: uuid }
+                  parentName: { type: string }
+                  phone: { type: string }
+                  email: { type: string, format: email }
+                  studentName: { type: string }
+                  gradeApplied: { type: string, example: Grade 4 }
+                  curriculum: { type: string }
+                  source: { type: string, default: Walk-in }
+                  counsellorId: { type: string, format: uuid, nullable: true }
               dateOfBirth: { type: string, format: date }
               gender: { type: string, enum: [M, F, O] }
               previousSchool: { type: string }
+              form: { type: object, description: 'Admission form fields — see PUT /applications/{id}/form' }
+              formSource: { type: string, enum: [Manual, Upload, Online] }
+              receivedOn: { type: string, format: date }
+              submit: { type: boolean, default: false }
     responses:
       '201': { $ref: '#/components/responses/Created' }
       '400': { $ref: '#/components/responses/BadRequest' }
       '403': { $ref: '#/components/responses/Forbidden' }
-      '409': { description: The lead already has an open application }
+      '409': { description: The lead already has an open application, or an open lead already exists for this child }
+
+/applications/import/template:
+  get:
+    tags: [Admissions]
+    summary: CSV template for bulk-importing filled admission forms (header row + one example)
+    x-permission: admissions.manage
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { description: text/csv file }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/applications/import:
+  post:
+    tags: [Admissions]
+    summary: Bulk import filled admission forms from CSV — one lead + application per row
+    description: >
+      Rows are validated individually and reported with their spreadsheet row number; valid rows are imported
+      (each in its own transaction), invalid or duplicate rows are listed with field errors. dryRun=true only validates.
+      Required columns studentName, gradeApplied, parentName, phone; every admission form field may be a column. Max 300 rows, 2 MB.
+    x-permission: admissions.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file, campusId]
+            properties:
+              file: { type: string, format: binary }
+              campusId: { type: string, format: uuid }
+              dryRun: { type: boolean, default: false }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/applications/{id}/form:
+  parameters:
+    - $ref: '#/components/parameters/IdPath'
+  get:
+    tags: [Admissions]
+    summary: The admission form — typed fields, completeness, received date and the uploaded scan
+    x-permission: admissions.read
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Admissions]
+    summary: Save (draft) or submit the manually entered admission form
+    description: >
+      The whole form is sent each time and replaces the saved one. Drafts may be partial; submit=true (and any save
+      after submission) requires student first/last name, DOB, gender, primary contact with name and phone, address,
+      city and the declaration signatory. Submitting moves a Draft application to Submitted. Student name, DOB,
+      gender, grade, previous school and transport are copied onto the application and the lead.
+    x-permission: admissions.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              receivedOn: { type: string, format: date }
+              submit: { type: boolean, default: false }
+              form:
+                type: object
+                properties:
+                  studentFirstName: { type: string }
+                  studentLastName: { type: string }
+                  dateOfBirth: { type: string, format: date }
+                  gender: { type: string, enum: [M, F, O] }
+                  gradeApplied: { type: string }
+                  placeOfBirth: { type: string }
+                  nationality: { type: string }
+                  religion: { type: string }
+                  motherTongue: { type: string }
+                  bloodGroup: { type: string, enum: [A+, A-, B+, B-, AB+, AB-, O+, O-] }
+                  fatherName: { type: string }
+                  fatherOccupation: { type: string }
+                  fatherPhone: { type: string }
+                  fatherEmail: { type: string }
+                  motherName: { type: string }
+                  motherOccupation: { type: string }
+                  motherPhone: { type: string }
+                  motherEmail: { type: string }
+                  guardianName: { type: string }
+                  guardianRelationship: { type: string }
+                  guardianPhone: { type: string }
+                  guardianEmail: { type: string }
+                  primaryContact: { type: string, enum: [Father, Mother, Guardian] }
+                  address: { type: string }
+                  city: { type: string }
+                  state: { type: string }
+                  pincode: { type: string, pattern: '^[0-9]{6}$' }
+                  emergencyContactName: { type: string }
+                  emergencyContactPhone: { type: string }
+                  previousSchool: { type: string }
+                  previousBoard: { type: string }
+                  previousGrade: { type: string }
+                  reasonForLeaving: { type: string }
+                  siblingsInSchool: { type: boolean }
+                  siblingDetails: { type: string }
+                  medicalNotes: { type: string }
+                  allergies: { type: string }
+                  specialNeeds: { type: string }
+                  transportRequired: { type: boolean }
+                  declarationSignedBy: { type: string }
+                  declarationDate: { type: string, format: date }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/applications/{id}/form/upload:
+  post:
+    tags: [Admissions]
+    summary: Upload (or replace) the filled / scanned admission form — PDF, PNG, JPEG or WebP
+    description: Stored as a documents row (owner_type admission, category "Admission form"); a replaced scan is archived. Sets form_source Upload when nothing was typed in yet.
+    x-permission: admissions.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+              receivedOn: { type: string, format: date }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/applications/{id}/documents/{docId}/upload:
+  post:
+    tags: [Admissions]
+    summary: Upload the file for a checklist document (Birth certificate…) — status becomes Submitted, verify as before
+    x-permission: admissions.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - { name: docId, in: path, required: true, schema: { type: string, format: uuid } }
+    requestBody:
+      required: true
+      content:
+        multipart/form-data:
+          schema:
+            type: object
+            required: [file]
+            properties:
+              file: { type: string, format: binary }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/applications/{id}/documents/{docId}/download:
+  get:
+    tags: [Admissions]
+    summary: Download an application file (the admission form scan or a checklist document); the read is audited
+    x-permission: admissions.read + documents.read
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+      - { name: docId, in: path, required: true, schema: { type: string, format: uuid } }
+    responses:
+      '200': { description: The file (attachment) }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
 
 /applications/summary:
   get:
@@ -555,7 +757,8 @@
         application/json:
           schema:
             type: object
-            required: [sectionId, firstName, lastName, dateOfBirth, gender, guardian]
+            required: [sectionId]
+            description: Student and guardian fields left out are taken from the admission form; the other parent on the form is linked as a second guardian.
             properties:
               sectionId: { type: string, format: uuid, description: Must be on the application's campus }
               firstName: { type: string }
@@ -569,7 +772,6 @@
               pincode: { type: string, pattern: '^[0-9]{6}$' }
               guardian:
                 type: object
-                required: [relationship]
                 properties:
                   parentId: { type: string, format: uuid }
                   fullName: { type: string, description: Defaults to the lead's parent }

@@ -34,7 +34,7 @@ export default function PayslipsPage() {
   const [slip, setSlip] = useState<string | null>(null);
   const month = run?.monthLabel.split(' ')[0];
   const release = useApiMutation<void>('post', `/payroll/runs/${run?.id}/release`, { invalidate: ['/payslips', '/payroll'], body: () => ({}) });
-  const canRelease = run?.status === 'Approved' && (can('payroll.approve') || can('payroll.manage'));
+  const canRelease = run?.status === 'Approved' && (can('approvals.decide') || can('payroll.manage'));
 
   return (
     <Page>

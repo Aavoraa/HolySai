@@ -9,6 +9,7 @@ import {
 import { TrackingPanel, TrackingStatusPill } from '@/components/tracking/TrackingPanel';
 import type { CurrentLocation, StudentRow } from '@/api/types';
 import { cx, fmt, todayKey } from '@/lib/format';
+import { gradeMeterTone } from '@/lib/grades';
 import type { Profile } from '../students/Student360Page';
 
 type ChildRow = StudentRow & { relationship: string; isPrimary: boolean; canViewTracking: boolean; locationStatus: string | null; locationRecordedAt: string | null };
@@ -154,7 +155,7 @@ function PortalShell({ parent, child, tab, onTab, onChild, children: body }: {
 
   return (
     <Page className="portal">
-      <CampusBanner bleed={false} title={<>{greet}, {firstName}</>} sub={<>Here's {child.firstName}'s day at a glance — attendance, travel, learning and fees.</>} />
+      <CampusBanner bleed={false} welcome title={<>{greet}, <span className="campusbanner__name">{firstName}</span></>} sub={<>Here's {child.firstName}'s day at a glance — attendance, travel, learning and fees.</>} />
       {kids.length > 1 && (
         <div className="childpick" role="group" aria-label="Choose a child">
           {kids.map((c) => (
@@ -309,7 +310,7 @@ function HomeTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab: (
           {prof.isLoading ? <Skeleton height={120} /> : prof.data?.academics.subjects.length ? (
             <div className="col g-3">
               {prof.data.academics.subjects.slice(0, 4).map((s) => (
-                <Meter key={s.name} label={s.name} value={s.score} right={`${s.score} · ${s.grade}`} tone={s.score >= 80 ? 'teal' : s.score >= 70 ? 'info' : 'amber'} />
+                <Meter key={s.name} label={s.name} value={s.score} right={`${s.score} · ${s.grade}`} tone={gradeMeterTone(s.grade)} />
               ))}
             </div>
           ) : <Muted>Results will appear after the first assessment.</Muted>}

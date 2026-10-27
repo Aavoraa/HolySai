@@ -7,6 +7,7 @@ import { ALL_PERMISSIONS } from '../config/rbac.js';
 import * as ops from '../services/operations.service.js';
 import * as rec from '../services/operations-records.service.js';
 import * as val from '../validators/operations.validators.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Operations domain: assets, facilities, maintenance, inventory, school
@@ -80,6 +81,8 @@ r.get('/maintenance/summary', READ, validate(val.campusQuery, 'query'), async (r
 r.post('/maintenance', READ, validate(val.maintenanceCreate), async (req: Request, res: Response) =>
   created(res, await ops.createMaintenance(req, v(req)), 'Maintenance request raised'));
 r.patch('/maintenance/:id/status', MANAGE, id, validate(val.maintenanceStatus), async (req: Request, res: Response) => {
+  // Assigning and progressing work stays with Operations; approving or rejecting is the Super Admin's.
+  if (['Approved', 'Rejected'].includes(v(req).status)) assertDecider(req.user, 'Approving or rejecting a maintenance request');
   await ops.updateMaintenanceStatus(req, pid(req), v(req));
   return ok(res, null, `Request ${String(v(req).status).toLowerCase()}`);
 });
@@ -145,6 +148,7 @@ r.get('/certificates/verify/:code', SIGNED_IN, validate(val.certCode, 'params'),
 r.post('/certificates', DOC_MANAGE, validate(val.certCreate), async (req: Request, res: Response) =>
   created(res, await rec.createCertificate(req, v(req)), 'Certificate requested'));
 r.post('/certificates/:id/decision', DOC_MANAGE, id, validate(val.certDecision), async (req: Request, res: Response) => {
+  if (['approve', 'reject'].includes(v(req).action)) assertDecider(req.user, 'Approving or rejecting a certificate');
   const out = await rec.decideCertificate(req, pid(req), v(req));
   return ok(res, out, `Certificate ${out.status.toLowerCase()}`);
 });

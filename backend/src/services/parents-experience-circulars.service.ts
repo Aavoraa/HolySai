@@ -151,7 +151,7 @@ export async function submitCircular(req: Request, id: string) {
   if (c.status !== 'Draft') throw conflict(`Only drafts can be sent for approval (this circular is ${c.status})`, 'INVALID_TRANSITION');
   await tx(async (db) => {
     await query(`UPDATE circulars SET status = 'Under Review', submitted_by = $2, submitted_at = now() WHERE id = $1`, [id, req.user!.id], db);
-    await notifyRoles(['principal', 'school_admin'], {
+    await notifyRoles(['principal', 'school_admin', 'super_admin'], {
       category: 'Attention', topic: 'circulars', icon: 'megaphone', title: 'Circular awaiting approval',
       body: `${c.title} · ${c.audience} · submitted by ${req.user!.fullName}`, route: '/circulars', entityType: 'circular', entityId: id,
     }, db);

@@ -1,0 +1,194 @@
+# Budget & Planning and the central Approvals inbox.
+# Read = planning.read, prepare / submit = planning.manage,
+# review / approve / reject = approvals.decide (Super Admin only — every approval in the app).
+
+x-planning-common:
+  sec: &sec [{ bearerAuth: [] }]
+  okId: &okId
+    '200': { $ref: '#/components/responses/Ok' }
+    '400': { $ref: '#/components/responses/BadRequest' }
+    '403': { $ref: '#/components/responses/Forbidden' }
+    '404': { $ref: '#/components/responses/NotFound' }
+    '409': { description: Invalid workflow state }
+  id: &id [{ $ref: '#/components/parameters/IdPath' }]
+  plan: &plan
+    required: true
+    content:
+      application/json:
+        schema:
+          type: object
+          required: [title, campusId, department, category, periodStart, periodEnd]
+          properties:
+            title: { type: string, minLength: 3, maxLength: 160 }
+            campusId: { type: string, format: uuid }
+            academicYearId: { type: string, format: uuid, description: Defaults to the current academic year }
+            department: { type: string, maxLength: 80 }
+            category: { type: string, maxLength: 60, description: Budget category (matches budgets.category) }
+            periodStart: { type: string, format: date }
+            periodEnd: { type: string, format: date }
+            justification: { type: string, maxLength: 4000 }
+            amountRequested: { type: number, description: Used only when no line items are given }
+            submit: { type: boolean, description: Create only — submit for Super Admin approval straight away }
+            lines:
+              type: array
+              maxItems: 100
+              items:
+                type: object
+                required: [item, quantity, unitCost]
+                properties:
+                  item: { type: string, maxLength: 160 }
+                  quantity: { type: number }
+                  unitCost: { type: number }
+                  notes: { type: string, maxLength: 300 }
+  empty: &empty
+    content: { application/json: { schema: { type: object } } }
+
+/planning/lookups:
+  get:
+    tags: [Planning]
+    summary: Categories, departments, academic years and statuses for the plan form
+    x-permission: planning.read | approvals.decide
+    security: *sec
+    responses: { '200': { $ref: '#/components/responses/Ok' }, '403': { $ref: '#/components/responses/Forbidden' } }
+
+/planning/summary:
+  get:
+    tags: [Planning]
+    summary: KPIs (requested / approved / pending), by category and by status
+    x-permission: planning.read | approvals.decide
+    security: *sec
+    parameters:
+      - $ref: '#/components/parameters/CampusId'
+      - { name: academicYearId, in: query, schema: { type: string, format: uuid } }
+    responses: { '200': { $ref: '#/components/responses/Ok' }, '403': { $ref: '#/components/responses/Forbidden' } }
+
+/planning/plans:
+  get:
+    tags: [Planning]
+    summary: List budget plans
+    x-permission: planning.read | approvals.decide
+    security: *sec
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Dir'
+      - $ref: '#/components/parameters/CampusId'
+      - { name: academicYearId, in: query, schema: { type: string, format: uuid } }
+      - { name: status, in: query, schema: { type: string, enum: [Draft, Submitted, Under Review, Approved, Rejected, pending] } }
+      - { name: category, in: query, schema: { type: string } }
+      - { name: department, in: query, schema: { type: string } }
+    responses: { '200': { $ref: '#/components/responses/Paged' }, '403': { $ref: '#/components/responses/Forbidden' } }
+  post:
+    tags: [Planning]
+    summary: Prepare a budget plan (line items are summed into the requested amount); optionally submit it
+    x-permission: planning.manage
+    security: *sec
+    requestBody: *plan
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/planning/plans/{id}:
+  parameters: *id
+  get:
+    tags: [Planning]
+    summary: Plan with line items, status history and the budget line it feeds
+    x-permission: planning.read | approvals.decide
+    security: *sec
+    responses: *okId
+  put:
+    tags: [Planning]
+    summary: Edit a draft plan (replaces its line items)
+    x-permission: planning.manage
+    security: *sec
+    requestBody: *plan
+    responses: *okId
+  delete:
+    tags: [Planning]
+    summary: Delete a draft plan
+    x-permission: planning.manage
+    security: *sec
+    responses: *okId
+
+/planning/plans/{id}/submit:
+  post: { tags: [Planning], summary: Draft → Submitted (notifies the Super Admin), x-permission: planning.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+/planning/plans/{id}/reopen:
+  post: { tags: [Planning], summary: Rejected → Draft for revision and resubmission, x-permission: planning.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+/planning/plans/{id}/review:
+  post: { tags: [Planning], summary: Submitted → Under Review, x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+/planning/plans/{id}/approve:
+  post:
+    tags: [Planning]
+    summary: Approve (optionally for less than requested); the approved amount is added to the matching budgets row (year + campus + category), created if missing
+    x-permission: approvals.decide
+    security: *sec
+    parameters: *id
+    requestBody:
+      content: { application/json: { schema: { type: object, properties: { amountApproved: { type: number }, note: { type: string, maxLength: 500 } } } } }
+    responses: *okId
+/planning/plans/{id}/reject:
+  post:
+    tags: [Planning]
+    summary: Reject with a reason (notifies the preparer)
+    x-permission: approvals.decide
+    security: *sec
+    parameters: *id
+    requestBody:
+      required: true
+      content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } }
+    responses: *okId
+
+/approvals/summary:
+  get:
+    tags: [Approvals]
+    summary: Pending Super Admin decisions — total, value, items waiting over 7 days and counts per module
+    x-permission: approvals.decide
+    security: *sec
+    parameters: [{ $ref: '#/components/parameters/CampusId' }]
+    responses: { '200': { $ref: '#/components/responses/Ok' }, '403': { $ref: '#/components/responses/Forbidden' } }
+
+/approvals/pending:
+  get:
+    tags: [Approvals]
+    summary: Everything awaiting a Super Admin decision across modules (oldest first by default)
+    x-permission: approvals.decide
+    security: *sec
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: sort, in: query, schema: { type: string, enum: [age, amount, module] } }
+      - $ref: '#/components/parameters/Dir'
+      - $ref: '#/components/parameters/CampusId'
+      - name: module
+        in: query
+        schema:
+          type: string
+          enum: [budget_plan, expense, reimbursement, concession, allowance, leave, overtime, payroll_run, circular, lesson_plan,
+                 report_card, document, admission, maintenance, certificate, transfer, idea, policy]
+    responses: { '200': { $ref: '#/components/responses/Paged' }, '403': { $ref: '#/components/responses/Forbidden' } }
+
+/approvals/{module}/{id}/decide:
+  post:
+    tags: [Approvals]
+    summary: Approve or reject a pending item; dispatched to the owning module's own workflow (its rules, notifications and audit apply)
+    x-permission: approvals.decide
+    security: *sec
+    parameters:
+      - { name: module, in: path, required: true, schema: { type: string } }
+      - { name: id, in: path, required: true, description: 'Record id; allowances use "<allowance type>|<campus id>"', schema: { type: string } }
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [decision]
+            properties:
+              decision: { type: string, enum: [approve, reject] }
+              reason: { type: string, maxLength: 500, description: Required to reject }
+              amountApproved: { type: number, description: Budget plans only — approve for less than requested }
+    responses: *okId

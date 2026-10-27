@@ -109,7 +109,10 @@ describe('Paper Correction gateway', () => {
     const r = await (await as('teacher')).get('/api/exam-correction/api/exams');
     expect(r.status).toBe(502);
     reply = () => ({ status: 409, body: '{"detail":"Results are draft"}' });
-    const c = await (await as('principal')).post('/api/exam-correction/api/exams/e1/results/approved', {});
+    // Approving results is a Super Admin decision; the principal is refused before the service is called.
+    const denied = await (await as('principal')).post('/api/exam-correction/api/exams/e1/results/approved', {});
+    expect(denied.status).toBe(403);
+    const c = await (await as('superadmin')).post('/api/exam-correction/api/exams/e1/results/approved', {});
     expect(c.status).toBe(409);
     expect(c.body).toMatchObject({ success: false, message: 'Results are draft', error: 'EXAM_VISION_409' });
   });

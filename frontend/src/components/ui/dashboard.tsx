@@ -61,14 +61,18 @@ export function QuickActions({ items, title = 'Quick Actions' }: { items: QuickA
 }
 
 /** Standard right rail: role-specific quick actions, the school's line, notifications and upcoming events. */
-export function DashRail({ actions, events = true, quote = true, children }: { actions: QuickAction[]; events?: boolean; quote?: boolean; children?: ReactNode }) {
+export function DashRail({ actions, events = true, quote = true, notes = 5, eventCount = 4, children }: {
+  actions: QuickAction[]; events?: boolean; quote?: boolean;
+  /** How many notifications and events to list. */
+  notes?: number; eventCount?: number; children?: ReactNode;
+}) {
   return (
     <>
       <QuickActions items={actions} />
       {children}
       {quote && <QuoteCard />}
-      <RecentNotifications />
-      {events && <UpcomingEvents />}
+      <RecentNotifications limit={notes} />
+      {events && <UpcomingEvents limit={eventCount} />}
     </>
   );
 }
@@ -78,10 +82,10 @@ const topicLabel = (t?: string | null) => (t ? t.replace(/[_-]+/g, ' ').replace(
 
 const NOTE_DOT: Record<string, string> = { critical: 'critical', warning: 'warning', caution: 'warning', success: 'success', info: 'info', neutral: 'violet' };
 
-/** The five latest notifications for the signed-in user. */
-export function RecentNotifications() {
+/** The latest notifications for the signed-in user. */
+export function RecentNotifications({ limit = 5 }: { limit?: number }) {
   const navigate = useNavigate();
-  const notes = usePagedQuery<NotificationItem>('/notifications', { pageSize: 5 });
+  const notes = usePagedQuery<NotificationItem>('/notifications', { pageSize: limit });
   return (
     <Card icon="bell" title="Recent Notifications" actions={<CardLink to="/notifications">View All</CardLink>}>
       {notes.isLoading ? (
@@ -90,10 +94,10 @@ export function RecentNotifications() {
         <div>
           {notes.data.rows.map((n) => (
             <button key={n.id} type="button" className="nlist__item" onClick={() => navigate(n.route ?? '/notifications')}>
-              <span className={`nlist__dot nlist__dot--${NOTE_DOT[n.tone] ?? 'info'}`} />
+              <span className={`nlist__ico nlist__ico--${NOTE_DOT[n.tone] ?? 'info'}`} title={topicLabel(n.topic)}><Icon name={n.icon || 'bell'} size={16} /></span>
               <span className="grow" style={{ minWidth: 0 }}>
                 <span className={`nlist__title${n.readAt ? '' : ' nlist__title--unread'}`}>{n.title}</span>
-                <span className="nlist__meta">{topicLabel(n.topic)} · {fmt.relative(n.createdAt)}</span>
+                <span className="nlist__meta">{fmt.relative(n.createdAt)}</span>
               </span>
               <Icon name="chevronRight" size={14} />
             </button>
@@ -106,7 +110,13 @@ export function RecentNotifications() {
   );
 }
 
-const EVENT_TAG: Record<string, string> = { Academic: 'academic', PTM: 'academic', Sports: 'sports', School: 'event', Cultural: 'event', Holiday: 'finance' };
+/** "14:30:00" → "2:30 PM" */
+const fmtTime = (t: string) => {
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
+const EVENT_TAG: Record<string, string> ={ Academic: 'academic', PTM: 'academic', Sports: 'sports', School: 'event', Cultural: 'event', Holiday: 'finance' };
 
 /** Next school events: the staff calendar, or the family calendar for parents. Renders nothing for roles without either. */
 export function UpcomingEvents({ limit = 4 }: { limit?: number }) {
@@ -133,14 +143,18 @@ export function UpcomingEvents({ limit = 4 }: { limit?: number }) {
           {rows.map((e) => {
             const dt = new Date(e.startsOn);
             return (
-              <div className="evrow" key={e.id}>
+              <Link className="evrow" key={e.id} to={staff ? '/events' : '/parent-360'}>
                 <span className="evdate"><strong>{dt.getDate()}</strong><span>{dt.toLocaleString('en-IN', { month: 'short' })}</span></span>
                 <div className="grow" style={{ minWidth: 0 }}>
                   <div className="evrow__title t-clip">{e.title}</div>
-                  <div className="evrow__meta t-clip">{e.startsAt ? `${e.startsAt.slice(0, 5)} · ` : ''}{e.venue ?? e.audience}</div>
+                  <div className="evrow__meta t-clip">{e.audience}{e.venue ? ` · ${e.venue}` : ''}</div>
+                  <div className="evrow__meta t-clip">
+                    {e.startsAt ? fmtTime(e.startsAt) : 'All day'}
+                    <span className={`evtag evtag--${EVENT_TAG[e.eventType] ?? 'other'}`}>{e.eventType}</span>
+                  </div>
                 </div>
-                <span className={`evtag evtag--${EVENT_TAG[e.eventType] ?? 'other'}`}>{e.eventType}</span>
-              </div>
+                <Icon name="chevronRight" size={14} />
+              </Link>
             );
           })}
         </div>

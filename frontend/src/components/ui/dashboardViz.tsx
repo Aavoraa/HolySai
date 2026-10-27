@@ -54,8 +54,8 @@ export function Sparkline({ values, color, className }: { values: number[]; colo
 
 /* ---- Metric card ----------------------------------------------------------- */
 export type MetricTone = 'rose' | 'blue' | 'green' | 'amber';
-/** Four distinct tones: red, violet, teal and gold. */
-const SPARK: Record<MetricTone, string> = { rose: '#D32F2F', blue: '#6D4AB8', green: '#12867F', amber: '#D4A017' };
+/** Four distinct tones: rose, violet, teal and gold. */
+const SPARK: Record<MetricTone, string> = { rose: '#E0436B', blue: '#8B6BE0', green: '#13998A', amber: '#F0A21E' };
 
 /** Small monthly bars; the latest bar is solid, earlier ones lighter. */
 export function MiniBars({ values, labels, color, className }: { values: number[]; labels?: string[]; color: string; className?: string }) {
@@ -195,7 +195,7 @@ export function LineChart({ labels, tips, series, yMin, yMax = 100, unit = '%', 
         }}>
         <defs>
           <linearGradient id={`lc${gid}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor={main?.color} stopOpacity=".08" />
+            <stop offset="0" stopColor={main?.color} stopOpacity=".16" />
             <stop offset="1" stopColor={main?.color} stopOpacity="0" />
           </linearGradient>
         </defs>
@@ -213,11 +213,12 @@ export function LineChart({ labels, tips, series, yMin, yMax = 100, unit = '%', 
         )}
         {paths.slice().reverse().map(({ s, d, pts }) => (
           <g key={s.name}>
-            <path d={d} fill="none" stroke={s.color} strokeWidth={s === main ? 1.6 : 1.2} strokeLinejoin="round" strokeLinecap="round" />
+            <path d={d} fill="none" stroke={s.color} strokeWidth={s === main ? 1.8 : 1.5} strokeLinejoin="round" strokeLinecap="round" />
+            {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="3" fill={s.color} stroke="var(--surface)" strokeWidth="1.2" />)}
           </g>
         ))}
         {tipValue != null && <line x1={X(active)} x2={X(active)} y1={P.t} y2={P.t + ih} stroke="var(--border)" />}
-        {tipValue != null && <circle cx={X(active)} cy={Y(tipValue)} r="4" fill={main.color} stroke="var(--surface)" strokeWidth="2" />}
+        {tipValue != null && <circle cx={X(active)} cy={Y(tipValue)} r="5" fill={main.color} stroke="var(--surface)" strokeWidth="2" />}
       </svg>
       {tipValue != null && (
         <div className={`linechart__tip${X(active) > W * 0.86 ? ' linechart__tip--end' : X(active) < W * 0.14 ? ' linechart__tip--start' : ''}`} style={{ left: `${(X(active) / W) * 100}%`, top: `${(Y(tipValue) / H) * 100}%` }} aria-hidden="true">
@@ -234,7 +235,7 @@ export interface DonutBand { label: string; value: number; color: string; to?: s
 
 export function Donut({ bands, center, centerSub, label }: { bands: DonutBand[]; center: string; centerSub?: string; label: string }) {
   const total = bands.reduce((s, b) => s + b.value, 0) || 1;
-  const R = 72, T = 12, C = 2 * Math.PI * R;
+  const R = 70, T = 16, C = 2 * Math.PI * R;
   let acc = 0;
   return (
     <div className="donut">
@@ -252,6 +253,25 @@ export function Donut({ bands, center, centerSub, label }: { bands: DonutBand[];
       </svg>
       <div className="donut__center" aria-hidden="true"><strong>{center}</strong>{centerSub && <span>{centerSub}</span>}</div>
     </div>
+  );
+}
+
+/* ---- Promo card -------------------------------------------------------------- */
+/** The school's line beside a student illustration, with one call to action. */
+export function PromoCard({ eyebrow = 'Building Bright Futures', title = <>Better Learning<br />Brighter Future</>,
+  text = 'Education builds character, shapes the future.', cta = 'Learn More', to, image = '/images/learning-promo.png' }: {
+  eyebrow?: string; title?: ReactNode; text?: string; cta?: string; to: string; image?: string;
+}) {
+  return (
+    <section className="promocard" aria-label="Better learning, brighter future">
+      <img className="promocard__img" src={image} alt="" aria-hidden="true" />
+      <div className="promocard__body">
+        <span className="promocard__eyebrow">{eyebrow}</span>
+        <h2 className="promocard__title">{title}</h2>
+        <p className="promocard__text">{text}</p>
+        <Link className="promocard__cta" to={to}>{cta}<Icon name="arrowRight" size={14} /></Link>
+      </div>
+    </section>
   );
 }
 

@@ -12,6 +12,7 @@ import {
 import { SERIES } from '@/lib/tones';
 import type { ExpenseRow, ExpenseSummary } from './types';
 import { fieldErrors, isMoney, ListCount, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 export default function ExpensesPage() {
   const { can, user } = useAuth();
@@ -39,13 +40,13 @@ export default function ExpensesPage() {
 
   return (
     <Page>
-      <PageHead title="Expenses" sub="Raised by staff, approved by a budget owner, then by Finance."
+      <PageHead title="Expenses" sub="Raised by staff, reviewed by Finance, approved or rejected by the Super Admin."
         actions={can('finance.manage') && <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>Raise an expense</Button>} />
       <Card>
         <Flow steps={[
           { label: 'Draft', meta: f ? `${f.draft} raised by staff` : 'Raised by staff', state: 'done' },
           { label: 'Submitted', meta: f ? `${f.submitted} waiting` : '…', state: 'done' },
-          { label: 'Under Review', meta: f ? `${f.underReview} with a budget owner` : '…', state: 'active' },
+          { label: 'Under Review', meta: f ? `${f.underReview} with the Super Admin` : '…', state: 'active' },
           { label: 'Approved', meta: f ? `${f.approvedThisWeek} this week` : '…' },
           { label: 'Rejected', meta: f ? `${f.rejected30d} in 30 days — returned with a reason` : '…' },
         ]} />
@@ -80,8 +81,9 @@ export default function ExpensesPage() {
                 key: 'a', label: '', className: 'num', sortable: false, render: (r) => (
                   <div className="row g-2 end">
                     {r.status === 'Draft' && can('finance.manage') && <Button size="sm" loading={busy('submit', r.id)} onClick={() => act.submit.mutate(r.id)}>Submit</Button>}
-                    {r.status === 'Submitted' && can('finance.approve') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
-                    {['Submitted', 'Under Review'].includes(r.status) && can('finance.approve') && <>
+                    {r.status === 'Submitted' && can('finance.manage') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
+                    {['Submitted', 'Under Review'].includes(r.status) && !can('approvals.decide') && <AwaitingSuperAdmin short />}
+                    {['Submitted', 'Under Review'].includes(r.status) && can('approvals.decide') && <>
                       <Button size="sm" variant="teal" icon="check" loading={busy('approve', r.id)} onClick={async () => {
                         if (await confirm({ title: `Approve ${r.code}?`, body: `${r.description} — ${fmt.money(r.amount)} will count against the ${r.category} budget.`, confirmLabel: 'Approve', icon: 'check' })) act.approve.mutate(r.id);
                       }}>Approve</Button>

@@ -11,6 +11,7 @@ import {
 import { fmt, todayKey } from '@/lib/format';
 import { serverFieldErrors, useSections } from './shared';
 import type { ObjectiveRow } from './objectiveForms';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface PlanRow {
   id: string; title: string; status: string; plannedFor: string | null; aiGenerated: boolean; sectionId: string | null; sectionLabel: string | null;
@@ -109,6 +110,9 @@ function PlanModal({ id, onClose, onEdit }: { id: string; onClose: () => void; o
   const p = q.data;
   const isAuthor = !!p && p.authorId === user?.employeeId;
   const reviewer = !!p && !isAuthor && can('academics.manage') && can('students.read') && user?.role.scope !== 'class';
+  // Approving or rejecting is the Super Admin's alone; reviewers can still start the review.
+  const decider = !!p && !isAuthor && can('approvals.decide');
+  const pendingDecision = !!p && (p.status === 'Submitted' || p.status === 'Under Review');
   const busy = act.isPending || del.isPending;
 
   const decide = async (action: 'approve' | 'reject') => {
@@ -138,7 +142,8 @@ function PlanModal({ id, onClose, onEdit }: { id: string; onClose: () => void; o
             <Button variant="primary" icon="send" loading={act.isPending} onClick={() => act.mutate({ action: 'submit' })}>Submit for review</Button>
           )}
           {reviewer && p.status === 'Submitted' && <Button onClick={() => act.mutate({ action: 'review' })} loading={act.isPending}>Start review</Button>}
-          {reviewer && (p.status === 'Submitted' || p.status === 'Under Review') && (
+          {pendingDecision && !decider && <AwaitingSuperAdmin />}
+          {decider && pendingDecision && (
             <>
               <Button variant="danger" onClick={() => decide('reject')} disabled={busy}>Reject</Button>
               <Button variant="teal" icon="check" onClick={() => decide('approve')} disabled={busy}>Approve</Button>
@@ -188,7 +193,7 @@ function PlanModal({ id, onClose, onEdit }: { id: string; onClose: () => void; o
             </div>
           ) : null}
           {p.content.homework && <div><div className="eyebrow mb-2">Homework</div><p className="t-sm">{p.content.homework}</p></div>}
-          {reviewer && (p.status === 'Submitted' || p.status === 'Under Review') && (
+          {decider && pendingDecision && (
             <TextArea label="Review note" rows={2} value={note} onChange={(v) => { setNote(v); setNoteError(''); }} error={noteError} maxLength={500}
               placeholder="Required when rejecting; optional when approving." />
           )}

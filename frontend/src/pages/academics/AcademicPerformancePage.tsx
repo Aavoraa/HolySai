@@ -13,7 +13,7 @@ import { SUBJECT_SHORT } from './shared';
 interface Performance {
   currentTerm: string | null;
   previousTerm: string | null;
-  expectation: { above: number; at: number };
+  expectation: { above: number; at: number; aboveGrade?: string; atGrade?: string };
   kpis: { average: number | null; averageDelta: number | null; students: number; abovePct: number; aboveDelta: number; atPct: number; atDelta: number; belowPct: number; belowDelta: number };
   subjectAverages: { subject: string; current: number; previous: number }[];
   movers: { title: string; delta: number; current: number; previous: number; students: number }[];
@@ -62,8 +62,8 @@ export default function AcademicPerformancePage() {
         <>
           <Grid cols="g-4col">
             <Kpi icon="barChart" label="School average" value={k.average ?? '—'} tone="teal" delta={k.averageDelta} deltaUnit=" pts" foot={termNote} />
-            <Kpi icon="trending" label="Above expectation" value={`${k.abovePct}%`} delta={k.aboveDelta} deltaUnit=" pts" foot={`Average ${d.expectation.above}+`} onClick={() => list.setFilter('band', 'above')} />
-            <Kpi icon="target" label="At expectation" value={`${k.atPct}%`} tone="info" delta={k.atDelta} deltaUnit=" pts" foot={`Average ${d.expectation.at}–${d.expectation.above - 1}`} onClick={() => list.setFilter('band', 'at')} />
+            <Kpi icon="trending" label="Above expectation" value={`${k.abovePct}%`} delta={k.aboveDelta} deltaUnit=" pts" foot={`Average ${d.expectation.above}+ (IGCSE ${d.expectation.aboveGrade ?? 'B'} or better)`} onClick={() => list.setFilter('band', 'above')} />
+            <Kpi icon="target" label="At expectation" value={`${k.atPct}%`} tone="info" delta={k.atDelta} deltaUnit=" pts" foot={`Average ${d.expectation.at}–${d.expectation.above - 1} (grade ${d.expectation.atGrade ?? 'C'})`} onClick={() => list.setFilter('band', 'at')} />
             <Kpi icon="alert" label="Below expectation" value={`${k.belowPct}%`} tone="critical" delta={k.belowDelta} deltaUnit=" pts" inverse foot={`Average under ${d.expectation.at}`} onClick={() => list.setFilter('band', 'below')} />
           </Grid>
 

@@ -101,7 +101,7 @@ export async function dashboard(campusId?: string) {
             (SELECT count(*)::int FROM admissions a JOIN e e2 ON e2.id = a.enquiry_id) AS applications,
             (SELECT count(*)::int FROM admissions a JOIN e e2 ON e2.id = a.enquiry_id
               WHERE a.status NOT IN ('Enrolled', 'Rejected', 'Withdrawn')
-                AND EXISTS (SELECT 1 FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.status <> 'Verified' AND d.deleted_at IS NULL)) AS "awaitingDocuments",
+                AND EXISTS (SELECT 1 FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.category <> 'Admission form' AND d.status <> 'Verified' AND d.deleted_at IS NULL)) AS "awaitingDocuments",
             count(*) FILTER (WHERE reach >= 8)::int AS offers,
             (SELECT count(*)::int FROM admissions a JOIN e e2 ON e2.id = a.enquiry_id
               WHERE a.status = 'Offer Made' AND a.offer_expires_on BETWEEN current_date AND current_date + 7) AS "offersExpiring"
@@ -152,7 +152,7 @@ export async function attentionItems(campusId?: string) {
     many(`SELECT e.code, (current_date - (a.created_at AT TIME ZONE 'Asia/Kolkata')::date) AS days
             FROM admissions a JOIN enquiries e ON e.id = a.enquiry_id
             ${w.sql} AND a.status IN ('Submitted', 'Under Review')
-              AND EXISTS (SELECT 1 FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.status = 'Pending' AND d.deleted_at IS NULL)
+              AND EXISTS (SELECT 1 FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.category <> 'Admission form' AND d.status = 'Pending' AND d.deleted_at IS NULL)
               AND a.created_at < now() - interval '3 days'
             ORDER BY a.created_at LIMIT 5`, w.params),
     one(`SELECT count(*)::int AS n FROM follow_ups f JOIN enquiries e ON e.id = f.enquiry_id ${w.sql} AND f.status = 'Scheduled' AND f.scheduled_at < now()`, w.params),

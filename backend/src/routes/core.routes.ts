@@ -13,7 +13,7 @@ import { authorizeStudent, studentScope } from '../services/access.service.js';
 import { hashPassword } from '../services/auth.service.js';
 import { revokeAllForUser } from '../services/token.service.js';
 import { upload, verifyUploadedFile, openStoredFile, safeFilename } from '../services/documents.service.js';
-import { ALL_PERMISSIONS } from '../config/rbac.js';
+import { ALL_PERMISSIONS, SUPER_ADMIN_ONLY } from '../config/rbac.js';
 
 const r = Router();
 const uuidParam = z.object({ id: z.uuid() });
@@ -339,6 +339,10 @@ r.put('/roles/:id/permissions', requirePermission('users.manage', 'settings.mana
     if (!role) throw notFound('Role not found');
     if (role.key === 'super_admin') throw forbidden('Super Admin permissions cannot be edited');
     const perms: string[] = v(req).permissions;
+    // Approve / reject rights belong to the Super Admin alone — nobody else can hand them out.
+    if (req.user!.roleKey !== 'super_admin' && perms.some((p) => (SUPER_ADMIN_ONLY as string[]).includes(p))) {
+      throw forbidden('Only a Super Admin can grant approval rights');
+    }
     await query('DELETE FROM role_permissions WHERE role_id = $1', [v(req, 'params').id]);
     await query(
       `INSERT INTO role_permissions (role_id, permission_id) SELECT $1, id FROM permissions WHERE key = ANY($2)`,
@@ -420,7 +424,8 @@ r.get('/documents/:id/download', any, validate(uuidParam, 'params'), async (req:
   stream.pipe(res);
 });
 
-r.patch('/documents/:id/verify', requirePermission('documents.manage'), validate(uuidParam, 'params'),
+// Verifying or rejecting a document is an approval decision: Super Admin only.
+r.patch('/documents/:id/verify', requirePermission('approvals.decide'), validate(uuidParam, 'params'),
   validate(z.object({ status: z.enum(['Verified', 'Rejected']), note: z.string().max(300).optional() })),
   async (req: Request, res: Response) => {
     const b = v(req);

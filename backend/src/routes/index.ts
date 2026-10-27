@@ -19,6 +19,10 @@ import innovationRoutes from './innovation.routes.js';
 import groupRoutes from './group.routes.js';
 import intelligenceRoutes from './intelligence.routes.js';
 import examCorrectionRoutes from './exam-correction.routes.js';
+import planningRoutes from './planning.routes.js';
+import jobCardRoutes from './jobcards.routes.js';
+import parentLogRoutes from './parentlog.routes.js';
+import syllabusRoutes from './syllabus.routes.js';
 
 export const api = Router();
 
@@ -50,3 +54,7 @@ api.use('/', innovationRoutes);
 api.use('/', groupRoutes);
 api.use('/', intelligenceRoutes);
 api.use('/', examCorrectionRoutes); // Paper Correction (AI answer-sheet marking, exam-vision/)
+api.use('/', planningRoutes);       // budget plans + Super Admin approvals inbox
+api.use('/', jobCardRoutes);        // job cards between departments
+api.use('/', parentLogRoutes);      // parent & staff contact log
+api.use('/', syllabusRoutes);       // Cambridge IGCSE syllabuses and grade boundaries

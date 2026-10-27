@@ -13,7 +13,8 @@ import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
 import { notifyRoles } from './notification.service.js';
-import { advanceTo, createApplicationRow, fmtWhen, resolveLead, writeStage } from './admissions.service.js';
+import { advanceTo, fmtWhen, resolveLead, writeStage } from './admissions.service.js';
+import { FORM_FILTER, formStatusSql } from './admissions-forms.service.js';
 
 const LIVE = `a.status NOT IN ('Enrolled', 'Rejected', 'Withdrawn')`;
 
@@ -32,7 +33,7 @@ const NEXT: Record<string, string[]> = {
 const DOC_COUNTS = `
   LEFT JOIN LATERAL (
     SELECT count(*)::int AS total, count(*) FILTER (WHERE d.status = 'Verified')::int AS verified
-      FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.deleted_at IS NULL) dc ON true`;
+      FROM documents d WHERE d.owner_type = 'admission' AND d.owner_id = a.id AND d.category <> 'Admission form' AND d.deleted_at IS NULL) dc ON true`;
 
 const APP_ROW_SQL = `
   SELECT a.id, a.application_no AS "applicationNo", a.status, a.student_name AS "studentName", a.grade_applied AS grade,
@@ -53,7 +54,10 @@ const APP_ROW_SQL = `
            WHEN a.status = 'Submitted' THEN 'Awaiting review'
            ELSE COALESCE(e.next_action, 'Review application')
          END AS "blockingItem",
-         (a.status = 'Offer Made' AND a.offer_expires_on <= current_date + 7) AS "offerExpiring"
+         (a.status = 'Offer Made' AND a.offer_expires_on <= current_date + 7) AS "offerExpiring",
+         ${formStatusSql()} AS "formStatus", a.form_source AS "formSource", a.form_received_on AS "formReceivedOn",
+         (a.form_completed_at IS NOT NULL) AS "formComplete", a.form_document_id AS "formDocumentId",
+         a.father_name AS "fatherName", a.mother_name AS "motherName", a.guardian_phone AS "guardianPhone"
     FROM admissions a
     JOIN campuses cp ON cp.id = a.campus_id
     LEFT JOIN enquiries e ON e.id = a.enquiry_id
@@ -68,7 +72,7 @@ const SORTS: Record<string, string> = {
   curriculum: 'e.curriculum', offerExpiresOn: 'a.offer_expires_on', assessmentAt: 'a.assessment_at',
 };
 
-export async function listApplications(f: Pagination & { campusId?: string; status?: string; grade?: string; documents?: string }) {
+export async function listApplications(f: Pagination & { campusId?: string; status?: string; grade?: string; documents?: string; form?: string }) {
   const w = new Where();
   w.addIf(f.campusId, 'a.campus_id = ?');
   if (f.status === 'live') w.add(LIVE);
@@ -76,7 +80,12 @@ export async function listApplications(f: Pagination & { campusId?: string; stat
   w.addIf(f.grade, 'a.grade_applied = ?');
   if (f.documents === 'complete') w.add('dc.total = dc.verified');
   if (f.documents === 'incomplete') w.add('dc.total > dc.verified');
-  if (f.q) w.add('(a.student_name ILIKE ? OR a.application_no ILIKE ? OR e.code ILIKE ? OR e.parent_name ILIKE ?)', likeTerm(f.q), likeTerm(f.q), likeTerm(f.q), likeTerm(f.q));
+  if (f.form && FORM_FILTER[f.form]) w.add(FORM_FILTER[f.form]);
+  if (f.q) {
+    w.add(`(a.student_name ILIKE ? OR a.application_no ILIKE ? OR e.code ILIKE ? OR e.parent_name ILIKE ?
+            OR a.father_name ILIKE ? OR a.mother_name ILIKE ? OR a.guardian_phone ILIKE ?)`,
+    ...Array(7).fill(likeTerm(f.q)));
+  }
   const { limit, offset } = limitOffset(f);
   const rows = await many(
     `${APP_ROW_SQL.replace('SELECT a.id,', 'SELECT count(*) OVER() AS total, a.id,')} ${w.sql}
@@ -111,26 +120,13 @@ export async function getApplication(id: string) {
   const app = await one(`${APP_ROW_SQL} WHERE a.id = $1`, [id]);
   if (!app) throw notFound('Application not found', 'APPLICATION_NOT_FOUND');
   const documents = await many(
-    `SELECT d.id, d.name, d.status, d.verified_at AS "verifiedAt", u.full_name AS "verifiedBy"
+    `SELECT d.id, d.name, d.status, d.verified_at AS "verifiedAt", u.full_name AS "verifiedBy",
+            (d.storage_key IS NOT NULL) AS "hasFile", d.original_name AS "fileName", d.mime_type AS "mimeType", d.size_bytes AS "sizeBytes"
        FROM documents d LEFT JOIN users u ON u.id = d.verified_by
-      WHERE d.owner_type = 'admission' AND d.owner_id = $1 AND d.deleted_at IS NULL ORDER BY d.created_at, d.name`, [id]);
+      WHERE d.owner_type = 'admission' AND d.owner_id = $1 AND d.category <> 'Admission form' AND d.deleted_at IS NULL ORDER BY d.created_at, d.name`, [id]);
   return { ...app, documents };
 }
-
-export async function createApplication(req: Request, input: { enquiryId: string; dateOfBirth?: string; gender?: string; previousSchool?: string }) {
-  return tx(async (db) => {
-    const lead = await resolveLead(input.enquiryId, db, true);
-    if (['Enrolled', 'Lost'].includes(lead.stage)) throw badRequest('This lead is closed', 'LEAD_CLOSED');
-    const app = await createApplicationRow(db, req, lead, input);
-    await advanceTo(db, req, lead as any, 'Application', `Application ${app.applicationNo} opened`);
-    await query(`UPDATE enquiries SET next_action = 'Collect and verify documents' WHERE id = $1`, [lead.id], db);
-    await query(
-      `INSERT INTO communications (channel, direction, enquiry_id, counterpart, subject, status, sent_by)
-       VALUES ('Email', 'outbound', $1, $2, 'Application received — document checklist', 'Logged', $3)`,
-      [lead.id, lead.parent_name, req.user!.id], db);
-    return app;
-  });
-}
+// Opening an application (existing lead or walk-in, with the admission form) lives in admissions-forms.service.ts.
 
 async function lockApp(id: string, db: Queryable) {
   const app = await one('SELECT * FROM admissions WHERE id = $1 FOR UPDATE', [id], db);
@@ -170,7 +166,7 @@ export async function setStatus(req: Request, id: string, input: { status: strin
     }
     const docs = await one<{ total: number; verified: number }>(
       `SELECT count(*)::int AS total, count(*) FILTER (WHERE status = 'Verified')::int AS verified
-         FROM documents WHERE owner_type = 'admission' AND owner_id = $1 AND deleted_at IS NULL`, [id], db);
+         FROM documents WHERE owner_type = 'admission' AND owner_id = $1 AND category <> 'Admission form' AND deleted_at IS NULL`, [id], db);
     if (to === 'Offer Made' && docs && docs.total > docs.verified) {
       throw badRequest(`Verify all documents before making an offer (${docs.total - docs.verified} outstanding)`, 'DOCUMENTS_INCOMPLETE');
     }
@@ -229,11 +225,12 @@ export async function setDocumentStatus(req: Request, id: string, docId: string,
       `UPDATE documents SET status = $3,
               verified_by = CASE WHEN $3 = 'Verified' THEN $4::uuid ELSE NULL END,
               verified_at = CASE WHEN $3 = 'Verified' THEN now() ELSE NULL END
-        WHERE id = $2 AND owner_type = 'admission' AND owner_id = $1 AND deleted_at IS NULL RETURNING name`,
+        WHERE id = $2 AND owner_type = 'admission' AND owner_id = $1 AND category <> 'Admission form' AND deleted_at IS NULL RETURNING name`,
       [id, docId, status, req.user!.id], db);
     if (!doc) throw notFound('Document not found', 'DOCUMENT_NOT_FOUND');
     const c = await one<{ complete: boolean }>(
-      `SELECT bool_and(status = 'Verified') AS complete FROM documents WHERE owner_type = 'admission' AND owner_id = $1 AND deleted_at IS NULL`, [id], db);
+      `SELECT bool_and(status = 'Verified') AS complete FROM documents
+        WHERE owner_type = 'admission' AND owner_id = $1 AND category <> 'Admission form' AND deleted_at IS NULL`, [id], db);
     await query('UPDATE admissions SET documents_complete = $2 WHERE id = $1', [id, !!c?.complete], db);
     await audit(req, { action: status === 'Verified' ? 'approve' : 'update', module: 'admissions', description: `${doc.name} marked ${status} on ${app.application_no}`, entityType: 'admission', entityId: id }, db);
     return { documentsComplete: !!c?.complete };
@@ -243,20 +240,69 @@ export async function setDocumentStatus(req: Request, id: string, docId: string,
 // ---------------------------------------------------------------------------
 // Enrol → Student Master
 // ---------------------------------------------------------------------------
+/**
+ * Anything left out is taken from the admission form saved on the application
+ * (student name, DOB, gender, address, primary contact), so the office does not
+ * retype what the family already wrote on the form.
+ */
 export interface EnrolInput {
-  sectionId: string; firstName: string; lastName: string; dateOfBirth: string; gender: 'M' | 'F' | 'O'; admittedOn?: string;
+  sectionId: string; firstName?: string; lastName?: string; dateOfBirth?: string; gender?: 'M' | 'F' | 'O'; admittedOn?: string;
   house?: string; address?: string; city?: string; pincode?: string;
-  guardian: { parentId?: string; fullName?: string; phone?: string; email?: string; relationship: string };
+  guardian?: { parentId?: string; fullName?: string; phone?: string; email?: string; relationship?: string };
   transport?: { routeId: string; stopId?: string };
 }
 
-export async function enrol(req: Request, id: string, input: EnrolInput) {
+type FormData = Record<string, string | boolean | undefined>;
+const str = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : undefined);
+
+/** Fills enrolment fields from the admission form; explicit input always wins. */
+function fromForm(app: any, input: EnrolInput) {
+  const f = (app.form_data ?? {}) as FormData;
+  const pc = str(f.primaryContact) ?? (str(f.fatherName) && str(f.fatherPhone) ? 'Father' : str(f.motherName) && str(f.motherPhone) ? 'Mother' : str(f.guardianName) ? 'Guardian' : undefined);
+  const key = pc === 'Mother' ? 'mother' : pc === 'Guardian' ? 'guardian' : 'father';
+  const [first, ...rest] = String(app.student_name ?? '').split(' ');
+  const field = (k: string, m: string) => [{ field: k, message: m }];
+  const out = {
+    firstName: input.firstName ?? str(f.studentFirstName) ?? first,
+    lastName: input.lastName ?? str(f.studentLastName) ?? (rest.join(' ') || undefined),
+    dateOfBirth: input.dateOfBirth ?? str(f.dateOfBirth) ?? app.date_of_birth ?? undefined,
+    gender: input.gender ?? (str(f.gender) as EnrolInput['gender']) ?? app.gender ?? undefined,
+    address: input.address ?? app.address ?? undefined,
+    city: input.city ?? app.city ?? undefined,
+    pincode: input.pincode ?? app.pincode ?? undefined,
+    guardian: {
+      parentId: input.guardian?.parentId,
+      fullName: input.guardian?.fullName ?? (pc ? str(f[`${key}Name`]) : undefined),
+      phone: input.guardian?.phone ?? (pc ? str(f[`${key}Phone`]) : undefined),
+      email: input.guardian?.email ?? (pc ? str(f[`${key}Email`]) : undefined),
+      relationship: input.guardian?.relationship ?? (pc === 'Guardian' ? 'Guardian' : pc ?? 'Guardian'),
+    },
+  };
+  if (!out.firstName) throw badRequest('Enter the student’s first name', 'VALIDATION_ERROR', field('firstName', 'First name is required'));
+  if (!out.lastName) throw badRequest('Enter the student’s last name', 'VALIDATION_ERROR', field('lastName', 'Last name is required'));
+  if (!out.dateOfBirth) throw badRequest('Enter the date of birth', 'VALIDATION_ERROR', field('dateOfBirth', 'Date of birth is required'));
+  if (!out.gender) throw badRequest('Select a gender', 'VALIDATION_ERROR', field('gender', 'Select a gender'));
+  // The other parent on the form is linked as a second guardian.
+  const other = pc === 'Father' || pc === undefined ? 'mother' : pc === 'Mother' ? 'father' : null;
+  const second = other && str(f[`${other}Name`]) && str(f[`${other}Phone`])
+    ? { fullName: str(f[`${other}Name`])!, phone: str(f[`${other}Phone`])!, email: str(f[`${other}Email`]) ?? null, occupation: str(f[`${other}Occupation`]) ?? null, relationship: other === 'mother' ? 'Mother' : 'Father' }
+    : null;
+  return {
+    ...out, second,
+    primaryOccupation: pc ? str(f[`${key}Occupation`]) ?? null : null,
+    bloodGroup: (app.blood_group as string | null) ?? null,
+    medicalNotes: (app.medical_notes as string | null) ?? null,
+  };
+}
+
+export async function enrol(req: Request, id: string, raw: EnrolInput) {
   const user = req.user!;
   return tx(async (db) => {
     const app = await lockApp(id, db);
     if (app.student_id || app.status === 'Enrolled') throw conflict('This applicant is already enrolled', 'ALREADY_ENROLLED');
     if (app.status !== 'Accepted') throw badRequest('Only accepted offers can be enrolled', 'NOT_ACCEPTED');
     const lead = app.enquiry_id ? await resolveLead(app.enquiry_id, db, true) : null;
+    const input = { ...raw, ...fromForm(app, raw) } as ReturnType<typeof fromForm> & EnrolInput & { firstName: string; lastName: string; dateOfBirth: string; gender: 'M' | 'F' | 'O' };
 
     const section = await one<{ id: string; campus_id: string; academic_year_id: string; name: string; grade: string; capacity: number; enrolled: number }>(
       `SELECT sec.id, c.campus_id, sec.academic_year_id, sec.name, c.name AS grade, sec.capacity,
@@ -288,8 +334,8 @@ export async function enrol(req: Request, id: string, input: EnrolInput) {
     if (!parentId) {
       const code = await nextCode('parents', 'parent_code', 'PAR-', db);
       const p = await one<{ id: string }>(
-        `INSERT INTO parents (parent_code, full_name, phone, email, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING id`,
-        [code, gName, gPhone, gEmail, user.id], db);
+        `INSERT INTO parents (parent_code, full_name, phone, email, occupation, address, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+        [code, gName, gPhone, gEmail, input.primaryOccupation, input.address ?? null, user.id], db);
       parentId = p!.id;
       parentCreated = true;
     }
@@ -298,10 +344,11 @@ export async function enrol(req: Request, id: string, input: EnrolInput) {
     const admissionNo = await nextCode('students', 'admission_no', `HS-${year}-`, db);
     const s = await one<{ id: string }>(
       `INSERT INTO students (admission_no, first_name, last_name, date_of_birth, gender, campus_id, section_id, academic_year_id,
-                             house, address, city, pincode, phone, admitted_on, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::date, current_date),$15,$15) RETURNING id`,
+                             house, address, city, pincode, phone, admitted_on, created_by, updated_by, blood_group, medical_notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::date, current_date),$15,$15,$16,$17) RETURNING id`,
       [admissionNo, input.firstName, input.lastName, input.dateOfBirth, input.gender, section.campus_id, section.id, section.academic_year_id,
-        input.house ?? null, input.address ?? null, input.city ?? null, input.pincode ?? null, gPhone ?? null, input.admittedOn ?? null, user.id],
+        input.house ?? null, input.address ?? null, input.city ?? null, input.pincode ?? null, gPhone ?? null, input.admittedOn ?? null, user.id,
+        input.bloodGroup, input.medicalNotes],
       db);
     const studentId = s!.id;
     const roll = await one<{ n: number }>('SELECT count(*)::int + 1 AS n FROM enrollments WHERE section_id = $1', [section.id], db);
@@ -311,6 +358,27 @@ export async function enrol(req: Request, id: string, input: EnrolInput) {
     await query(
       `INSERT INTO student_guardians (student_id, parent_id, relationship, is_primary) VALUES ($1,$2,$3,true)`,
       [studentId, parentId, g.relationship], db);
+    // Second parent from the admission form (matched by phone, else created).
+    let secondParentId: string | null = null;
+    const sec = input.second;
+    if (sec && sec.phone.replace(/\D/g, '') !== String(gPhone ?? '').replace(/\D/g, '')) {
+      const same = await one<{ id: string }>(
+        `SELECT id FROM parents WHERE deleted_at IS NULL AND regexp_replace(phone, '\\D', '', 'g') = regexp_replace($1, '\\D', '', 'g') ORDER BY created_at LIMIT 1`,
+        [sec.phone], db);
+      secondParentId = same?.id ?? null;
+      if (!secondParentId) {
+        const code = await nextCode('parents', 'parent_code', 'PAR-', db);
+        const p = await one<{ id: string }>(
+          `INSERT INTO parents (parent_code, full_name, phone, email, occupation, address, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [code, sec.fullName, sec.phone, sec.email, sec.occupation, input.address ?? null, user.id], db);
+        secondParentId = p!.id;
+      }
+      if (secondParentId !== parentId) {
+        await query(
+          `INSERT INTO student_guardians (student_id, parent_id, relationship, is_primary) VALUES ($1,$2,$3,false) ON CONFLICT DO NOTHING`,
+          [studentId, secondParentId, sec.relationship], db);
+      }
+    }
     if (input.transport) {
       const route = await one('SELECT id FROM transport_routes WHERE id = $1', [input.transport.routeId], db);
       if (!route) throw badRequest('Route not found', 'ROUTE_NOT_FOUND', field('transport.routeId', 'Choose a route'));
@@ -356,6 +424,6 @@ export async function enrol(req: Request, id: string, input: EnrolInput) {
       body: `${section.grade}${section.name} · ${admissionNo}`,
       route: `/student-360/${studentId}`, entityType: 'student', entityId: studentId,
     }, db);
-    return { studentId, admissionNo, parentId, parentCreated, section: `${section.grade}${section.name}` };
+    return { studentId, admissionNo, parentId, parentCreated, secondParentId, section: `${section.grade}${section.name}` };
   });
 }
