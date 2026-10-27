@@ -1,0 +1,33 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "web": {
+      "root": ".",
+      "framework": "container",
+      "runtime": "container",
+      "entrypoint": "Dockerfile",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "exam",
+          "format": "url",
+          "env": "EXAM_VISION_URL"
+        }
+      ]
+    },
+    "exam": {
+      "root": "exam-vision/",
+      "framework": "container",
+      "runtime": "container",
+      "entrypoint": "Dockerfile",
+      "command": [
+        "sh",
+        "-c",
+        "export EXAM_DATABASE_URL=\"${EXAM_DATABASE_URL:-$DATABASE_URL}\"; exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8006}"
+      ]
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "web" } }
+  ]
+}
