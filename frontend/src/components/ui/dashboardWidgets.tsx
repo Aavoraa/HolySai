@@ -12,7 +12,7 @@ import type { StudentRow } from '@/api/types';
 import { fmt } from '@/lib/format';
 import { Avatar, Card, CardLink, Chart, charts, Empty, Icon } from './primitives';
 import { UpcomingEvents } from './dashboard';
-import { Donut, LineChart, MetricCard, type LineSeries } from './dashboardViz';
+import { Donut, LineChart, MetricCard, PromoCard, type LineSeries } from './dashboardViz';
 
 export interface TrendPoint { label: string; value: number }
 
@@ -67,7 +67,9 @@ export function DonutCard({ title = 'Academic Performance', icon = 'graduation',
   );
 }
 
-export interface RankRow { key: string; name: string; photo?: string | null; meta?: ReactNode; value: ReactNode; to?: string }
+export interface RankRow { key: string; name: string; photo?: string | null; meta?: ReactNode; value: ReactNode; to?: string;
+  /** 0–100: draws a bar after the value. */
+  pct?: number }
 
 /** Ranked table: medal, initials, a middle column (brand colour) and a right-aligned value. */
 export function RankCard({ title = 'Top Performers', icon = 'trophy', link, nameLabel, middle = 'Class', valueLabel = 'Percentage', rows, loading, empty, fill, minRows = 5 }: {
@@ -107,20 +109,19 @@ export function RankCard({ title = 'Top Performers', icon = 'trophy', link, name
         <div className={fill ? 'rankfill' : 'table-wrap'} ref={box}>
           <div className={fill ? 'rankfill__inner table-wrap' : undefined} style={fill ? undefined : { display: 'contents' }}>
           <table className="table table--compact ranktable">
-            <thead><tr><th style={{ width: 80 }}>#</th><th>{nameLabel ?? (title.includes('Subject') ? 'Subject' : 'Student')}</th><th>{middle}</th><th className="num">{valueLabel}</th></tr></thead>
+            <thead><tr><th style={{ width: 56 }}>#</th><th>{nameLabel ?? (title.includes('Subject') ? 'Subject' : 'Student')}</th><th>{middle}</th>
+              <th className={rows.some((r) => r.pct != null) ? undefined : 'num'}>{valueLabel}</th></tr></thead>
             <tbody>
               {shown.map((r, i) => (
                 <tr key={r.key} className={r.to ? 'row--link' : undefined} onClick={r.to ? () => navigate(r.to!) : undefined}
                   style={fill && rowH ? { height: rowH } : undefined}>
-                  <td>
-                    <span className="row g-4">
-                      <span className={`medal medal--${i < 3 ? i + 1 : 'n'}`} aria-hidden="true">{i + 1}</span>
-                      <span className="t-muted">{i + 1}</span>
-                    </span>
-                  </td>
+                  <td><span className={`medal medal--${i < 3 ? i + 1 : 'n'}`}>{i + 1}</span></td>
                   <td><span className="person"><Avatar name={r.name} src={r.photo} size="sm" /><span className="person__name t-clip">{r.name}</span></span></td>
                   <td className="t-nowrap" style={{ color: 'var(--brand)' }}>{r.meta}</td>
-                  <td className="num">{r.value}</td>
+                  {r.pct != null ? (
+                    <td><span className="rankbar"><span className="rankbar__val">{r.value}</span>
+                      <span className="rankbar__track" aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, r.pct))}%` }} /></span></span></td>
+                  ) : <td className="num">{r.value}</td>}
                 </tr>
               ))}
             </tbody>
@@ -140,6 +141,7 @@ export function useTopStudents(limit = 5) {
   const q = usePagedQuery<StudentRow>('/students', { sort: 'average', dir: 'desc', pageSize: limit, ...campusParam });
   const rows: RankRow[] = (q.data?.rows ?? []).filter((s) => s.average != null).map((s) => ({
     key: s.id, name: s.fullName, photo: s.photoUrl, meta: `${s.grade ?? ''}${s.section ? ` - ${s.section}` : ''}`, value: `${s.average}%`, to: `/student-360/${s.id}`,
+    pct: Number(s.average),
   }));
   return { rows, loading: q.isLoading };
 }
@@ -172,7 +174,9 @@ const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.le
  * (dashboard.view + students.read): headline metrics (optional), attendance,
  * performance, events and top performers. Renders nothing for other roles.
  */
-export function SchoolPulse({ events = true, metrics = false }: { events?: boolean; metrics?: boolean }) {
+export function SchoolPulse({ events = true, metrics = false, promo = false }: { events?: boolean; metrics?: boolean;
+  /** Top performers (five) beside the "Better Learning" card instead of a full-width list. */
+  promo?: boolean }) {
   const { can } = useAuth();
   const school = useSchool();
   const allowed = can('dashboard.view') && can('students.read');
@@ -210,7 +214,7 @@ export function SchoolPulse({ events = true, metrics = false }: { events?: boole
   let chart: ReactNode = null;
   if (view === 'trend' && a.trend.length > 1) {
     const series: LineSeries[] = [{ name: 'Students', values: trendVals, color: 'var(--brand)' }];
-    if (a.staffTrend?.some((v) => v != null)) series.push({ name: 'Staff', values: a.staffTrend, color: '#B4ACD3', area: false });
+    if (a.staffTrend?.some((v) => v != null)) series.push({ name: 'Staff', values: a.staffTrend, color: '#9A7BE0', area: false });
     chart = (
       <>
         <LineChart labels={a.trend.map((t) => MONTH(t.day))} tips={a.trend.map((t) => MONTH(t.day, true))} series={series}
@@ -270,11 +274,19 @@ export function SchoolPulse({ events = true, metrics = false }: { events?: boole
             { label: 'At Risk', value: s.atRisk, color: '#E8435F', to: '/students?risk=At+Risk' },
           ]} />
       </div>
-      <div className={events && can('communication.read') ? 'grid dash__events' : 'grid'}>
-        {events && <UpcomingEvents />}
-        <RankCard link={{ to: '/academic-performance' }} rows={top.rows} loading={top.loading} fill
-          empty={{ title: 'No results recorded yet', sub: 'Students appear here once assessment marks are entered.' }} />
-      </div>
+      {promo ? (
+        <div className="grid dash__pair dash__promo">
+          <RankCard link={{ to: '/academic-performance' }} rows={top.rows.slice(0, 5)} loading={top.loading}
+            empty={{ title: 'No results recorded yet', sub: 'Students appear here once assessment marks are entered.' }} />
+          <PromoCard to="/academic-performance" />
+        </div>
+      ) : (
+        <div className={events && can('communication.read') ? 'grid dash__events' : 'grid'}>
+          {events && <UpcomingEvents />}
+          <RankCard link={{ to: '/academic-performance' }} rows={top.rows} loading={top.loading} fill
+            empty={{ title: 'No results recorded yet', sub: 'Students appear here once assessment marks are entered.' }} />
+        </div>
+      )}
     </>
   );
 }

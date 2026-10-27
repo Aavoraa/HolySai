@@ -1,0 +1,200 @@
+/* ==========================================================================
+   REFERENCE — the dashboard as in the approved mock-up (1792 × 877):
+   blush welcome banner with petals, softly tinted metric cards, rose and
+   violet attendance lines, ranked list with progress bars beside the
+   "Better Learning" card, icon-tiled notifications and a peach active item
+   in the maroon menu. Loaded last; light theme colours only where they
+   would not read in dark mode.
+   ========================================================================== */
+
+:root { --card-radius: 14px; --sidebar-w: 282px; --rail-w: 278px; }
+:root:not([data-theme="dark"]) {
+  --card-border: #F1E5E8;
+  --sidebar-bg: linear-gradient(180deg, #5E0C2C 0%, #4C0923 55%, #3F071D 100%);
+  --sidebar-active-bg: linear-gradient(90deg, #FFE6DE, #F9CEC4);
+  --sidebar-active-text: #5A0B26;
+}
+
+/* ---- Menu ------------------------------------------------------------------ */
+.sidebar .navitem[aria-current="page"],
+.sidebar .navgroup:not(.navgroup--pinned) .navgroup__items .navitem[aria-current="page"] {
+  min-height: 38px; border-radius: 10px; box-shadow: 0 4px 12px -6px rgba(0, 0, 0, .45);
+}
+.sidebar .navhead, .sidebar .navquick > .navitem, .sidebar .navgroup--pinned .navitem, .sidebar .sidebar__foot .navitem { font-size: 13px; }
+.navsection { font-size: 10px; letter-spacing: .18em; color: rgba(255, 255, 255, .78); }
+.sidebar__foot { border-top: 0; }
+
+/* ---- Top bar ------------------------------------------------------------------ */
+.topbar { height: var(--topbar-h); }
+.globalsearch__input { border-radius: 12px; background: #F7F3F4; }
+:root[data-theme="dark"] .globalsearch__input { background: var(--bg-sunken); }
+.globalsearch__kbd {
+  display: inline-flex; align-items: center; position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  height: 22px; padding: 0 8px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border);
+  font-size: 10.5px; font-weight: 600; color: var(--text-muted); pointer-events: none;
+}
+.topbar__ctx .ctxselect, .topbar__ctx .ctxselect:first-child, .topbar__ctx .ctxselect:last-child { height: 40px; border-radius: 10px; padding: 0 14px; }
+.topbar__user .avatar { width: 42px; height: 42px; background: linear-gradient(135deg, #A3123F, #7E0A35); }
+
+/* ---- Dashboard grid: tighter gaps, everything above the fold ---------------------- */
+.dash { gap: 12px; }
+.dash__main, .dash__rail { gap: 12px; }
+.dash .grid { gap: 12px; }
+.dash__pair { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
+.page:has(.dash__main > .campusbanner--welcome) { padding-top: 12px; max-width: none; }
+.dash__main > .campusbanner--welcome { margin: 0; }
+
+/* ---- Welcome banner ---------------------------------------------------------------- */
+.campusbanner--welcome { margin-bottom: 12px; border-radius: var(--card-radius); }
+:root:not([data-theme="dark"]) .campusbanner--welcome {
+  background: linear-gradient(100deg, #FFF8F6 0%, #FFF1EC 42%, #FDE9E2 100%); border-color: #F6DDD8;
+}
+.campusbanner--welcome, .campusbanner--welcome .campusbanner__body { min-height: 192px; }
+.campusbanner--welcome .campusbanner__body { padding: 12px 28px 14px 38px; }
+.campusbanner--welcome .campusbanner__text { border-left: 0; padding-left: 0; }
+.campusbanner--welcome .campusbanner__photo { width: 50%; }
+.campusbanner--welcome .campusbanner__photo img { border-radius: 0 var(--card-radius) var(--card-radius) 0; }
+.campusbanner--welcome .campusbanner__title { display: block; font-size: 23px; line-height: 1.25; margin-top: 0; color: #2A1219; white-space: nowrap; }
+.campusbanner__name { color: #9B1C3F; }
+:root[data-theme="dark"] .campusbanner--welcome .campusbanner__title { color: var(--text-strong); }
+:root[data-theme="dark"] .campusbanner__name { color: var(--brand-strong); }
+.campusbanner--welcome .campusbanner__sub { font-size: 13.5px; margin-top: 4px; }
+.campusbanner--welcome .campusbanner__date { font-size: 12.5px; margin-top: 4px; }
+.campusbanner--welcome .campusbanner__actions { margin-top: 12px; }
+.campusbanner--welcome .campusbanner__actions .btn { height: 38px; font-size: 12.5px; }
+.campusbanner--welcome .campusbanner__quote { left: 53%; font-size: 16px; }
+.campusbanner__petals { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; fill: #EE9AAE; opacity: .55; }
+
+/* ---- Metric cards: soft tint toward the corner, a petal, larger icon tile ----------- */
+.metric { border-radius: var(--card-radius); padding: 14px 20px 12px; min-height: 130px; }
+:root:not([data-theme="dark"]) .metric { background: linear-gradient(135deg, #FFFFFF 50%, color-mix(in srgb, var(--m-tint) 70%, #fff) 100%); }
+.metric::after {
+  content: ""; position: absolute; right: -14px; top: -16px; width: 64px; height: 44px; border-radius: 0 100% 0 100%;
+  background: var(--m-tone); opacity: .1; transform: rotate(-20deg); pointer-events: none;
+}
+.metric__tile { width: 46px; height: 46px; border-radius: 12px; }
+.metric__tile svg { width: 22px; height: 22px; }
+.metric__label { font-size: 13px; color: var(--text-strong); font-weight: 500; }
+.metric__value { font-family: var(--font-ui); font-size: 27px; font-weight: 600; margin-top: 6px; }
+.metric__delta { font-size: 13px; margin-top: 6px; }
+.metric__cmp { font-size: 11px; }
+.metric[data-tone="rose"]  { --m-tone: #E0436B; --m-tint: #FCE6EC; }
+.metric[data-tone="blue"]  { --m-tone: #8B6BE0; --m-tint: #EFEAFC; }
+.metric[data-tone="green"] { --m-tone: #13998A; --m-tint: #E2F5F1; }
+.metric[data-tone="amber"] { --m-tone: #E8971A; --m-tint: #FDF0DA; }
+.metric__ring { width: 76px; height: 76px; right: 20px; }
+
+/* ---- Cards ---------------------------------------------------------------------------- */
+.dash .card { border-radius: var(--card-radius); }
+.dash .card__title { font-size: 15px; }
+.dash .card__ico { width: 36px; height: 36px; border-radius: 10px; }
+.dash .card:has(.linechart) .card__ico { background: #FDE8EE; color: #C2185B; }
+.dash .card:has(.ranktable) .card__ico { background: #FDF1DC; color: #D98A0B; }
+.dash .donutcard .card__ico { background: transparent; color: #5A0B26; }
+:root:not([data-theme="dark"]) .dash .donutcard { background: linear-gradient(160deg, #FFFFFF 55%, #FDF0F2 100%); }
+.dash .cardlink { font-size: 12px; }
+.dash__pair > .card .card__body { padding: 2px 18px 8px; }
+.dash__pair > .card .card__head { min-height: 48px; padding-top: 10px; }
+
+/* Donut: thick ring, larger centre figure */
+.dash .donut { width: 150px; height: 150px; }
+.dash .donut__center strong { font-size: 26px; }
+.dash .donut__center span { font-size: 10px; }
+.dash .dlegend__row { font-size: 13.5px; }
+.dash .dlegend__row .dot { width: 11px; height: 11px; }
+.dash .dlegend__row strong { font-size: 14px; font-weight: 700; }
+
+/* ---- Top performers: medals, lavender initials, green progress bars ------------------- */
+.ranktable th { background: #FAF6F7; padding-top: 7px; padding-bottom: 7px; }
+:root[data-theme="dark"] .ranktable th { background: var(--surface-alt); }
+.ranktable td { padding-top: 1px; padding-bottom: 1px; height: 25px; font-size: 12px; }
+.ranktable th { padding-top: 5px; padding-bottom: 5px; }
+.card:has(.ranktable) > .card__head { min-height: 46px; padding-top: 10px; padding-bottom: 8px; }
+.ranktable .person { gap: 10px; }
+.ranktable .medal { width: 20px; height: 20px; font-size: 10.5px; }
+.medal--1 { background: #F2B32E; }
+.medal--2 { background: #A3A8B0; }
+.medal--3 { background: #E07B39; }
+.medal--n { background: #B9B3B7; color: #fff; }
+.ranktable .avatar { width: 22px; height: 22px; font-size: 8.5px; font-weight: 700; background: #EFEAFC; color: #6D4AB8; }
+.rankbar { display: flex; align-items: center; gap: 16px; }
+.rankbar__val { flex: 0 0 34px; font-variant-numeric: tabular-nums; color: var(--text-strong); }
+.rankbar__track { flex: 1 1 auto; max-width: 128px; height: 7px; border-radius: 999px; background: #E8F2EE; overflow: hidden; }
+.rankbar__track > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #23A26F, #178A5C); }
+
+/* ---- "Better Learning, Brighter Future" ------------------------------------------------- */
+.dash__promo { align-items: stretch; }
+.promocard {
+  position: relative; overflow: hidden; height: 100%; min-height: 196px; border-radius: var(--card-radius);
+  border: 1px solid var(--card-border); background: linear-gradient(100deg, #FFF7F4 0%, #FDEDEA 60%, #FBE4E2 100%);
+}
+:root[data-theme="dark"] .promocard { background: var(--surface); }
+.promocard__img {
+  position: absolute; right: 0; top: 0; height: 100%; width: 66%; object-fit: cover; object-position: right center;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 28%); mask-image: linear-gradient(90deg, transparent 0%, #000 28%);
+}
+.promocard__body { position: relative; z-index: 1; max-width: 54%; padding: 22px 0 18px 26px; display: flex; flex-direction: column; align-items: flex-start; }
+.promocard__eyebrow { font-size: 9.5px; font-weight: 600; color: #6E2A1C; background: rgba(255, 255, 255, .85); border: 1px solid #F3D9CF; padding: 2px 9px; border-radius: 999px; }
+.promocard__title { font-family: var(--font-serif); font-size: 20px; line-height: 1.2; font-weight: 700; color: #9B1C3F; margin: 10px 0 0; }
+.promocard__text { font-size: 12px; line-height: 1.4; color: var(--text); margin: 8px 0 0; max-width: 22ch; }
+.promocard__cta {
+  display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 18px; margin-top: 14px; border-radius: 999px;
+  background: linear-gradient(90deg, #7E0A35, #5E0927); color: #fff; font-size: 12px; font-weight: 600;
+  box-shadow: 0 4px 10px -4px rgba(94, 9, 39, .6);
+}
+.promocard__cta:hover { background: linear-gradient(90deg, #990033, #6E0A2E); color: #fff; }
+.dash__main > .grid:last-child > .promocard { height: 100%; }
+
+/* ---- Rail -------------------------------------------------------------------------------- */
+.dash__rail .card__head { min-height: 52px; padding-top: 14px; }
+.dash__rail .card__body { padding: 12px 16px 14px; }
+.dash__rail .card:has(.qa) .card__ico { background: transparent; color: #C2185B; }
+.dash__rail .card:has(.qa) .card__title { font-size: 16px; }
+.dash__rail .card:has(.evrow) .card__title, .dash__rail .card:has(.nlist__item) .card__title { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
+.dash__rail .card__head > .row.none { flex: none; }
+.dash__rail .cardlink { font-size: 11px; padding: 2px 0; }
+.dash__rail .card__head { padding-right: 14px; }
+.dash__rail .card:has(.qa) .card__body { padding: 6px 14px 12px; }
+.qa { gap: 6px; }
+.qa__item { min-height: 44px; height: 44px; border-radius: 12px; border-color: #F0E6E8; font-size: 13px; }
+.qa__ico { width: 32px; height: 32px; border-radius: 10px; }
+
+/* Notifications: a tinted icon per row instead of a dot */
+.nlist__item { grid-template-columns: 32px minmax(0, 1fr) 14px; padding: 4px 0; border-bottom: 0; align-items: center; }
+.dash__rail .card:has(.nlist__item) .card__body { padding: 2px 14px 10px; }
+.nlist__ico { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; }
+.nlist__ico--success  { background: #E2F5EC; color: #1F9D6B; }
+.nlist__ico--info     { background: #E8F0FC; color: #2F66C6; }
+.nlist__ico--violet   { background: #F0EAFC; color: #7B5BD6; }
+.nlist__ico--warning  { background: #FDF1DC; color: #D98A0B; }
+.nlist__ico--critical { background: #FDE7EA; color: #D32F4F; }
+.nlist__title { font-size: 11px; line-height: 1.3; }
+.nlist__meta { font-size: 9.5px; margin-top: 1px; }
+.nlist__item > svg { margin: 0; }
+.dash__rail .card:has(.nlist__item) .card__ico { background: #FDE8EE; color: #C2185B; }
+
+/* Events: date tile, title, audience and time, chevron */
+.evrow { display: grid; grid-template-columns: 48px minmax(0, 1fr) 14px; gap: 14px; align-items: center; color: inherit; padding: 8px 0; }
+.evrow:hover .evrow__title { color: var(--brand); }
+.evrow > svg { color: var(--text-muted); }
+.evdate { width: 48px; height: 52px; border-radius: 10px; background: var(--surface); border: 1px solid var(--card-border); color: var(--text-strong); }
+.evdate strong { font-size: 19px; }
+.evdate span { color: #9B1C3F; text-transform: none; letter-spacing: 0; font-size: 11.5px; font-weight: 600; }
+.evrow__title { font-size: 12px; }
+.evrow__meta { font-size: 10.5px; display: flex; align-items: center; gap: 8px; }
+.evrow__meta .evtag { font-size: 9.5px; padding: 1px 6px; }
+.dash__rail .card:has(.evrow) .card__ico { background: #FDE8EE; color: #C2185B; }
+
+/* ---- Smaller screens keep the existing stacking --------------------------------------------- */
+@media (max-width: 1280px) {
+  .campusbanner--welcome .campusbanner__quote { display: none; }
+  .campusbanner--welcome .campusbanner__title { white-space: normal; }
+}
+@media (max-width: 1100px) { .dash__pair, .dash__promo { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 767px) {
+  .campusbanner--welcome .campusbanner__body { padding: 18px 16px 20px; }
+  .campusbanner--welcome .campusbanner__photo { width: 100%; }
+  .campusbanner--welcome .campusbanner__title { font-size: 21px; }
+  .promocard__body { max-width: 62%; padding-left: 18px; }
+  .rankbar__track { display: none; }
+}

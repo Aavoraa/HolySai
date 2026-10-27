@@ -60,7 +60,7 @@ export default function CommandCenterPage() {
   const greet = greeting();
 
   const welcome = (
-    <CampusBanner title={<>{greet}, {firstName(user?.fullName)}</>} sub={school.scope === 'group' ? "Here's what's happening across all campuses today." : `Here's what's happening at ${school.campus?.name ?? 'your school'} today.`} />
+    <CampusBanner welcome title={<>{greet}, <span className="campusbanner__name">{firstName(user?.fullName)}</span></>} sub={school.scope === 'group' ? "Here's what's happening across all campuses today." : `Here's what's happening at ${school.campus?.name ?? 'your school'} today.`} />
   );
 
   if (q.isLoading) return <Page>{welcome}<PageSkeleton kpis={4} /></Page>;

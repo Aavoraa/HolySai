@@ -97,7 +97,7 @@ export default function StaffSelfPage() {
   return (
     <Page>
       <CampusBanner
-        title={<>{greeting()}, {firstName(e.fullName)}</>}
+        welcome title={<>{greeting()}, <span className="campusbanner__name">{firstName(e.fullName)}</span></>}
         sub={<>{lede}</>}
         actions={(
           <>

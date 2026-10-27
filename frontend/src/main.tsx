@@ -25,6 +25,8 @@ import './styles/modules/operations-intel.css';
 import './styles/modules/exam-correction.css';
 import './styles/system.css';
 import './styles/hues.css';
+import './styles/reference.css';
+import './styles/premium.css';
 
 initTheme();
 

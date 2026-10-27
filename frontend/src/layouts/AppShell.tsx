@@ -277,7 +277,8 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
                 <span className="navhead__chev"><Icon name="chevronDown" size={14} /></span>
               </button>
               {list}
-              {!ql && g.quick.length > 0 && (
+              {/* Shortcuts only while the group is closed; open, its full list already shows them */}
+              {!ql && !isOpen && g.quick.length > 0 && (
                 <div className="navquick">{g.quick.map((i) => itemEl(i, true))}</div>
               )}
             </div>
