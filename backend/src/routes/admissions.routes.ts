@@ -1,5 +1,10 @@
 import { Router, type Request, type Response } from 'express';
+import multer from 'multer';
+import { z } from 'zod';
 import { requirePermission } from '../middleware/auth.js';
+import { upload } from '../services/documents.service.js';
+import * as forms from '../services/admissions-forms.service.js';
+import { badRequest } from '../utils/errors.js';
 import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
 import * as leads from '../services/admissions.service.js';
@@ -7,12 +12,13 @@ import * as apps from '../services/admissions-applications.service.js';
 import * as stats from '../services/admissions-analytics.service.js';
 import * as crm from '../services/admissions-crm.service.js';
 import {
-  alumniListQuery, alumniSchema, alumniUpdateSchema, applicationCreateSchema, applicationListQuery, applicationStatusSchema,
-  applicationUpdateSchema, assignSchema, campusQuery, commListQuery, communicationSchema, docParam, documentStatusSchema,
+  alumniListQuery, alumniSchema, alumniUpdateSchema, applicationCreateSchema, applicationFormSchema, applicationImportSchema, applicationListQuery, applicationStatusSchema,
+  applicationUpdateSchema, assignSchema, campusQuery, pastDate, commListQuery, communicationSchema, docParam, documentStatusSchema,
   enrolSchema, followUpCreateSchema, followUpListQuery, followUpUpdateSchema, idParam, leadCreateSchema, leadListQuery,
   leadParam, leadUpdateSchema, partnerListQuery, partnerSchema, partnerUpdateSchema, referralCreateSchema, referralListQuery, referrerQuery,
   rewardSchema, stageChangeSchema, vendorListQuery, vendorSchema, vendorUpdateSchema, visitCreateSchema, visitListQuery,
 } from '../validators/admissions.validators.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Admissions & CRM. Mounted at /api behind authentication.
@@ -25,6 +31,20 @@ const CRM_READ = requirePermission('crm.read');
 const CRM_MANAGE = requirePermission('crm.manage');
 
 const campusId = (req: Request) => v<{ campusId?: string }>(req, 'query').campusId;
+
+/** CSV of filled admission forms — held in memory, 2 MB, one file. */
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 5 },
+  fileFilter: (_req, file, cb) => {
+    const okType = /\.csv$/i.test(file.originalname) && ['text/csv', 'application/vnd.ms-excel', 'text/plain', 'application/octet-stream'].includes(file.mimetype);
+    if (!okType) return cb(badRequest('Upload the admission forms as a .csv file (save the spreadsheet as CSV)', 'UNSUPPORTED_FILE_TYPE'));
+    cb(null, true);
+  },
+});
+const uploadBody = z.object({
+  receivedOn: pastDate.optional().or(z.literal('').transform(() => undefined)),
+});
 
 // =============================================================================
 // Dashboard & analytics
@@ -135,11 +155,58 @@ r.get('/applications', READ, validate(applicationListQuery, 'query'), async (req
 r.get('/applications/summary', READ, validate(campusQuery, 'query'),
   async (req: Request, res: Response) => ok(res, await apps.applicationSummary(campusId(req)), 'Application summary'));
 
-r.post('/applications', MANAGE, validate(applicationCreateSchema),
-  async (req: Request, res: Response) => created(res, await apps.createApplication(req, v(req)), 'Application opened'));
+r.post('/applications', MANAGE, validate(applicationCreateSchema), async (req: Request, res: Response) => {
+  const out = await forms.createApplication(req, v(req));
+  return created(res, out, out.leadCreated ? `Lead ${out.leadCode} and application ${out.applicationNo} created` : `Application ${out.applicationNo} opened`);
+});
+
+// ---- Admission forms: bulk import (registered before /applications/:id) ----------
+r.get('/applications/import/template', MANAGE, async (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="admission-forms-template.csv"');
+  res.send(`﻿${forms.importTemplate()}`);
+});
+
+r.post('/applications/import', MANAGE, csvUpload.single('file'), validate(applicationImportSchema), async (req: Request, res: Response) => {
+  const out = await forms.importApplications(req, req.file, v(req));
+  const msg = out.dryRun
+    ? `${out.valid} of ${out.rows} row${out.rows === 1 ? '' : 's'} ready to import`
+    : `${out.imported} application${out.imported === 1 ? '' : 's'} imported${out.failed ? ` · ${out.failed} row${out.failed === 1 ? '' : 's'} need attention` : ''}`;
+  return ok(res, out, msg);
+});
 
 r.get('/applications/:id', READ, validate(idParam, 'params'),
   async (req: Request, res: Response) => ok(res, await apps.getApplication(v(req, 'params').id), 'Application retrieved'));
+
+// ---- Admission form: typed (manual) and uploaded (scan) -------------------------
+r.get('/applications/:id/form', READ, validate(idParam, 'params'),
+  async (req: Request, res: Response) => ok(res, await forms.getForm(v(req, 'params').id), 'Admission form retrieved'));
+
+r.put('/applications/:id/form', MANAGE, validate(idParam, 'params'), validate(applicationFormSchema), async (req: Request, res: Response) => {
+  const b = v(req);
+  const out = await forms.saveForm(req, v(req, 'params').id, b);
+  return ok(res, out, b.submit ? (out.status === 'Submitted' ? 'Admission form submitted' : 'Admission form saved') : 'Draft saved');
+});
+
+r.post('/applications/:id/form/upload', MANAGE, validate(idParam, 'params'), upload.single('file'), validate(uploadBody), async (req: Request, res: Response) => {
+  const out = await forms.uploadForm(req, v(req, 'params').id, req.file, v(req).receivedOn);
+  return created(res, out, out.replaced ? 'Admission form replaced' : 'Admission form uploaded');
+});
+
+r.post('/applications/:id/documents/:docId/upload', MANAGE, validate(docParam, 'params'), upload.single('file'), async (req: Request, res: Response) => {
+  const p = v(req, 'params');
+  return created(res, await forms.uploadChecklistDocument(req, p.id, p.docId, req.file), 'Document uploaded — awaiting verification');
+});
+
+r.get('/applications/:id/documents/:docId/download', requirePermission('admissions.read', 'documents.read'), validate(docParam, 'params'),
+  async (req: Request, res: Response) => {
+    const p = v(req, 'params');
+    const f = await forms.openDocument(req, p.id, p.docId);
+    res.setHeader('Content-Type', f.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    f.stream.pipe(res);
+  });
 
 r.patch('/applications/:id', MANAGE, validate(idParam, 'params'), validate(applicationUpdateSchema), async (req: Request, res: Response) => {
   await apps.updateApplication(req, v(req, 'params').id, v(req));
@@ -148,6 +215,8 @@ r.patch('/applications/:id', MANAGE, validate(idParam, 'params'), validate(appli
 
 r.post('/applications/:id/status', MANAGE, validate(idParam, 'params'), validate(applicationStatusSchema),
   async (req: Request, res: Response) => {
+    // Offer / reject are the admission decisions — Super Admin only; other moves stay with the office.
+    if (['Offer Made', 'Rejected'].includes(v(req).status)) assertDecider(req.user, 'Making an offer or rejecting an application');
     const out = await apps.setStatus(req, v(req, 'params').id, v(req));
     return ok(res, out, `Application marked ${out.status}`);
   });

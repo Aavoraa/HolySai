@@ -9,6 +9,8 @@ import {
 import { errorMessage } from '@/components/ui/states';
 import { fmt } from '@/lib/format';
 import { ExamModal } from './ExamsPage';
+import { useAuth } from '@/auth/AuthContext';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 import {
   AiNotReady, BASE, EV, EvStatus, isBusy, marks, Connecting, NotConnected, QTYPES, usePcStatus,
   type AiStatus, type Criterion, type EvStudent, type Exam, type Question, type Rubric, type SheetRow,
@@ -29,6 +31,8 @@ export default function ExamPage() {
   const tab = (params.get('tab') as Tab) || 'sheets';
   const st = usePcStatus();
   const confirm = useConfirm();
+  const { can } = useAuth();
+  const decider = can('approvals.decide'); // approving results is the Super Admin's decision
   const q = useApiQuery<Exam>(st.data?.connected ? `${EV}/exams/${id}` : null);
   const role = st.data?.role;
   const manager = role === 'admin' || role === 'coordinator';
@@ -59,7 +63,8 @@ export default function ExamPage() {
         sub={`${exam.class_name}${exam.section ? ` · Section ${exam.section}` : ''} · ${exam.subject} · ${exam.question_count} questions · ${marks(exam.maximum)} marks · ${exam.academic_year}`}
         actions={<>
           <span className="row g-2"><span className="t-xs t-muted">Results</span><EvStatus value={exam.results_status} /></span>
-          {manager && NEXT[exam.results_status].map((n) => (
+          {manager && !decider && exam.results_status === 'reviewed' && <AwaitingSuperAdmin />}
+          {manager && NEXT[exam.results_status].filter((n) => n.to !== 'approved' || decider).map((n) => (
             <Button key={n.to} variant={n.variant ?? 'ghost'} loading={step.isPending && step.variables === n.to} onClick={() => move(n.to)}>{n.label}</Button>
           ))}
         </>} />

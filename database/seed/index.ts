@@ -17,6 +17,10 @@ import * as operations from './operations.js';
 import * as innovation from './innovation.js';
 import * as group from './group.js';
 import * as intelligence from './intelligence.js';
+import * as planning from './planning.js';
+import * as jobCards from './jobcards.js';
+import * as parentLog from './parent-log.js';
+import * as syllabus from './syllabus.js';
 
 const DOMAINS: [string, { seed: (db: pg.PoolClient, ctx: SeedContext) => Promise<void> }][] = [
   ['academics', academics],
@@ -29,6 +33,10 @@ const DOMAINS: [string, { seed: (db: pg.PoolClient, ctx: SeedContext) => Promise
   ['innovation', innovation],
   ['group', group],
   ['intelligence', intelligence],
+  ['budget planning', planning],
+  ['job cards', jobCards],
+  ['parent contact log', parentLog],
+  ['Cambridge IGCSE syllabus', syllabus],
 ];
 
 export function createContext(now = new Date()): SeedContext {

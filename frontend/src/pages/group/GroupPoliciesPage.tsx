@@ -122,6 +122,9 @@ function PolicyModal({ id, manage, onClose }: { id: string; manage: boolean; onC
 }
 
 function PolicyForm({ policy, onClose }: { policy?: PolicyDetail; onClose: () => void }) {
+  // Making a policy Active is its approval — only the Super Admin can do that.
+  const { can } = useAuth();
+  const canActivate = can('approvals.decide') || policy?.status === 'Active';
   const f = useForm({
     name: policy?.name ?? '', scope: policy?.scope ?? 'All campuses', version: policy?.version ?? 'v1.0', body: policy?.body ?? '',
     status: policy?.status ?? 'Draft', effectiveOn: policy?.effectiveOn ?? '', changeNote: '',
@@ -153,7 +156,8 @@ function PolicyForm({ policy, onClose }: { policy?: PolicyDetail; onClose: () =>
             <TextField label="Version" required maxLength={12} value={v.version} onChange={(x) => f.set('version', x)} error={f.errors.version} style={{ flex: 1 }} />
             {policy && <Button size="sm" style={{ marginTop: 24 }} onClick={() => f.set('version', bump(policy.version))}>Next version</Button>}
           </div>
-          <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={STATUSES.filter((s) => s !== 'Retired')} />
+          <SelectField label="Status" value={v.status} onChange={(x) => f.set('status', x)} options={STATUSES.filter((s) => s !== 'Retired' && (s !== 'Active' || canActivate))}
+            hint={canActivate ? undefined : 'Set “Under review” to send it to the Super Admin, who approves it to Active.'} />
           <TextField label="Effective from" type="date" required={v.status === 'Active'} value={v.effectiveOn} onChange={(x) => f.set('effectiveOn', x)} error={f.errors.effectiveOn} />
           {policy && <TextField label="Change note" maxLength={300} value={v.changeNote} onChange={(x) => f.set('changeNote', x)} placeholder="What changed in this version" />}
         </FormGrid>

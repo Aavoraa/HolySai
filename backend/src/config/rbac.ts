@@ -87,6 +87,22 @@ export const PERMISSIONS = {
   'innovation.read': 'View the Innovation Lab',
   'innovation.manage': 'Manage ideas, projects, milestones and competitions',
 
+  // Approvals & budget planning
+  'approvals.decide': 'Approve or reject requests in every module (Super Admin only)',
+  'planning.read': 'View budget plans and planning cycles',
+  'planning.manage': 'Prepare and submit budget plans for approval',
+
+  // Job cards (work assigned between departments)
+  'jobcards.use': 'Raise job cards and work on cards sent to your department',
+  'jobcards.manage': 'Manage job cards and departments across the school',
+
+  // Parent & staff contact log
+  'parentlog.read': 'View the contact log of parents and staff reaching the principal or staff',
+  'parentlog.manage': 'Record walk-ins, calls and other contact attempts',
+
+  // Cambridge syllabus & grading
+  'grading.manage': 'Edit Cambridge grade boundaries and syllabus settings',
+
   // Group & administration
   'group.read': 'View campuses and campus comparison',
   'group.manage': 'Manage transfers and group policies',
@@ -122,7 +138,13 @@ const MANAGEMENT_READ: Permission[] = [
   'finance.read', 'hr.read', 'payroll.read',
   'safety.read', 'transport.read', 'operations.read', 'documents.read',
   'innovation.read', 'group.read', 'audit.read', 'ai.use', 'prototype.view',
+  'planning.read', 'jobcards.use', 'parentlog.read',
 ];
+
+/** Only the Super Admin approves or rejects; every other role prepares and submits. */
+// The legacy module approval keys are kept for compatibility but no longer gate any route
+// (every decision checks approvals.decide); they stay Super Admin only as well.
+export const SUPER_ADMIN_ONLY: Permission[] = ['approvals.decide', 'finance.approve', 'hr.approve', 'payroll.approve'];
 
 export const ROLES: RoleDef[] = [
   {
@@ -132,7 +154,8 @@ export const ROLES: RoleDef[] = [
   {
     key: 'school_admin', name: 'School Admin', scope: 'school', homeRoute: '/command-center',
     description: 'Full school administration, user and settings management',
-    permissions: ALL_PERMISSIONS.filter((p) => !['parent_portal.use', 'student_portal.use', 'fees.pay_own', 'tracking.read_own_children', 'selfservice.use'].includes(p)),
+    permissions: ALL_PERMISSIONS.filter((p) => !SUPER_ADMIN_ONLY.includes(p)
+      && !['parent_portal.use', 'student_portal.use', 'fees.pay_own', 'tracking.read_own_children', 'selfservice.use'].includes(p)),
   },
   {
     key: 'management', name: 'Management', scope: 'school', homeRoute: '/command-center',
@@ -141,13 +164,14 @@ export const ROLES: RoleDef[] = [
   },
   {
     key: 'principal', name: 'Principal', scope: 'school', homeRoute: '/command-center',
-    description: 'Full analytics, command centre, approvals and group dashboard',
+    description: 'Full analytics, command centre and group dashboard; prepares and submits requests for Super Admin approval',
     permissions: [
       ...MANAGEMENT_READ,
       'students.update', 'students.sensitive', 'attendance.mark', 'academics.manage', 'assessments.manage',
       'earlywarning.manage', 'tracking.manage', 'admissions.manage', 'crm.manage', 'parents.manage',
-      'communication.send', 'notifications.broadcast', 'finance.approve', 'hr.approve', 'payroll.approve',
+      'communication.send', 'notifications.broadcast',
       'safety.manage', 'transport.manage', 'operations.manage', 'documents.manage', 'innovation.manage', 'group.manage',
+      'planning.manage', 'jobcards.manage', 'parentlog.manage', 'grading.manage',
     ],
   },
   {
@@ -161,17 +185,20 @@ export const ROLES: RoleDef[] = [
       // Own attendance, leave, overtime and payslips. Self-scoped: every /me/* route
       // resolves req.user.employeeId and never takes an id from the request.
       'selfservice.use',
+      'jobcards.use', 'parentlog.manage',
     ],
   },
   {
     key: 'hr', name: 'HR', scope: 'school', homeRoute: '/workforce',
     description: 'Employee records, attendance, leave, CPD and payroll preparation',
-    permissions: ['dashboard.view', 'reports.read', 'hr.read', 'hr.manage', 'hr.approve', 'payroll.read', 'payroll.manage', 'documents.read', 'documents.manage', 'audit.read'],
+    permissions: ['dashboard.view', 'reports.read', 'hr.read', 'hr.manage', 'payroll.read', 'payroll.manage', 'documents.read', 'documents.manage', 'audit.read',
+      'planning.read', 'planning.manage', 'jobcards.use'],
   },
   {
     key: 'finance', name: 'Finance', scope: 'school', homeRoute: '/fees',
     description: 'Fees, payments, concessions, expenses, budgets and reconciliation',
-    permissions: ['dashboard.view', 'reports.read', 'finance.read', 'finance.manage', 'finance.approve', 'payroll.read', 'students.read', 'parents.read', 'documents.read'],
+    permissions: ['dashboard.view', 'reports.read', 'finance.read', 'finance.manage', 'payroll.read', 'students.read', 'parents.read', 'documents.read',
+      'planning.read', 'planning.manage', 'jobcards.use'],
   },
   {
     key: 'office', name: 'Office', scope: 'school', homeRoute: '/admissions',
@@ -182,12 +209,13 @@ export const ROLES: RoleDef[] = [
       'crm.read', 'crm.manage', 'parents.read', 'parents.manage', 'communication.read', 'communication.send',
       'finance.read', 'finance.manage', 'hr.read', 'payroll.read', 'safety.read', 'safety.manage',
       'transport.read', 'operations.read', 'operations.manage', 'documents.read', 'documents.manage', 'innovation.read', 'audit.read',
+      'planning.read', 'planning.manage', 'jobcards.use', 'parentlog.read', 'parentlog.manage',
     ],
   },
   {
     key: 'staff', name: 'Non-Teaching Staff', scope: 'self', homeRoute: '/staff-self',
     description: 'Own attendance, shifts, leave and payslips; transport and gate duties',
-    permissions: ['selfservice.use', 'safety.read', 'safety.manage', 'transport.read', 'transport.manage'],
+    permissions: ['selfservice.use', 'safety.read', 'safety.manage', 'transport.read', 'transport.manage', 'jobcards.use'],
   },
   {
     key: 'parent', name: 'Parent', scope: 'family', homeRoute: '/parent-360',

@@ -9,6 +9,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { cx, fmt } from '@/lib/format';
 import { CRITICAL_ROW, FormError, FormGrid, req, useCampusOptions, useForm, useStaffOptions } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface Request {
   id: string; code: string; description: string; priority: string; status: string; raisedOn: string; completedAt: string | null; cost: number | null;
@@ -24,6 +25,8 @@ const NEXT: Record<string, string[]> = {
 };
 const priTone = (p: string) => (p === 'High' || p === 'Urgent' ? 'critical' : p === 'Medium' ? 'warning' : 'neutral');
 const isOpen = (status: string) => status !== 'Completed' && status !== 'Rejected';
+/** Approving or rejecting is the Super Admin's decision; others can only progress approved work. */
+const nextFor = (status: string, decider: boolean) => NEXT[status].filter((s) => decider || (s !== 'Approved' && s !== 'Rejected'));
 /** Open High / Urgent requests are flagged in the list. */
 const isUrgent = (r: Request) => isOpen(r.status) && (r.priority === 'High' || r.priority === 'Urgent');
 
@@ -93,8 +96,9 @@ export default function MaintenancePage() {
               { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />
                 {r.assignedTo && <div className="t-micro t-muted mt-1">{r.assignedTo}</div>}
                 {r.status === 'Completed' && <div className="t-micro t-muted mt-1">{fmt.date(r.completedAt)} · {fmt.money(r.cost)}</div>}</> },
-              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => manage && NEXT[r.status].length
-                ? <Button size="sm" icon="edit" onClick={() => setUpdate(r)}>Update</Button> : null },
+              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => manage && nextFor(r.status, can('approvals.decide')).length
+                ? <Button size="sm" icon="edit" onClick={() => setUpdate(r)}>Update</Button>
+                : manage && (r.status === 'Submitted' || r.status === 'Under Review') ? <AwaitingSuperAdmin short /> : null },
             ]}
           />
         )}
@@ -138,7 +142,8 @@ function RaiseModal({ onClose }: { onClose: () => void }) {
 
 function UpdateModal({ request, onClose }: { request: Request; onClose: () => void }) {
   const staff = useStaffOptions((s) => s.employeeType === 'non_teaching');
-  const next = NEXT[request.status];
+  const { can } = useAuth();
+  const next = nextFor(request.status, can('approvals.decide'));
   const f = useForm({ status: next[0], assignedTo: request.assignedToId ?? '', cost: '', note: '' });
   const v = f.values;
   const save = useApiMutation<Record<string, unknown>>('patch', `/maintenance/${request.id}/status`, { invalidate: ['/maintenance', '/assets'] });

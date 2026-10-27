@@ -9,6 +9,7 @@ import * as teach from '../services/academics-teaching.service.js';
 import * as asm from '../services/academics-assessments.service.js';
 import * as plan from '../services/academics-planning.service.js';
 import * as rep from '../services/academics-reports.service.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Academics domain: teacher dashboard, student attendance, curriculum,
@@ -207,6 +208,7 @@ r.put('/academics/lesson-plans/:id', MANAGE, id, validate(V.lessonPlanUpdate),
 r.post('/academics/lesson-plans/:id/transition', MANAGE, id, validate(V.lessonPlanTransition),
   async (req: Request, res: Response) => {
     const b = v(req);
+    if (b.action === 'approve' || b.action === 'reject') assertDecider(req.user, 'Approving or rejecting a lesson plan');
     const out = await plan.transitionLessonPlan(req, pid(req), b.action, b.note);
     return ok(res, out, `Lesson plan ${out.status.toLowerCase()}`);
   });
@@ -256,6 +258,7 @@ r.get('/academics/report-cards', READ, validate(V.reportCardsQuery, 'query'),
 
 r.post('/academics/report-cards/release', MANAGE, validate(V.releaseApproved),
   async (req: Request, res: Response) => {
+    assertDecider(req.user, 'Approving report cards for release'); // the Approval stage decision is the Super Admin's
     const out = await rep.releaseApproved(req, v(req).campusId);
     return ok(res, out, out.released ? `Released ${out.released} class(es) to parents` : 'No approved report cards were waiting');
   });
@@ -265,6 +268,7 @@ r.get('/academics/report-cards/:id', READ, id, validate(V.batchStudentQuery, 'qu
 
 r.post('/academics/report-cards/:id/advance', MANAGE, id, validate(V.batchAdvance),
   async (req: Request, res: Response) => {
+    if (v(req).toStage >= 5) assertDecider(req.user, 'Approving report cards for release');
     const out = await rep.advanceBatch(req, pid(req), v(req).toStage);
     return ok(res, out, `Moved to ${out.status}`);
   });

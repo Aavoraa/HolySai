@@ -399,7 +399,7 @@
   post:
     tags: [Workforce]
     summary: Move a submitted request to Under Review
-    x-permission: hr.approve
+    x-permission: hr.manage
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:
@@ -412,7 +412,7 @@
     tags: [Workforce]
     summary: Approve leave — increments leave_balances.used, marks staff_attendance On Leave for the dates, flags roster lines for cover and notifies the employee
     description: Approvers cannot decide their own requests (403 SELF_APPROVAL).
-    x-permission: hr.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     requestBody: { content: { application/json: { schema: { type: object, properties: { note: { type: string } } } } } }
@@ -426,7 +426,7 @@
   post:
     tags: [Workforce]
     summary: Reject leave with a reason (notifies the employee)
-    x-permission: hr.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string } } } } } }
@@ -492,7 +492,7 @@
   post:
     tags: [Workforce]
     summary: Move an overtime claim to Under Review
-    x-permission: hr.approve
+    x-permission: hr.manage
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:
@@ -504,7 +504,7 @@
   post:
     tags: [Workforce]
     summary: Approve an overtime claim (paid in the next payroll run)
-    x-permission: hr.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     requestBody: { content: { application/json: { schema: { type: object, properties: { note: { type: string } } } } } }
@@ -517,7 +517,7 @@
   post:
     tags: [Workforce]
     summary: Reject an overtime claim with a reason
-    x-permission: hr.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string } } } } } }
@@ -710,7 +710,7 @@
   post:
     tags: [Workforce]
     summary: Under Review → Approved. Maker-checker — the approver must differ from the user who calculated the run (403 MAKER_CHECKER)
-    x-permission: payroll.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:
@@ -722,7 +722,7 @@
   post:
     tags: [Workforce]
     summary: Under Review / Approved → Inputs with a reason (notifies the preparer)
-    x-permission: payroll.approve
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     requestBody: { required: true, content: { application/json: { schema: { type: object, required: [note], properties: { note: { type: string } } } } } }
@@ -735,7 +735,7 @@
   post:
     tags: [Workforce]
     summary: Approved → Released — payslips become visible in self-service; employees with accounts are notified
-    x-permission: payroll.manage | payroll.approve
+    x-permission: payroll.manage | approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:
@@ -747,7 +747,7 @@
   post:
     tags: [Workforce]
     summary: Released → Paid — settles the run's overtime and reimbursements
-    x-permission: payroll.manage | payroll.approve
+    x-permission: payroll.manage | approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:

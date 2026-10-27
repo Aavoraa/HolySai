@@ -9,11 +9,13 @@ import {
   Meter, Modal, Page, PageHead, Pagination, SearchInput, SelectField, Skeleton, Status, TextField, useConfirm, Toolbar,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
+import { gradeColor, gradeFor, gradeTone, useGradeScale, type Tier } from '@/lib/grades';
 import { serverFieldErrors, useSections } from './shared';
 
 interface AssessmentRow {
   id: string; code: string; name: string; assessmentType: string; status: string; heldOn: string; maxMarks: number;
   classId: string; sectionId: string | null; grade: string; subject: string; subjectId: string; of: number; entered: number; averagePct: number | null;
+  igcsePaper: string | null;
 }
 interface Summary {
   active: number; scheduled: number; inProgress: number; marksPending: number; marksPendingFoot: string | null;
@@ -24,15 +26,15 @@ interface Summary {
 interface AssessmentDetail {
   id: string; code: string; name: string; status: string; heldOn: string; maxMarks: number; grade: string; subject: string;
   locked: boolean; canEnter: boolean; lockReason: string | null; entered: number; of: number;
-  students: { id: string; admissionNo: string; fullName: string; section: string; roll: number | null; marks: number | null; isAbsent: boolean; grade: string | null; enteredBy: string | null }[];
+  component: { id: string; paperNo: string; name: string; tier: 'Core' | 'Extended' | 'All'; syllabusId: string; syllabusCode: string | null; syllabusTitle: string; tiered: boolean } | null;
+  students: { id: string; admissionNo: string; fullName: string; section: string; roll: number | null; marks: number | null; isAbsent: boolean; grade: string | null; enteredBy: string | null; tier: Tier | null }[];
 }
+interface SyllabusOption { id: string; syllabusCode: string | null; title: string; tiered: boolean; components: { id: string; paperNo: string; name: string; tier: string; maxMarks: number | null }[] }
 
 const TYPES = [
   { value: 'test', label: 'Term assessment' }, { value: 'exam', label: 'Examination' }, { value: 'unit_test', label: 'Unit test' },
   { value: 'quiz', label: 'Quiz (formative)' }, { value: 'mock', label: 'Mock examination' }, { value: 'project', label: 'Project' },
 ];
-const GRADE_TONE: Record<string, string> = { 'A*': 'success', 'A+': 'success', A: 'success', 'B+': 'info', B: 'info', C: 'neutral', D: 'warning', E: 'critical' };
-const DIST_COLOR: Record<string, string> = { 'A*': 'var(--teal)', 'A+': 'var(--teal)', A: 'var(--teal)', 'B+': 'var(--navy)', B: 'var(--navy)', C: 'var(--amber)', D: 'var(--critical)', E: 'var(--critical)' };
 
 /** Inline check while typing (the same rules are enforced again on save). */
 function liveError(en: { marks: string; isAbsent: boolean }, max: number) {
@@ -55,10 +57,6 @@ function moveFocus(e: React.KeyboardEvent<HTMLInputElement>, row: number) {
     if (!next) break;
     if (!next.disabled) { next.focus(); next.select(); break; }
   }
-}
-
-function gradeFor(pct: number) {
-  return pct >= 90 ? 'A*' : pct >= 85 ? 'A+' : pct >= 78 ? 'A' : pct >= 72 ? 'B+' : pct >= 65 ? 'B' : pct >= 55 ? 'C' : pct >= 45 ? 'D' : 'E';
 }
 
 export default function AssessmentsPage() {
@@ -107,7 +105,7 @@ export default function AssessmentsPage() {
               onSort={list.setSort}
               emptyText={list.hasFilters ? 'No assessments match these filters.' : 'No assessments yet this year.'}
               columns={[
-                { key: 'name', label: 'Assessment', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.code} · {r.subject}</div></> },
+                { key: 'name', label: 'Assessment', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.code} · {r.subject}{r.igcsePaper ? ` · IGCSE ${r.igcsePaper}` : ''}</div></> },
                 { key: 'grade', label: 'Grade', render: (r) => r.grade },
                 { key: 'date', label: 'Date', render: (r) => fmt.date(r.heldOn) },
                 { key: 'max', label: 'Max', className: 'num', render: (r) => <span className="t-num">{r.maxMarks}</span> },
@@ -132,9 +130,9 @@ export default function AssessmentsPage() {
       </div>
 
       <div className="grid g-2col g-4 mt-4">
-        <Card icon="trending" title="Grade distribution" sub={s?.distribution?.assessment ?? 'Latest completed assessment'}>
+        <Card icon="trending" title="Grade distribution" sub={s?.distribution ? `${s.distribution.assessment} · Cambridge IGCSE A*–G, U` : 'Latest completed assessment'}>
           {!s ? <Skeleton height={220} /> : s.distribution && s.distribution.values.some((v) => v > 0) ? (
-            <Chart svg={charts.bar({ labels: s.distribution.labels, series: [{ name: 'Students', values: s.distribution.values, colors: s.distribution.labels.map((l) => DIST_COLOR[l]) }], height: 220 })} />
+            <Chart svg={charts.bar({ labels: s.distribution.labels, series: [{ name: 'Students', values: s.distribution.values, colors: s.distribution.labels.map((l) => gradeColor(l)) }], height: 220, label: 'Students per grade, A* to U' })} />
           ) : <Empty icon="barChart" title="No completed assessment yet" />}
         </Card>
         <Card icon="grid" title="Moderation" sub={s?.markers ? `Marker consistency — ${s.markers.assessment}` : 'Marker consistency check'}>
@@ -174,9 +172,22 @@ function CreateAssessmentModal({ onClose, onCreated }: { onClose: () => void; on
   const { lookups } = useLookups();
   const sections = useSections(can('students.read') ? campusId : undefined);
   const restricted = !can('students.read');
-  const [f, setF] = useState({ name: '', subjectId: '', classId: '', sectionId: '', heldOn: '', maxMarks: '50', assessmentType: 'test' });
+  const [f, setF] = useState({ name: '', subjectId: '', classId: '', sectionId: '', heldOn: '', maxMarks: '50', assessmentType: 'test', syllabusComponentId: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const set = (k: keyof typeof f) => (v: string) => { setF((x) => ({ ...x, [k]: v, ...(k === 'classId' ? { sectionId: '' } : {}) })); setErrors((e) => ({ ...e, [k]: '' })); };
+  const set = (k: keyof typeof f) => (v: string) => {
+    setF((x) => ({ ...x, [k]: v, ...(k === 'classId' ? { sectionId: '', syllabusComponentId: '' } : {}), ...(k === 'subjectId' ? { syllabusComponentId: '' } : {}) }));
+    setErrors((e) => ({ ...e, [k]: '' }));
+  };
+  // Grades 9–10 follow Cambridge IGCSE syllabuses: an assessment can mirror one of the syllabus papers.
+  const gradeLevel = useMemo(() => {
+    const own = (sections.data ?? []).find((s) => s.classId === f.classId);
+    return own?.gradeLevel ?? (lookups?.classes ?? []).find((c) => c.id === f.classId)?.gradeLevel ?? null;
+  }, [sections.data, lookups, f.classId]);
+  const igcse = gradeLevel != null && gradeLevel >= 9 && gradeLevel <= 10;
+  const syllabuses = useApiQuery<SyllabusOption[]>(igcse && f.subjectId ? '/syllabuses' : null, { subjectId: f.subjectId }, { staleTime: 60_000 });
+  const paperOptions = (syllabuses.data ?? []).flatMap((sy) => sy.components.map((c) => ({
+    value: c.id, label: `${sy.syllabusCode ?? sy.title} · ${c.name}${c.maxMarks ? ` (${c.maxMarks} marks)` : ''}`,
+  })));
 
   const classOptions = useMemo(() => {
     if (restricted) {
@@ -216,7 +227,7 @@ function CreateAssessmentModal({ onClose, onCreated }: { onClose: () => void; on
     if (!Number.isFinite(max) || max <= 0 || max > 1000) e.maxMarks = 'Enter a number between 1 and 1000';
     setErrors(e);
     if (Object.keys(e).length) return;
-    create.mutate({ name: f.name.trim(), subjectId: f.subjectId, classId: f.classId, sectionId: f.sectionId || null, heldOn: f.heldOn, maxMarks: max, assessmentType: f.assessmentType });
+    create.mutate({ name: f.name.trim(), subjectId: f.subjectId, classId: f.classId, sectionId: f.sectionId || null, heldOn: f.heldOn, maxMarks: max, assessmentType: f.assessmentType, syllabusComponentId: igcse && f.syllabusComponentId ? f.syllabusComponentId : null });
   };
 
   return (
@@ -238,13 +249,22 @@ function CreateAssessmentModal({ onClose, onCreated }: { onClose: () => void; on
             placeholder={restricted ? 'Choose a section' : 'Whole grade'} error={errors.sectionId} disabled={!f.classId}
             hint={!f.classId ? 'Choose a grade first.' : restricted ? 'Only your sections are listed.' : 'Leave as whole grade to include every section.'} />
           <SelectField label="Subject" required value={f.subjectId} onChange={set('subjectId')} options={subjectOptions} placeholder="Choose a subject" error={errors.subjectId} />
+          {igcse && (
+            <SelectField label="IGCSE paper (optional)" value={f.syllabusComponentId} onChange={(v) => {
+              set('syllabusComponentId')(v);
+              const c = (syllabuses.data ?? []).flatMap((sy) => sy.components).find((x) => x.id === v);
+              if (c?.maxMarks) setF((x) => ({ ...x, syllabusComponentId: v, maxMarks: String(c.maxMarks) }));
+            }} options={paperOptions} placeholder={f.subjectId ? (paperOptions.length ? 'Not linked to a paper' : 'No IGCSE syllabus for this subject') : 'Choose a subject first'}
+              disabled={!f.subjectId || !paperOptions.length} error={errors.syllabusComponentId}
+              hint="Linking a Core or Extended paper applies Cambridge tier rules to the grades (Core is capped at C; Extended is graded A*–E)." />
+          )}
         </div>
       </div>
       <div className="formsection">
         <div className="formsection__title">Date and marking</div>
         <div className="grid g-2col g-3">
           <TextField label="Date" type="date" required value={f.heldOn} onChange={set('heldOn')} error={errors.heldOn} hint="Marks can be entered from this date." />
-          <TextField label="Maximum marks" type="number" min={1} max={1000} required value={f.maxMarks} onChange={set('maxMarks')} error={errors.maxMarks} hint="Grades are calculated from the percentage of this." />
+          <TextField label="Maximum marks" type="number" min={1} max={1000} required value={f.maxMarks} onChange={set('maxMarks')} error={errors.maxMarks} hint="Cambridge IGCSE grades (A*–G, U) are calculated from the percentage of this." />
         </div>
       </div>
       <div className="mt-4">
@@ -261,6 +281,7 @@ function MarksModal({ id, onClose }: { id: string; onClose: () => void }) {
   const { can, user } = useAuth();
   const confirm = useConfirm();
   const q = useApiQuery<AssessmentDetail>(`/academics/assessments/${id}`);
+  const { scale } = useGradeScale();
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const a = q.data;
@@ -325,7 +346,7 @@ function MarksModal({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <Modal open onClose={requestClose} busy={save.isPending} size="wide"
       title={a ? (editable ? 'Marks entry' : 'Assessment marks') : 'Marks entry'}
-      sub={a ? `${a.code} · ${a.name} · ${a.grade} ${a.subject} · out of ${a.maxMarks}` : undefined}
+      sub={a ? `${a.code} · ${a.name} · ${a.grade} ${a.subject} · out of ${a.maxMarks}${a.component ? ` · IGCSE ${a.component.syllabusCode ?? ''} ${a.component.name}` : ''}` : undefined}
       foot={a && (
         <>
           {unsaved && <span className="t-xs t-warning">Unsaved changes</span>}
@@ -392,19 +413,31 @@ function MarksModal({ id, onClose }: { id: string; onClose: () => void }) {
                     },
                   },
                   {
-                    key: 'grade', label: 'Grade', render: (r) => {
+                    key: 'grade', label: a.component ? 'IGCSE grade' : 'Grade', render: (r) => {
                       const en = entries[r.id];
                       const val = en && en.marks.trim() !== '' && !en.isAbsent ? Number(en.marks) : null;
                       if (val == null || !Number.isFinite(val) || val > a.maxMarks) return <span className="t-faint">—</span>;
-                      const g = gradeFor((100 * val) / a.maxMarks);
-                      return <Badge tone={GRADE_TONE[g]}>{g}</Badge>;
+                      // Unchanged saved marks show the stored grade; typed marks preview it with the same scale and tier.
+                      const g = !editable && r.grade && val === r.marks ? r.grade : gradeFor((100 * val) / a.maxMarks, { tier: r.tier, scale });
+                      return (
+                        <span className="row g-1">
+                          <Badge tone={gradeTone(g, scale)}>{g}</Badge>
+                          {r.tier && <span className="t-micro t-muted" title={`${r.tier} tier`}>{r.tier}</span>}
+                        </span>
+                      );
                     },
                   },
                 ]}
               />
             )}
             <div className="mt-3">
-              <Banner tone="neutral" icon="save">Grades are calculated from the percentage of maximum marks. Marks are locked once moderation begins.</Banner>
+              <Banner tone="neutral" icon="save">
+                Grades follow the Cambridge IGCSE scale (A*–G, U below G) from the percentage of maximum marks
+                {a.component ? (a.component.tier !== 'All'
+                  ? `; this is ${a.component.tier === 'Extended' ? 'an' : 'a'} ${a.component.tier} paper, so ${a.component.tier === 'Core' ? 'grades are capped at C (below G is U)' : 'grades run A*–E (below E is U)'}`
+                  : a.component.tiered ? '; each student is graded on their Core or Extended entry' : '') : ''}.
+                Marks are locked once moderation begins.
+              </Banner>
             </div>
           </>
         )}

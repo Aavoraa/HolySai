@@ -10,6 +10,7 @@ import {
 } from '@/components/ui';
 import type { ReimbursementRow, ReimbursementSummary } from './types';
 import { fieldErrors, isMoney, ListCount, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 const CLAIM_TYPES = ['Travel', 'Training', 'Supplies', 'Medical', 'Transport', 'Other'];
 
@@ -68,8 +69,9 @@ export default function ReimbursementsPage() {
               {
                 key: 'a', label: '', className: 'num', sortable: false, render: (r) => (
                   <div className="row g-2 end">
-                    {r.status === 'Submitted' && can('finance.approve') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
-                    {['Submitted', 'Under Review'].includes(r.status) && can('finance.approve') && <>
+                    {r.status === 'Submitted' && can('finance.manage') && <Button size="sm" variant="quiet" loading={busy('review', r.id)} onClick={() => act.review.mutate(r.id)}>Review</Button>}
+                    {['Submitted', 'Under Review'].includes(r.status) && !can('approvals.decide') && <AwaitingSuperAdmin short />}
+                    {['Submitted', 'Under Review'].includes(r.status) && can('approvals.decide') && <>
                       <Button size="sm" variant="teal" icon="check" loading={busy('approve', r.id)} onClick={async () => {
                         if (await confirm({ title: `Approve ${r.code}?`, body: `${r.employee} will be reimbursed ${fmt.money(r.amount)} with the next payroll run.`, confirmLabel: 'Approve', icon: 'check' })) act.approve.mutate(r.id);
                       }}>Approve</Button>

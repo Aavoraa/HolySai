@@ -1,7 +1,7 @@
 # Finance module — fees, payments, receipts, concessions, scholarships, expenses,
 # reimbursements, allowances, budgets, reconciliation, reports, and the Parent 360
 # fee endpoints (/family/*). Staff endpoints live under /finance/*.
-# Read = finance.read, write = finance.manage, approvals = finance.approve.
+# Read = finance.read, write = finance.manage, review = finance.manage; approve / reject = approvals.decide (Super Admin only).
 
 x-finance-common:
   sec: &sec [{ bearerAuth: [] }]
@@ -263,11 +263,11 @@ x-finance-common:
     responses: *created
 
 /finance/concessions/{id}/review:
-  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/concessions/{id}/approve:
-  post: { tags: [Finance], summary: Approve and apply to outstanding charges (student_fees.concession_amount; tuition first, never below amounts paid), x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Approve and apply to outstanding charges (student_fees.concession_amount; tuition first, never below amounts paid), x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/concessions/{id}/reject:
-  post: { tags: [Finance], summary: Reject with a reason, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
+  post: { tags: [Finance], summary: Reject with a reason, x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
 
 /finance/scholarships:
   get: { tags: [Finance], summary: Scholarship rounds (schemes) for the current year, x-permission: finance.read, security: *sec, responses: *ok }
@@ -337,11 +337,11 @@ x-finance-common:
 /finance/expenses/{id}/submit:
   post: { tags: [Finance], summary: Draft → Submitted, x-permission: finance.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/expenses/{id}/review:
-  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/expenses/{id}/approve:
-  post: { tags: [Finance], summary: Submitted / Under Review → Approved, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Submitted / Under Review → Approved, x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/expenses/{id}/reject:
-  post: { tags: [Finance], summary: Submitted / Under Review → Rejected (reason required), x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
+  post: { tags: [Finance], summary: Submitted / Under Review → Rejected (reason required), x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
 /finance/expenses/{id}/pay:
   post: { tags: [Finance], summary: Approved → Paid, x-permission: finance.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 
@@ -383,11 +383,11 @@ x-finance-common:
               claimDate: { type: string, format: date }
     responses: *created
 /finance/reimbursements/{id}/review:
-  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Submitted → Under Review, x-permission: finance.manage, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/reimbursements/{id}/approve:
-  post: { tags: [Finance], summary: Approve claim, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
+  post: { tags: [Finance], summary: Approve claim, x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *empty, responses: *okId }
 /finance/reimbursements/{id}/reject:
-  post: { tags: [Finance], summary: Reject claim with a reason, x-permission: finance.approve, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
+  post: { tags: [Finance], summary: Reject claim with a reason, x-permission: approvals.decide, security: *sec, parameters: *id, requestBody: *reason, responses: *okId }
 /finance/reimbursements/{id}/pay:
   post:
     tags: [Finance]
@@ -441,7 +441,7 @@ x-finance-common:
   post:
     tags: [Finance]
     summary: Approve / reject pending, or stop approved, allowances of one type
-    x-permission: 'finance.approve | hr.approve'
+    x-permission: 'finance.manage | hr.manage (+ approvals.decide to approve or reject)'
     security: *sec
     requestBody:
       required: true

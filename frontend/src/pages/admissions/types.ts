@@ -63,7 +63,12 @@ export interface Communication {
   automated: boolean;
 }
 
-export interface AppDocument { id: string; name: string; status: string; verifiedAt: string | null }
+export interface AppDocument { id: string; name: string; status: string; verifiedAt: string | null; hasFile?: boolean; fileName?: string | null; mimeType?: string | null }
+
+export type FormStatus = 'Not received' | 'Entered manually' | 'Uploaded' | 'Both';
+
+/** The admission form as typed in by the office (every field optional while it is a draft). */
+export type AdmissionFormData = Partial<Record<string, string | boolean>>;
 
 export interface Application {
   id: string;
@@ -86,6 +91,17 @@ export interface Application {
   createdAt: string;
   campusId: string;
   documents: AppDocument[];
+  formStatus: FormStatus;
+  formSource: 'Manual' | 'Upload' | 'Online' | null;
+  formReceivedOn: string | null;
+  formComplete: boolean;
+  formDocumentId: string | null;
+  address: string | null;
+  city: string | null;
+  pincode: string | null;
+  fatherName: string | null;
+  motherName: string | null;
+  formData: AdmissionFormData;
 }
 
 export interface LeadProfile extends Lead {
@@ -122,6 +138,14 @@ export interface ApplicationRow {
   blockingItem: string;
   offerExpiring: boolean;
   createdAt: string;
+  formStatus: FormStatus;
+  formSource: string | null;
+  formReceivedOn: string | null;
+  formComplete: boolean;
+  formDocumentId: string | null;
+  fatherName: string | null;
+  motherName: string | null;
+  guardianPhone: string | null;
 }
 
 export interface Visit {

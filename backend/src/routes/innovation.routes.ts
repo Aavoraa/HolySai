@@ -5,6 +5,7 @@ import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
 import * as svc from '../services/innovation.service.js';
 import * as val from '../validators/innovation.validators.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Student Innovation Lab. Mounted at /api behind authentication.
@@ -31,6 +32,8 @@ r.get('/innovation/ideas/summary', READ, validate(val.campusQuery, 'query'), asy
 r.post('/innovation/ideas', MANAGE, validate(val.ideaCreate), async (req: Request, res: Response) =>
   created(res, await svc.createIdea(req, v(req)), 'Idea submitted'));
 r.post('/innovation/ideas/:id/review', MANAGE, id, validate(val.ideaReview), async (req: Request, res: Response) => {
+  // Starting a review is preparation; accepting or declining an idea is the Super Admin's decision.
+  if (v(req).action !== 'start') assertDecider(req.user, 'Accepting or declining an idea');
   const out = await svc.reviewIdea(req, pid(req), v(req));
   return ok(res, out, `Idea ${out.status.toLowerCase()}`);
 });

@@ -1,0 +1,147 @@
+# Parent Contact Log — how often parents (and teachers/staff) approach or try to reach the
+# Principal and staff. Manual entries (walk-ins, calls) merged with contacts the app already
+# records: inbound communications, parent-started app threads, PTM bookings and gate visitors
+# whose phone matches a parent (view contact_log_v).
+# parentlog.read sees the whole log; parentlog.manage alone (teachers) sees only entries the
+# user logged, entries addressed to them, and their own approaches.
+
+/parent-log:
+  get:
+    tags: [Parent Contact Log]
+    summary: Unified contact log (manual + automatic sources), newest first by default
+    x-permission: parentlog.read | parentlog.manage (scoped)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: sort, in: query, schema: { type: string, enum: [occurredAt, contact, target, channel, purpose, outcome, source, followUpOn] } }
+      - $ref: '#/components/parameters/Dir'
+      - $ref: '#/components/parameters/CampusId'
+      - { name: from, in: query, schema: { type: string, format: date } }
+      - { name: to, in: query, schema: { type: string, format: date } }
+      - { name: contactKind, in: query, schema: { type: string, enum: [parent, teacher, staff, other] } }
+      - { name: parentId, in: query, schema: { type: string, format: uuid } }
+      - { name: target, in: query, schema: { type: string, enum: [principal, staff, office, class_teacher, management] } }
+      - { name: targetEmployeeId, in: query, schema: { type: string, format: uuid } }
+      - { name: channel, in: query, schema: { type: string, enum: [Walk-in, Phone call, WhatsApp, Email, Message, Letter, Other, SMS, PTM meeting] } }
+      - { name: purpose, in: query, schema: { type: string, enum: [Academic, Fees, Transport, Admission, Complaint, Behaviour, Health, Leave, Meeting request, General, Other] } }
+      - { name: outcome, in: query, schema: { type: string } , description: 'Manual outcomes plus Responded, Received, Scheduled, No-show, In meeting from automatic sources' }
+      - { name: source, in: query, schema: { type: string, enum: [manual, communication, message, ptm, visitor] } }
+      - { name: open, in: query, schema: { type: boolean }, description: Only open (unresolved) contacts, or only closed }
+    responses:
+      '200': { $ref: '#/components/responses/Paged' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Parent Contact Log]
+    summary: Record a walk-in, call or other contact attempt (notifies the person they wanted to reach)
+    x-permission: parentlog.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [contactKind, targetKind, channel, purpose, summary]
+            properties:
+              contactKind: { type: string, enum: [parent, teacher, staff, other] }
+              parentId: { type: string, format: uuid, description: Required when contactKind = parent }
+              employeeId: { type: string, format: uuid, description: Required when contactKind = teacher/staff }
+              contactName: { type: string, description: Required when contactKind = other }
+              contactPhone: { type: string }
+              studentId: { type: string, format: uuid, description: Must be the parent's child }
+              targetKind: { type: string, enum: [principal, staff, office, class_teacher, management] }
+              targetEmployeeId: { type: string, format: uuid, description: Required for staff; class_teacher falls back to the student's class teacher }
+              channel: { type: string, enum: [Walk-in, Phone call, WhatsApp, Email, Message, Letter, Other] }
+              purpose: { type: string, enum: [Academic, Fees, Transport, Admission, Complaint, Behaviour, Health, Leave, Meeting request, General, Other] }
+              summary: { type: string, minLength: 3, maxLength: 1000 }
+              outcome: { type: string, enum: [Met, Spoke on call, Not available, Callback scheduled, Message left, Resolved, Escalated, Pending], default: Pending }
+              followUpOn: { type: string, format: date }
+              occurredAt: { type: string, format: date-time, description: Defaults to now; cannot be in the future }
+              campusId: { type: string, format: uuid }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/parent-log/summary:
+  get:
+    tags: [Parent Contact Log]
+    summary: Totals, attempts to reach the Principal, per channel/purpose/outcome/source, weekly trend, top parents, repeat-contact alerts (3+ attempts in 14 days, none resolved) and staff most approached
+    x-permission: parentlog.read | parentlog.manage (scoped)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: from, in: query, schema: { type: string, format: date }, description: Defaults to 29 days before `to` }
+      - { name: to, in: query, schema: { type: string, format: date }, description: Defaults to today }
+      - $ref: '#/components/parameters/CampusId'
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/parent-log/targets:
+  get:
+    tags: [Parent Contact Log]
+    summary: The Principal and the staff list for "wanted to reach" pickers
+    x-permission: parentlog.read | parentlog.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/CampusId'
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/parent-log/parent-search:
+  get:
+    tags: [Parent Contact Log]
+    summary: Find a parent (name, phone, code, child name or admission no.) with their children, for the log form; teachers see families of their classes
+    x-permission: parentlog.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 100 } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 20, default: 8 } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/parent-log/parents/{parentId}:
+  get:
+    tags: [Parent Contact Log]
+    summary: One parent's full contact history with counts (teachers — only their own entries, families of their classes)
+    x-permission: parentlog.read | parentlog.manage (scoped)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: parentId, in: path, required: true, schema: { type: string, format: uuid } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/parent-log/{id}:
+  patch:
+    tags: [Parent Contact Log]
+    summary: Update a manual entry — outcome, resolve / reopen, follow-up date, note
+    x-permission: parentlog.manage (teachers — entries they logged or that targeted them)
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              outcome: { type: string, enum: [Met, Spoke on call, Not available, Callback scheduled, Message left, Resolved, Escalated, Pending] }
+              resolved: { type: boolean }
+              followUpOn: { type: string, format: date, nullable: true }
+              resolutionNote: { type: string, nullable: true }
+              summary: { type: string }
+              purpose: { type: string }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

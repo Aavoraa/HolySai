@@ -113,11 +113,11 @@ export async function getRun(req: Request, id: string) {
     actions: {
       canPrepare: u.permissions.has('payroll.manage') && ['Draft', 'Inputs', 'Calculated'].includes(run.status),
       canSubmit: u.permissions.has('payroll.manage') && run.status === 'Calculated',
-      canApprove: u.permissions.has('payroll.approve') && run.status === 'Under Review' && run.calculatedById !== u.id,
+      canApprove: u.permissions.has('approvals.decide') && run.status === 'Under Review' && run.calculatedById !== u.id,
       makerChecker: run.status === 'Under Review' && run.calculatedById === u.id,
-      canReturn: u.permissions.has('payroll.approve') && ['Under Review', 'Approved'].includes(run.status),
-      canRelease: (u.permissions.has('payroll.approve') || u.permissions.has('payroll.manage')) && run.status === 'Approved',
-      canPay: (u.permissions.has('payroll.approve') || u.permissions.has('payroll.manage')) && run.status === 'Released',
+      canReturn: u.permissions.has('approvals.decide') && ['Under Review', 'Approved'].includes(run.status),
+      canRelease: (u.permissions.has('approvals.decide') || u.permissions.has('payroll.manage')) && run.status === 'Approved',
+      canPay: (u.permissions.has('approvals.decide') || u.permissions.has('payroll.manage')) && run.status === 'Released',
     },
   };
 }
@@ -252,7 +252,7 @@ export async function submitRun(req: Request, id: string) {
     expect(run, ['Calculated'], 'submit');
     await query(`UPDATE payroll_runs SET status = 'Under Review', submitted_by = $2, submitted_at = now(), review_note = NULL WHERE id = $1`, [id, req.user!.id], db);
     await audit(req, { action: 'update', module: 'payroll', description: `Submitted payroll ${run.label} (${run.campus_name}) for approval`, entityType: 'payroll_run', entityId: id }, db);
-    await notifyRoles(['principal'], {
+    await notifyRoles(['principal', 'super_admin'], {
       category: 'Attention', icon: 'wallet', topic: 'payroll', route: '/payroll', entityType: 'payroll_run', entityId: id,
       title: `Payroll ${run.label} awaits your approval`, body: `${run.campus_name} · ${run.employee_count} employees · net ₹${Number(run.net_total).toLocaleString('en-IN')}`,
     }, db);

@@ -237,8 +237,15 @@ export async function getLead(idOrCode: string) {
                 a.assessment_at AS "assessmentAt", a.assessment_score AS "assessmentScore", a.offer_expires_on AS "offerExpiresOn",
                 a.fee_paid AS "feePaid", a.student_id AS "studentId", s.admission_no AS "admissionNo", a.decided_at AS "decidedAt",
                 d.full_name AS "decidedBy", a.created_at AS "createdAt", a.campus_id AS "campusId",
-                COALESCE((SELECT json_agg(json_build_object('id', doc.id, 'name', doc.name, 'status', doc.status, 'verifiedAt', doc.verified_at) ORDER BY doc.created_at, doc.name)
-                            FROM documents doc WHERE doc.owner_type = 'admission' AND doc.owner_id = a.id AND doc.deleted_at IS NULL), '[]') AS documents
+                COALESCE((SELECT json_agg(json_build_object('id', doc.id, 'name', doc.name, 'status', doc.status, 'verifiedAt', doc.verified_at,
+                                                            'hasFile', doc.storage_key IS NOT NULL, 'fileName', doc.original_name, 'mimeType', doc.mime_type) ORDER BY doc.created_at, doc.name)
+                            FROM documents doc WHERE doc.owner_type = 'admission' AND doc.owner_id = a.id AND doc.category <> 'Admission form' AND doc.deleted_at IS NULL), '[]') AS documents,
+                CASE WHEN a.form_entered_at IS NOT NULL AND a.form_document_id IS NOT NULL THEN 'Both'
+                     WHEN a.form_document_id IS NOT NULL THEN 'Uploaded'
+                     WHEN a.form_entered_at IS NOT NULL THEN 'Entered manually' ELSE 'Not received' END AS "formStatus",
+                a.form_source AS "formSource", a.form_received_on AS "formReceivedOn", (a.form_completed_at IS NOT NULL) AS "formComplete",
+                a.form_document_id AS "formDocumentId", a.address, a.city, a.pincode, a.father_name AS "fatherName", a.mother_name AS "motherName",
+                a.form_data AS "formData"
            FROM admissions a
            LEFT JOIN students s ON s.id = a.student_id
            LEFT JOIN users d ON d.id = a.decided_by

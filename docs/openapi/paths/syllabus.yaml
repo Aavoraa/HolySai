@@ -1,0 +1,303 @@
+# Cambridge IGCSE syllabuses (Grades 9–10) and the school grade scale.
+# Grades follow the classic Cambridge IGCSE letters A* to G, with U below G.
+# Tier rules: Extended entries are graded A*–E (below E is U); Core entries are
+# graded C–G and capped at C (below G is U). Boundaries are indicative school
+# defaults — Cambridge publishes component thresholds per exam series — and are
+# editable with grading.manage. Lower grades follow Cambridge Primary / Lower
+# Secondary but their marks are reported on the same letters.
+# Coverage and entries are limited to a teacher's own sections (404 outside scope).
+
+/grading/scale:
+  get:
+    tags: [Grading]
+    summary: Active grade scale (A*–G, U), boundaries and Core/Extended tier rules
+    description: Readable by every signed-in user — parents and students see grades too.
+    x-permission: any signed-in user
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+
+/grading/scale/boundaries:
+  put:
+    tags: [Grading]
+    summary: Update boundary percentages (strictly decreasing; U starts at 0) and tier rules
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [boundaries]
+            properties:
+              boundaries:
+                type: array
+                items:
+                  type: object
+                  required: [grade, minPercent]
+                  properties:
+                    grade: { type: string, example: 'A' }
+                    minPercent: { type: number, minimum: 0, maximum: 100, example: 80 }
+                    description: { type: string, nullable: true }
+              tierRules:
+                type: object
+                properties:
+                  Core: { type: object, properties: { highest: { type: string, example: 'C' }, lowest: { type: string, example: 'G' } } }
+                  Extended: { type: object, properties: { highest: { type: string, example: 'A*' }, lowest: { type: string, example: 'E' } } }
+              regrade: { type: boolean, default: false, description: "Re-grade this academic year's stored marks and term results" }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/syllabuses:
+  get:
+    tags: [Syllabus]
+    summary: IGCSE syllabuses with components, topic coverage % across Grade 9–10 sections and entry counts
+    x-permission: academics.read
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: stage, in: query, schema: { type: string, example: IGCSE } }
+      - { name: subjectId, in: query, schema: { type: string, format: uuid } }
+      - $ref: '#/components/parameters/Search'
+      - { name: active, in: query, schema: { type: string, enum: ['true', 'false', all], default: 'true' } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Syllabus]
+    summary: Add a syllabus
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [subjectId, title]
+            properties:
+              subjectId: { type: string, format: uuid }
+              stage: { type: string, default: IGCSE }
+              awardingBody: { type: string, default: Cambridge International }
+              syllabusCode: { type: string, nullable: true, example: '0580' }
+              title: { type: string, example: Cambridge IGCSE Mathematics }
+              examSeriesYears: { type: string, nullable: true, example: '2025-2027' }
+              tiered: { type: boolean, default: false }
+              grading: { type: string, default: 'A*-G' }
+              notes: { type: string, nullable: true }
+              isActive: { type: boolean, default: true }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '409': { description: Syllabus code already exists }
+
+/syllabuses/{id}:
+  parameters: [{ $ref: '#/components/parameters/IdPath' }]
+  get:
+    tags: [Syllabus]
+    summary: Syllabus with components, topics, per-section coverage and entry summary
+    x-permission: academics.read
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Syllabus]
+    summary: Update a syllabus (any subset of the create fields)
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/syllabuses/{id}/components:
+  parameters: [{ $ref: '#/components/parameters/IdPath' }]
+  post:
+    tags: [Syllabus]
+    summary: Add a component (paper)
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [paperNo, name]
+            properties:
+              paperNo: { type: string, example: '4' }
+              name: { type: string, example: Paper 4 (Extended) — Calculator }
+              tier: { type: string, enum: [Core, Extended, All], default: All }
+              durationMinutes: { type: integer, nullable: true }
+              maxMarks: { type: number, nullable: true }
+              weightingPercent: { type: number, nullable: true }
+              assessmentType: { type: string, enum: [written, practical, coursework, oral, listening], default: written }
+              optionGroup: { type: string, nullable: true, description: Components candidates choose between }
+              notes: { type: string, nullable: true }
+              sortOrder: { type: integer }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '409': { description: Paper number already exists on this syllabus }
+
+/syllabuses/{id}/components/{componentId}:
+  parameters:
+    - $ref: '#/components/parameters/IdPath'
+    - { name: componentId, in: path, required: true, schema: { type: string, format: uuid } }
+  put:
+    tags: [Syllabus]
+    summary: Update a component
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  delete:
+    tags: [Syllabus]
+    summary: Remove a component (refused when assessments are linked to it)
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '409': { description: Component is linked to assessments }
+
+/syllabuses/{id}/topics:
+  parameters: [{ $ref: '#/components/parameters/IdPath' }]
+  post:
+    tags: [Syllabus]
+    summary: Add a topic
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [unitNo, title]
+            properties:
+              unitNo: { type: integer }
+              code: { type: string, nullable: true }
+              title: { type: string }
+              subtopics: { type: string, nullable: true }
+              tier: { type: string, enum: [Core, Extended, All], default: All }
+              plannedHours: { type: number, nullable: true }
+              plannedWeeks: { type: number, nullable: true }
+              sortOrder: { type: integer }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '409': { description: Topic code already exists on this syllabus }
+
+/syllabuses/{id}/topics/{topicId}:
+  parameters:
+    - $ref: '#/components/parameters/IdPath'
+    - { name: topicId, in: path, required: true, schema: { type: string, format: uuid } }
+  put:
+    tags: [Syllabus]
+    summary: Update a topic
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  delete:
+    tags: [Syllabus]
+    summary: Remove a topic (and its coverage records)
+    x-permission: grading.manage
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/syllabuses/{id}/topics/{topicId}/coverage:
+  parameters:
+    - $ref: '#/components/parameters/IdPath'
+    - { name: topicId, in: path, required: true, schema: { type: string, format: uuid } }
+  post:
+    tags: [Syllabus]
+    summary: Mark a topic Not started / In progress / Covered for a Grade 9–10 section (teachers — own sections only)
+    x-permission: academics.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [sectionId, status]
+            properties:
+              sectionId: { type: string, format: uuid }
+              status: { type: string, enum: [Not started, In progress, Covered] }
+              coveredOn: { type: string, format: date, nullable: true, description: Defaults to today when Covered; cannot be in the future }
+              notes: { type: string, nullable: true }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/syllabuses/{id}/entries:
+  parameters: [{ $ref: '#/components/parameters/IdPath' }]
+  get:
+    tags: [Syllabus]
+    summary: Grade 9–10 students with their Core/Extended entry and exam series for this syllabus
+    x-permission: academics.read
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - $ref: '#/components/parameters/Sort'
+      - $ref: '#/components/parameters/Dir'
+      - $ref: '#/components/parameters/CampusId'
+      - { name: sectionId, in: query, schema: { type: string, format: uuid } }
+      - { name: tier, in: query, schema: { type: string, enum: [Core, Extended, None] } }
+    responses:
+      '200': { $ref: '#/components/responses/Paged' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Syllabus]
+    summary: Save students' tier entries (tier required for tiered syllabuses; remove=true deletes an entry)
+    x-permission: academics.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [entries]
+            properties:
+              entries:
+                type: array
+                items:
+                  type: object
+                  required: [studentId]
+                  properties:
+                    studentId: { type: string, format: uuid }
+                    tier: { type: string, enum: [Core, Extended], nullable: true }
+                    examSeries: { type: string, nullable: true, example: May/June 2027 }
+                    remove: { type: boolean }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }

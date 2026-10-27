@@ -10,8 +10,10 @@ import {
 } from '@/components/ui';
 import { TrackingPanel } from '@/components/tracking/TrackingPanel';
 import { fmt, todayKey } from '@/lib/format';
+import { gradeFor, gradeTone, useGradeScale } from '@/lib/grades';
 import type { StudentRow } from '@/api/types';
 import { StudentFormModal } from './StudentFormModal';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 import { TrendCell, TODAY_LABEL, toneForToday } from './StudentsPage';
 
 export interface Profile {
@@ -365,7 +367,9 @@ function TalentCard({ d }: { d: Profile }) {
 function AcademicsTab({ d }: { d: Profile }) {
   const s = d.student;
   const latest = d.academics.termTrend[d.academics.termTrend.length - 1]?.value ?? s.average ?? 0;
-  const predicted = latest >= 85 ? 'A+' : latest >= 78 ? 'A' : latest >= 72 ? 'B+' : latest >= 65 ? 'B' : latest >= 55 ? 'C' : 'D';
+  const { scale } = useGradeScale();
+  // Cambridge IGCSE letter (A*–G, U) on the school's active boundaries.
+  const predicted = gradeFor(latest, { scale });
   const gaps = [...d.academics.subjects].filter((x) => x.target != null && x.score < (x.target ?? 0)).sort((a, b) => (a.score - (a.target ?? 0)) - (b.score - (b.target ?? 0)));
   return (
     <Grid cols="g-main">
@@ -378,7 +382,7 @@ function AcademicsTab({ d }: { d: Profile }) {
             columns={[
               { key: 'name', label: 'Subject', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.teacher ?? '—'}</div></> },
               { key: 'score', label: 'Score', className: 'num', render: (r) => <span className="t-num t-bold">{r.score}</span> },
-              { key: 'grade', label: 'Grade', render: (r) => <Badge tone={r.score >= 80 ? 'success' : r.score >= 70 ? 'info' : 'warning'}>{r.grade}</Badge> },
+              { key: 'grade', label: 'Grade', render: (r) => <Badge tone={gradeTone(r.grade, scale)}>{r.grade ?? '—'}</Badge> },
               { key: 'trend', label: 'Trend', render: (r) => (r.trend == null ? '—' : <TrendCell v={r.trend} />) },
               {
                 key: 'target', label: 'Against target', render: (r) => r.target
@@ -403,7 +407,7 @@ function AcademicsTab({ d }: { d: Profile }) {
               { key: 'name', label: 'Assessment', render: (r) => <><span className="t-bold">{r.name}</span><div className="t-micro t-muted">{r.subject} · {fmt.date(r.heldOn)}</div></> },
               { key: 'marks', label: 'Marks', className: 'num', render: (r) => (r.isAbsent ? <Badge tone="critical">Absent</Badge> : <span className="t-num">{r.marks ?? '—'} / {r.maxMarks}</span>) },
               { key: 'pct', label: '%', className: 'num', render: (r) => (r.pct == null ? '—' : `${r.pct}%`) },
-              { key: 'grade', label: 'Grade', render: (r) => r.grade ?? '—' },
+              { key: 'grade', label: 'Grade', render: (r) => (r.grade ? <Badge tone={gradeTone(r.grade, scale)}>{r.grade}</Badge> : '—') },
             ]}
           />
         </Card>
@@ -786,7 +790,8 @@ function DocumentsTab({ d, studentId }: { d: Profile; studentId: string }) {
               <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
                 {r.hasFile && <Button size="sm" icon="download" onClick={() => api.download(`/documents/${r.id}/download`, r.name).catch((e) => toast(e.message, 'critical'))}>Download</Button>}
                 {!r.hasFile && canUpload && <Button size="sm" icon="upload" onClick={() => setUploadFor({ id: r.id, name: r.name })}>Upload</Button>}
-                {r.status === 'Submitted' && can('documents.manage') && (
+                {r.status === 'Submitted' && can('documents.manage') && !can('approvals.decide') && <AwaitingSuperAdmin short />}
+                {r.status === 'Submitted' && can('approvals.decide') && (
                   <>
                     <Button size="sm" variant="teal" onClick={() => verify.mutate({ id: r.id, status: 'Verified' })}>Verify</Button>
                     <Button size="sm" onClick={() => verify.mutate({ id: r.id, status: 'Rejected' })}>Reject</Button>

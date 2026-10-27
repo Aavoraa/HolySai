@@ -8,6 +8,7 @@
 import { addDays, bulkInsert, kolkataTime, type Db, type SeedContext, type SeedStudent } from './context.js';
 import { EMPLOYEES, SECTION_PLAN } from './core-org.js';
 import { BOYS, GIRLS } from './admissions.js';
+import { defaultGradeFor } from '../../backend/src/services/grading-shared.js';
 
 // ---------------------------------------------------------------------------
 // Transport network (sample coordinates near each campus)
@@ -176,8 +177,9 @@ const ADITYA_SUBJECTS: Record<string, [number, number, number, string]> = {
 };
 const ADITYA_TERM = [68, 71, 70, 75, 76, 78];
 
+/** Cambridge IGCSE letter (A*–G, U) on the default boundaries — the same scale the API uses. */
 function gradeFor(score: number) {
-  return score >= 90 ? 'A*' : score >= 85 ? 'A+' : score >= 78 ? 'A' : score >= 72 ? 'B+' : score >= 65 ? 'B' : score >= 55 ? 'C' : score >= 45 ? 'D' : 'E';
+  return defaultGradeFor(score);
 }
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 

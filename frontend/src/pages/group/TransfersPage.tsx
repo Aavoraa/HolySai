@@ -10,6 +10,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
 import { fmt } from '@/lib/format';
 import { StudentPicker, req, useForm, type StudentPick } from '../operations/shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface Transfer {
   id: string; status: string; reason: string; requestedOn: string; decidedAt: string | null; decisionNote: string | null; completedAt: string | null;
@@ -109,6 +110,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
 }
 
 function DetailModal({ id, manage, onClose }: { id: string; manage: boolean; onClose: () => void }) {
+  const { can } = useAuth();
   const q = useApiQuery<Detail>(`/group/transfers/${id}`);
   const [note, setNote] = useState('');
   const [noteErr, setNoteErr] = useState('');
@@ -147,12 +149,13 @@ function DetailModal({ id, manage, onClose }: { id: string; manage: boolean; onC
       foot={<>
         <Button onClick={onClose}>Close</Button>
         {manage && open && <>
-          <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>
+          {can('approvals.decide') && <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>}
           {t!.status === 'Submitted' && <Button loading={decide.isPending && decide.variables?.action === 'review'} onClick={() => run('review')}>Start review</Button>}
-          <Button variant="primary" icon="check" loading={decide.isPending && decide.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>
+          {!can('approvals.decide') && <AwaitingSuperAdmin />}
+          {can('approvals.decide') && <Button variant="primary" icon="check" loading={decide.isPending && decide.variables?.action === 'approve'} onClick={() => run('approve')}>Approve</Button>}
         </>}
         {manage && t?.status === 'Approved' && <>
-          <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>
+          {can('approvals.decide') && <Button variant="danger" loading={decide.isPending && decide.variables?.action === 'reject'} onClick={() => run('reject')}>Reject</Button>}
           <Button variant="primary" icon="refresh" loading={complete.isPending} onClick={doComplete}>Complete transfer</Button>
         </>}
       </>}>

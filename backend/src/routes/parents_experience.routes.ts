@@ -148,14 +148,14 @@ r.get('/circulars/:id/acknowledgements', CIRC_READ, validate(val.idParam, 'param
 r.post('/circulars/:id/submit', SEND, validate(val.idParam, 'params'), async (req: Request, res: Response) =>
   ok(res, await circ.submitCircular(req, v(req, 'params').id), 'Circular sent for approval'));
 
-// Releasing (or returning) a circular is an approval: it also needs the broadcast permission.
-r.post('/circulars/:id/release', requirePermission('communication.send', 'notifications.broadcast'), validate(val.idParam, 'params'),
+// Releasing (or returning) a circular is an approval decision: Super Admin only (approvals.decide).
+r.post('/circulars/:id/release', requirePermission('approvals.decide'), validate(val.idParam, 'params'),
   async (req: Request, res: Response) => {
     const out = await circ.releaseCircular(req, v(req, 'params').id);
     return ok(res, out, `Circular released to ${out.targetCount} recipients`);
   });
 
-r.post('/circulars/:id/return', requirePermission('communication.send', 'notifications.broadcast'), validate(val.idParam, 'params'),
+r.post('/circulars/:id/return', requirePermission('approvals.decide'), validate(val.idParam, 'params'),
   async (req: Request, res: Response) => ok(res, await circ.returnCircular(req, v(req, 'params').id), 'Circular returned to draft'));
 
 r.post('/circulars/:id/withdraw', requirePermission('communication.send', 'notifications.broadcast'), validate(val.idParam, 'params'),

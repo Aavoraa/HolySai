@@ -8,23 +8,24 @@ import { authorizeStudent, isGuardianOf, resolveStudentId } from '../services/ac
 import * as fees from '../services/finance-fees.service.js';
 import * as ops from '../services/finance-ops.service.js';
 import * as V from '../validators/finance.validators.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Finance domain routes. Mounted at /api behind authentication.
  * Staff screens live under /finance/*; the Parent 360 fee endpoints under /family/*.
  *   read      finance.read
  *   write     finance.manage
- *   approvals finance.approve
+ *   review    finance.manage (moving a request to Under Review prepares it; it is not a decision)
+ *   decisions approvals.decide — approve / reject belong to the Super Admin only
  *   family    fees.pay_own (own children only; 404 otherwise)
  */
 const r = Router();
 const READ = requirePermission('finance.read');
 const MANAGE = requirePermission('finance.manage');
-const APPROVE = requirePermission('finance.approve');
+const APPROVE = requirePermission('approvals.decide');
 const PAY_OWN = requirePermission('fees.pay_own');
 const ALLOW_READ = requireAny('finance.read', 'hr.read');
 const ALLOW_MANAGE = requireAny('finance.manage', 'hr.manage');
-const ALLOW_APPROVE = requireAny('finance.approve', 'hr.approve');
 
 const idP = validate(V.idParam, 'params');
 const campusQ = validate(V.campusQuery, 'query');
@@ -140,7 +141,7 @@ r.post('/finance/concessions', MANAGE, validate(V.concessionCreate), async (req:
   return created(res, await fees.createConcession(req, input), 'Concession requested');
 });
 
-r.post('/finance/concessions/:id/review', APPROVE, idP, async (req: Request, res: Response) =>
+r.post('/finance/concessions/:id/review', MANAGE, idP, async (req: Request, res: Response) =>
   ok(res, await fees.reviewConcession(req, v(req, 'params').id), 'Concession moved to review'));
 
 r.post('/finance/concessions/:id/approve', APPROVE, idP, async (req: Request, res: Response) =>
@@ -172,7 +173,7 @@ r.post('/finance/expenses', MANAGE, validate(V.expenseCreate), async (req: Reque
 
 r.post('/finance/expenses/:id/submit', MANAGE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionExpense(req, v(req, 'params').id, 'submit'), 'Expense submitted'));
-r.post('/finance/expenses/:id/review', APPROVE, idP, async (req: Request, res: Response) =>
+r.post('/finance/expenses/:id/review', MANAGE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionExpense(req, v(req, 'params').id, 'review'), 'Expense moved to review'));
 r.post('/finance/expenses/:id/approve', APPROVE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionExpense(req, v(req, 'params').id, 'approve'), 'Expense approved'));
@@ -193,7 +194,7 @@ r.get('/finance/reimbursements', READ, validate(V.reimbursementListQuery, 'query
 
 r.post('/finance/reimbursements', MANAGE, validate(V.reimbursementCreate), async (req: Request, res: Response) =>
   created(res, await ops.createReimbursement(req, v(req)), 'Claim recorded'));
-r.post('/finance/reimbursements/:id/review', APPROVE, idP, async (req: Request, res: Response) =>
+r.post('/finance/reimbursements/:id/review', MANAGE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionReimbursement(req, v(req, 'params').id, 'review'), 'Claim moved to review'));
 r.post('/finance/reimbursements/:id/approve', APPROVE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionReimbursement(req, v(req, 'params').id, 'approve'), 'Claim approved'));
@@ -217,8 +218,10 @@ r.post('/finance/allowances', ALLOW_MANAGE, validate(V.allowanceCreate), async (
   return created(res, out, `Allowance proposed for ${out.employees} employee(s)`);
 });
 
-r.post('/finance/allowances/decide', ALLOW_APPROVE, validate(V.allowanceDecision), async (req: Request, res: Response) => {
+r.post('/finance/allowances/decide', ALLOW_MANAGE, validate(V.allowanceDecision), async (req: Request, res: Response) => {
   const input = v(req);
+  // Approving / rejecting a proposal is the Super Admin's; stopping an approved allowance is not a decision.
+  if (input.decision !== 'Stopped') assertDecider(req.user, 'Approving or rejecting an allowance');
   const out = await ops.decideAllowance(req, input);
   return ok(res, out, `${input.allowanceType}: ${input.decision.toLowerCase()} for ${out.updated} employee(s)`);
 });

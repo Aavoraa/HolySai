@@ -1,4 +1,8 @@
+import { useState } from 'react';
 import { useApiQuery, usePagedQuery } from '@/hooks/useApi';
+import { useAuth } from '@/auth/AuthContext';
+import { fmt } from '@/lib/format';
+import { FORM_FILTER_OPTIONS, FormStatusBadge, ImportFormsModal, NewApplicationModal } from './AdmissionForm';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
@@ -20,14 +24,23 @@ const STATUS_OPTIONS = [
 export default function ApplicationsPage() {
   const { campusParam } = useSchool();
   const { openLead } = useLeadParam();
-  const list = useListParams({ sort: 'created', dir: 'desc' }, ['status', 'documents']);
+  const list = useListParams({ sort: 'created', dir: 'desc' }, ['status', 'documents', 'form']);
+  const { can } = useAuth();
+  const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const q = usePagedQuery<ApplicationRow>('/applications', { ...list.query, ...campusParam });
   const s = useApiQuery<Summary>('/applications/summary', campusParam);
   const d = s.data;
 
   return (
     <Page>
-      <PageHead title="Applications" sub="Online applications, document checks, assessment and offer." />
+      <PageHead title="Applications" sub="Admission forms, document checks, assessment and offer."
+        actions={can('admissions.manage') && (
+          <>
+            <Button icon="upload" onClick={() => setImporting(true)}>Import forms</Button>
+            <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>New application</Button>
+          </>
+        )} />
       <Card>
         {s.isLoading ? <Skeleton height={56} /> : s.error ? <ErrorState error={s.error} onRetry={() => s.refetch()} /> : d && (
           <Flow steps={[
@@ -45,6 +58,7 @@ export default function ApplicationsPage() {
           <FilterSelect label="Status" value={list.filters.status} onChange={(x) => list.setFilter('status', x)} options={STATUS_OPTIONS} />
           <FilterSelect label="Documents" value={list.filters.documents} onChange={(x) => list.setFilter('documents', x)}
             options={[{ value: 'incomplete', label: 'Incomplete' }, { value: 'complete', label: 'Complete' }]} />
+          <FilterSelect label="Admission form" value={list.filters.form} onChange={(x) => list.setFilter('form', x)} options={FORM_FILTER_OPTIONS} />
           {list.hasFilters && <Button size="sm" variant="quiet" onClick={list.clear}>Clear filters</Button>}
           <div className="spacer" />
           <span className="t-sm t-muted t-num">{q.data ? `${q.data.meta.total} applications` : ''}</span>
@@ -57,7 +71,7 @@ export default function ApplicationsPage() {
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => r.leadCode && openLead(r.leadCode)}
-            emptyText={list.hasFilters ? 'No applications match the current filters.' : 'No applications yet. Open one from a lead profile, or move a lead to the Application stage — the document checklist is created automatically.'}
+            emptyText={list.hasFilters ? 'No applications match the current filters.' : 'No applications yet. Use “New application” when a family returns the filled admission form, or open one from a lead profile.'}
             columns={[
               {
                 key: 'student', label: 'Applicant', render: (r) => (
@@ -82,6 +96,14 @@ export default function ApplicationsPage() {
                 ),
               },
               {
+                key: 'form', label: 'Admission form', sortable: false, render: (r) => (
+                  <span className="col" style={{ gap: 2 }}>
+                    <FormStatusBadge status={r.formStatus} complete={r.formComplete} />
+                    {r.formReceivedOn && <span className="t-micro t-muted">Received {fmt.dateShort(r.formReceivedOn)}</span>}
+                  </span>
+                ),
+              },
+              {
                 key: 'docs', label: 'Documents', sortable: false, render: (r) => (
                   <Badge tone={r.documentsTotal && r.documentsVerified === r.documentsTotal ? 'success' : 'warning'}>{r.documentsVerified}/{r.documentsTotal}</Badge>
                 ),
@@ -96,6 +118,8 @@ export default function ApplicationsPage() {
         )}
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>
+      {creating && <NewApplicationModal onClose={() => setCreating(false)} onDone={(code) => { setCreating(false); openLead(code); }} />}
+      {importing && <ImportFormsModal onClose={() => setImporting(false)} />}
       <LeadProfileHost />
     </Page>
   );

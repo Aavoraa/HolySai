@@ -8,6 +8,7 @@ import { notifyGuardians, notifyRoles } from './notification.service.js';
 import { studentScope } from './access.service.js';
 import { requireSchoolScope, sectionScope } from './academics.service.js';
 import { REPORT_CARD_STAGES, REPORT_CARD_STATUS, draftReportComment } from './academics-shared.js';
+import { expectationBands } from './grading.service.js';
 import type { AuthUser } from '../types.js';
 
 // =============================================================================
@@ -179,7 +180,7 @@ export async function advanceBatch(req: Request, id: string, toStage: number) {
       if ((c?.approved ?? 0) < (roster?.n ?? 0)) {
         throw badRequest(`${(roster?.n ?? 0) - (c?.approved ?? 0)} comment(s) still need teacher approval`, 'COMMENTS_PENDING');
       }
-      notified = (await notifyRoles(['principal'], {
+      notified = (await notifyRoles(['principal', 'super_admin'], {
         category: 'Attention', topic: 'report_cards', icon: 'fileText',
         title: `${b.label} report cards await approval`, body: `${b.term} · ${roster?.n ?? 0} students`, route: '/report-cards',
         entityType: 'report_card_batch', entityId: id,
@@ -295,16 +296,18 @@ async function termOrders(yearCond = '(SELECT id FROM academic_years WHERE is_cu
 }
 
 /**
- * Expectation bands on the term average (Cambridge-aligned school policy):
- * above expectation 75+, at expectation 60–74, below expectation under 60.
+ * Expectation bands on the term average, aligned to the Cambridge IGCSE scale
+ * (services/grading.service.ts): above expectation = grade B or better,
+ * at expectation = grade C, below expectation = under C. With the default
+ * boundaries that is 70+, 60–69 and under 60.
  */
-export const EXPECTATION = { above: 75, at: 60 } as const;
-function band(avg: number) {
-  return avg >= EXPECTATION.above ? 'above' : avg >= EXPECTATION.at ? 'at' : 'below';
+function band(avg: number, e: { above: number; at: number }) {
+  return avg >= e.above ? 'above' : avg >= e.at ? 'at' : 'below';
 }
 
 export async function performanceOverview(user: AuthUser, f: { campusId?: string; grade?: number }) {
   const { terms, cur, prev, curLabel, prevLabel } = await termOrders();
+  const EXPECTATION = await expectationBands();
   const w = new Where().add(`s.deleted_at IS NULL AND s.status = 'active'`);
   w.addIf(f.campusId, 's.campus_id = ?');
   w.addIf(f.grade, 'cl.grade_level = ?');
@@ -334,7 +337,7 @@ export async function performanceOverview(user: AuthUser, f: { campusId?: string
       by.set(r.student_id, e);
     }
     const out = { above: 0, at: 0, below: 0, total: by.size };
-    for (const e of by.values()) out[band(avg(e.s)!) as 'above' | 'at' | 'below']++;
+    for (const e of by.values()) out[band(avg(e.s)!, EXPECTATION) as 'above' | 'at' | 'below']++;
     return out;
   };
   const pct = (n: number, d: number) => (d ? Math.round((100 * n) / d) : 0);
@@ -395,6 +398,7 @@ const PERF_SORTS: Record<string, string> = {
 
 export async function performanceStudents(user: AuthUser, f: Pagination & { campusId?: string; grade?: number; band?: string; subjectId?: string }) {
   const { cur, prev } = await termOrders();
+  const EXPECTATION = await expectationBands();
   const w = new Where().add(`s.deleted_at IS NULL AND s.status = 'active'`);
   w.addIf(f.campusId, 's.campus_id = ?');
   w.addIf(f.grade, 'cl.grade_level = ?');

@@ -2,12 +2,19 @@
  * Pure academic helpers shared by the API and the seed (no database access).
  */
 
-/** Grade band for a percentage — the same bands Student 360 uses. */
-export function gradeFor(pct: number) {
-  return pct >= 90 ? 'A*' : pct >= 85 ? 'A+' : pct >= 78 ? 'A' : pct >= 72 ? 'B+' : pct >= 65 ? 'B' : pct >= 55 ? 'C' : pct >= 45 ? 'D' : 'E';
+import { GRADE_ORDER, defaultGradeFor, type Tier } from './grading-shared.js';
+
+/**
+ * Cambridge IGCSE letter grade (A*–G, U) for a percentage on the DEFAULT
+ * boundaries. Sync fallback for the seed and pure helpers; the API grades with
+ * the editable database scale through services/grading.service.ts.
+ */
+export function gradeFor(pct: number, tier?: Tier | null) {
+  return defaultGradeFor(pct, tier);
 }
 
-export const GRADE_BANDS = ['A*', 'A+', 'A', 'B+', 'B', 'C', 'D', 'E'] as const;
+/** Grade letters in report order: A*, A, B, C, D, E, F, G, U. */
+export const GRADE_BANDS = GRADE_ORDER;
 
 /** Report-card workflow stages (report_card_batches.stage 0–5). */
 export const REPORT_CARD_STAGES = ['Marks entry', 'Moderation', 'AI draft comments', 'Teacher review', 'Approval', 'Parent release'] as const;

@@ -10,6 +10,7 @@ import {
 import { fmt } from '@/lib/format';
 import { COVER_OPTIONS, EmpLink, LeaveApplyModal, TYPE_LABEL, useEmployeeModal } from './shared';
 import type { LeaveRow, LeaveSummary } from './types';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 const TYPE_COLORS = ['var(--navy)', 'var(--amber)', 'var(--teal)', 'var(--viz-4)', 'var(--viz-5)'];
 type Decision = { row: LeaveRow; kind: 'approve' | 'reject' | 'cover' };
@@ -77,11 +78,13 @@ export default function LeavePage() {
                   : body;
               } },
               { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
-              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => can('hr.approve') && ['Submitted', 'Under Review'].includes(r.status) ? (
+              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => (can('approvals.decide') || can('hr.manage')) && ['Submitted', 'Under Review'].includes(r.status) ? (
                 <div className="row g-2 end wrap">
-                  {r.status === 'Submitted' && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
-                  <Button size="sm" variant="teal" icon="check" onClick={() => setDecision({ row: r, kind: 'approve' })}>Approve</Button>
-                  <Button size="sm" icon="x" onClick={() => setDecision({ row: r, kind: 'reject' })}>Reject</Button>
+                  {r.status === 'Submitted' && can('hr.manage') && <Button size="sm" variant="quiet" loading={review.isPending && review.variables === r.id} onClick={() => review.mutate(r.id)}>Review</Button>}
+                  {can('approvals.decide') ? <>
+                    <Button size="sm" variant="teal" icon="check" onClick={() => setDecision({ row: r, kind: 'approve' })}>Approve</Button>
+                    <Button size="sm" icon="x" onClick={() => setDecision({ row: r, kind: 'reject' })}>Reject</Button>
+                  </> : <AwaitingSuperAdmin short />}
                 </div>
               ) : r.decidedBy ? <span className="t-micro t-muted">{r.decidedBy}</span> : null },
             ]} />

@@ -7,7 +7,9 @@ import {
   Skeleton, Stepper, TextArea, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
+import { gradeTone } from '@/lib/grades';
 import { DueDate } from './shared';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 interface BatchRow { id: string; sectionId: string; grade: string; term: string; stage: number; status: string; due: string; releasedAt: string | null; approvedBy: string | null; students: number; drafts: number; approved: number; rejected: number }
 interface Overview { stages: string[]; stageCounts: { label: string; count: number }[]; rows: BatchRow[]; awaitingRelease: number }
@@ -52,7 +54,7 @@ export default function ReportCardsPage() {
       <PageHead
         title="Report Cards"
         sub="Marks → Moderation → AI draft comments → Teacher review → Approval → Parent release. Nothing reaches a parent without a named approval."
-        actions={schoolLevel && <Button variant="primary" icon="send" onClick={doRelease} disabled={!q.data?.awaitingRelease} loading={release.isPending}>Release approved{q.data?.awaitingRelease ? ` (${q.data.awaitingRelease})` : ''}</Button>}
+        actions={schoolLevel && !can('approvals.decide') ? (q.data?.awaitingRelease ? <AwaitingSuperAdmin /> : null) : can('approvals.decide') && <Button variant="primary" icon="send" onClick={doRelease} disabled={!q.data?.awaitingRelease} loading={release.isPending}>Release approved{q.data?.awaitingRelease ? ` (${q.data.awaitingRelease})` : ''}</Button>}
       />
       {q.isLoading ? <PageSkeleton kpis={0} /> : q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : (() => {
         const d = q.data!;
@@ -135,7 +137,7 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
         title: to === 5 ? `Release ${b.label} report cards to parents?` : `Send ${b.label} for approval?`,
         body: to === 5
           ? 'Parents are notified and can read the report cards in Parent 360. Your name is recorded as the approver. This cannot be undone.'
-          : 'Comments are locked once the class is sent for approval. The principal is notified.',
+          : 'Comments are locked once the class is sent for approval. The Super Admin is notified.',
         confirmLabel: to === 5 ? 'Approve and release' : 'Send for approval', icon: 'send',
       });
       if (!ok) return;
@@ -143,7 +145,9 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
     advance.mutate({ toStage: to });
   };
 
-  const canAdvance = !!b && manage && b.stage < 5 && (b.stage < 4 || schoolLevel);
+  // The Approval stage (4 → release) is the Super Admin's decision.
+  const canAdvance = !!b && manage && b.stage < 5 && (b.stage < 4 || can('approvals.decide'));
+  const awaitingSuperAdmin = !!b && b.stage === 4 && !can('approvals.decide');
   const advanceBlocked = !!b && ((b.stage === 2 && b.counts.missing > 0) || (b.stage === 3 && b.counts.approved < b.counts.total));
 
   return (
@@ -155,6 +159,7 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
         {b && manage && b.counts.missing > 0 && (b.stage === 2 || b.stage === 3) && (
           <Button icon="sparkle" onClick={() => draftMissing.mutate()} loading={draftMissing.isPending}>Draft {b.counts.missing} missing comment{b.counts.missing === 1 ? '' : 's'}</Button>
         )}
+        {awaitingSuperAdmin && <AwaitingSuperAdmin />}
         {canAdvance && (
           <Button variant="primary" icon="send" onClick={doAdvance} loading={advance.isPending} disabled={advanceBlocked}
             title={advanceBlocked ? 'Every student needs an approved comment first' : undefined}>
@@ -203,7 +208,7 @@ function BatchModal({ id, onClose }: { id: string; onClose: () => void }) {
                       <DataTable compact stack={false} rows={sel.results} rowKey={(r) => r.subject} columns={[
                         { key: 'subject', label: 'Subject' },
                         { key: 'score', label: 'Mark', className: 'num', render: (r) => <span className="t-num">{r.score}</span> },
-                        { key: 'grade', label: 'Grade', render: (r) => <Badge tone={r.score >= 80 ? 'success' : 'neutral'}>{r.grade ?? '—'}</Badge> },
+                        { key: 'grade', label: 'Grade', render: (r) => <Badge tone={gradeTone(r.grade)}>{r.grade ?? '—'}</Badge> },
                         { key: 'target', label: 'Target', className: 'num', render: (r) => <span className="t-num">{r.target ?? '—'}</span> },
                       ]} />
                     )}

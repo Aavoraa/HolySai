@@ -204,7 +204,7 @@ export async function createCertificate(req: Request, b: { certificateType: stri
        RETURNING id, (SELECT full_name FROM students WHERE id = $2) AS name`,
       [b.certificateType, studentId, b.purpose ?? null, req.user!.id], db);
     await audit(req, { action: 'create', module: 'documents', description: `Requested ${b.certificateType} for ${r!.name}`, entityType: 'certificate', entityId: r!.id }, db);
-    await notifyRoles(['principal'], {
+    await notifyRoles(['principal', 'super_admin'], {
       category: 'Attention', topic: 'documents', icon: 'award', title: `${b.certificateType} requested for ${r!.name}`,
       route: '/certificates', entityType: 'certificate', entityId: r!.id,
     }, db);

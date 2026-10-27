@@ -4,6 +4,7 @@ import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
 import * as svc from '../services/group.service.js';
 import * as val from '../validators/group.validators.js';
+import { assertDecider } from '../services/approvals-guard.js';
 
 /**
  * Group management (multi-campus). Mounted at /api behind authentication.
@@ -41,6 +42,8 @@ r.get('/group/transfers/:id', READ, id, async (req: Request, res: Response) =>
 r.post('/group/transfers', MANAGE, validate(val.transferCreate), async (req: Request, res: Response) =>
   created(res, await svc.createTransfer(req, v(req)), 'Transfer requested'));
 r.post('/group/transfers/:id/decision', MANAGE, id, validate(val.transferDecision), async (req: Request, res: Response) => {
+  // Moving a request to review prepares it; approving or rejecting is the Super Admin's.
+  if (v(req).action !== 'review') assertDecider(req.user, 'Approving or rejecting a transfer');
   const out = await svc.decideTransfer(req, pid(req), v(req));
   return ok(res, out, `Transfer ${out.status.toLowerCase()}`);
 });
@@ -56,9 +59,13 @@ r.get('/group/policies', READ, validate(val.policyListQuery, 'query'), async (re
   return paged(res, rows, total, f.page, f.pageSize, 'Policies retrieved');
 });
 r.get('/group/policies/:id', READ, id, async (req: Request, res: Response) => ok(res, await svc.getPolicy(pid(req)), 'Policy retrieved'));
-r.post('/group/policies', MANAGE, validate(val.policyCreate), async (req: Request, res: Response) =>
-  created(res, await svc.createPolicy(req, v(req)), 'Policy created'));
+r.post('/group/policies', MANAGE, validate(val.policyCreate), async (req: Request, res: Response) => {
+  // Making a policy Active is its approval — Super Admin only.
+  if (v(req).status === 'Active') assertDecider(req.user, 'Approving a policy');
+  return created(res, await svc.createPolicy(req, v(req)), 'Policy created');
+});
 r.put('/group/policies/:id', MANAGE, id, validate(val.policyUpdate), async (req: Request, res: Response) => {
+  if (v(req).status === 'Active' && (await svc.getPolicy(pid(req))).status !== 'Active') assertDecider(req.user, 'Approving a policy');
   await svc.updatePolicy(req, pid(req), v(req));
   return ok(res, null, 'Policy updated');
 });

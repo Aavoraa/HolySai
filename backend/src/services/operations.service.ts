@@ -279,7 +279,7 @@ export async function createMaintenance(req: Request, b: any) {
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
       [code, campusId, b.assetId ?? null, b.facilityId ?? null, b.description, b.priority, u.employeeId], db);
     await audit(req, { action: 'create', module: MODULE, description: `Raised maintenance request ${code} — ${b.description}`, entityType: 'maintenance_request', entityId: r!.id }, db);
-    await notifyRoles(['principal', 'school_admin'], {
+    await notifyRoles(['principal', 'school_admin', 'super_admin'], {
       category: b.priority === 'High' || b.priority === 'Urgent' ? 'Attention' : 'Information', topic: 'operations', icon: 'wrench',
       title: `${code}: ${b.description}`, body: `${b.priority} priority · raised by ${u.fullName}`, route: '/maintenance', entityType: 'maintenance_request', entityId: r!.id,
     }, db);

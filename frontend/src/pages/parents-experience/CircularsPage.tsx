@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { fmt } from '@/lib/format';
 import { AudiencePicker, ackTone, fieldErrorsOf } from './shared';
 import type { AckSummary, Audience, Circular } from './types';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 const CHANNEL_SETS: { label: string; value: string[] }[] = [
   { label: 'App + WhatsApp', value: ['push', 'whatsapp'] },
@@ -41,7 +42,7 @@ function useCircularActions() {
   return {
     busy,
     submit: async (c: Circular) => {
-      if (await confirm({ title: 'Send for approval?', body: `“${c.title}” will be locked for review by the Principal. You can still edit it until it is released.`, confirmLabel: 'Send for approval', icon: 'send' })) submit.mutate(c.id);
+      if (await confirm({ title: 'Send for approval?', body: `“${c.title}” will be locked for approval by the Super Admin. You can still edit it until it is released.`, confirmLabel: 'Send for approval', icon: 'send' })) submit.mutate(c.id);
     },
     release: async (c: Circular) => {
       if (await confirm({
@@ -81,7 +82,7 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
     <Page>
       <PageHead title={title} sub={sub}
         actions={canSend && <Button variant="primary" icon="plus" onClick={() => setForm({ open: true, circular: null })}>New circular</Button>} />
-      {canRelease && (summary.data?.underReview ?? 0) > 0 && (
+      {can('approvals.decide') && (summary.data?.underReview ?? 0) > 0 && (
         <div className="mb-4">
           <Banner tone="warning" icon="clipboard">
             <strong>{summary.data!.underReview} circular{summary.data!.underReview > 1 ? 's' : ''} awaiting your approval.</strong>{' '}
@@ -107,7 +108,7 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
             sort={list.sort}
             onSort={list.setSort}
             onRowClick={(r) => setOpen(r.id)}
-            emptyText={list.hasFilters ? 'No circulars match the current filters.' : canSend ? 'No circulars yet. Use “New circular” to draft one — it goes to the Principal for approval before release.' : 'No circulars yet.'}
+            emptyText={list.hasFilters ? 'No circulars match the current filters.' : canSend ? 'No circulars yet. Use “New circular” to draft one — it goes to the Super Admin for approval before release.' : 'No circulars yet.'}
             columns={[
               { key: 'title', label: 'Circular', render: (r) => <><span className="t-bold">{r.title}</span><div className="t-micro t-muted">{r.audience}{r.campus ? ` · ${r.campus}` : ''}</div></> },
               { key: 'issued', label: 'Issued', render: (r) => r.publishedAt ? fmt.date(r.publishedAt) : <span className="t-muted">{r.status === 'Under Review' ? `Submitted ${fmt.dateShort(r.submittedAt)}` : 'Draft'}</span> },
@@ -123,7 +124,8 @@ export default function CircularsPage({ title = 'Circulars', sub = 'Broadcasts t
                 key: 'a', label: '', sortable: false, className: 'num', render: (r) => {
                   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
                   if (r.status === 'Draft' && canSend) return <Button size="sm" variant="primary" disabled={act.busy} onClick={stop(() => act.submit(r))}>Send for approval</Button>;
-                  if (r.status === 'Under Review' && canRelease) return <Button size="sm" variant="primary" icon="megaphone" disabled={act.busy} onClick={stop(() => act.release(r))}>Release</Button>;
+                  if (r.status === 'Under Review' && !can('approvals.decide')) return <AwaitingSuperAdmin short />;
+                  if (r.status === 'Under Review' && can('approvals.decide')) return <Button size="sm" variant="primary" icon="megaphone" disabled={act.busy} onClick={stop(() => act.release(r))}>Release</Button>;
                   if (r.status === 'Released' && r.requiresAck && canSend && r.ackCount < r.targetCount) return <Button size="sm" disabled={act.busy} onClick={stop(() => act.remind(r))}>Remind unacknowledged</Button>;
                   return <Button size="sm" variant="quiet" onClick={stop(() => setOpen(r.id))}>View</Button>;
                 },
@@ -154,15 +156,15 @@ function CircularDetail({ id, onClose, onEdit }: { id: string | null; onClose: (
         {c.status === 'Released' && canRelease && <Button variant="danger" disabled={act.busy} onClick={() => act.withdraw(c)}>Withdraw</Button>}
         {c.status === 'Released' && c.requiresAck && <Button icon="checkSquare" to={`/acknowledgements?circular=${c.id}`}>Who acknowledged</Button>}
         {c.status === 'Released' && c.requiresAck && canSend && <Button icon="send" disabled={act.busy} onClick={() => act.remind(c)}>Remind unacknowledged</Button>}
-        {c.status === 'Under Review' && canRelease && <Button disabled={act.busy} onClick={() => act.giveBack(c)}>Return for changes</Button>}
-        {c.status === 'Under Review' && canRelease && <Button variant="primary" icon="megaphone" disabled={act.busy} onClick={() => act.release(c)}>Release</Button>}
+        {c.status === 'Under Review' && can('approvals.decide') && <Button disabled={act.busy} onClick={() => act.giveBack(c)}>Return for changes</Button>}
+        {c.status === 'Under Review' && can('approvals.decide') && <Button variant="primary" icon="megaphone" disabled={act.busy} onClick={() => act.release(c)}>Release</Button>}
         {c.status === 'Draft' && canSend && <Button variant="primary" icon="send" disabled={act.busy} onClick={() => act.submit(c)}>Send for approval</Button>}
       </>}>
       {q.error ? <ErrorState error={q.error} onRetry={q.refetch} /> : !c ? <Skeleton height={240} /> : (
         <div className="col g-4">
           <Flow steps={flowFor(c.status)} />
           {c.status === 'Withdrawn' && <Banner tone="neutral">This circular was withdrawn and is no longer shown to families.</Banner>}
-          {c.status === 'Under Review' && !canRelease && <Banner tone="neutral" icon="clock">Waiting for approval by the Principal.</Banner>}
+          {c.status === 'Under Review' && !can('approvals.decide') && <Banner tone="neutral" icon="clock">Awaiting Super Admin approval — only the Super Admin can release or return it.</Banner>}
           <div className="card card--tint pe-circular-body"><p className="t-sm">{c.body}</p></div>
           {c.status === 'Released' && c.requiresAck && (
             <Meter label="Acknowledged" value={c.targetCount ? (c.ackCount / c.targetCount) * 100 : 0} right={`${fmt.n(c.ackCount)} of ${fmt.n(c.targetCount)}`} tone={ackTone(c.ackCount, c.targetCount)} lg

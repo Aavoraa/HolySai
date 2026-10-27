@@ -11,6 +11,7 @@ import {
 import { fmt, todayKey } from '@/lib/format';
 import { EmpLink, ListCount, addDays, fieldErrors, useEmployeeModal } from './shared';
 import type { OvertimeRow, OvertimeSummary, WorkforceSummary } from './types';
+import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
 export default function OvertimePage() {
   const { can } = useAuth();
@@ -67,7 +68,8 @@ export default function OvertimePage() {
               { key: 'reason', label: 'Reason', sortable: false, render: (r) => <span className="t-xs t-muted">{r.reason}</span> },
               { key: 'cost', label: 'Cost', className: 'num', render: (r) => <span className="t-num" title={`${r.hours} h × ${fmt.money(r.rate)}`}>{fmt.money(r.cost)}</span> },
               { key: 'status', label: 'Approval', render: (r) => <Status value={r.status} /> },
-              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => can('hr.approve') && ['Submitted', 'Under Review'].includes(r.status) ? (
+              { key: 'a', label: '', sortable: false, className: 'num', render: (r) => ['Submitted', 'Under Review'].includes(r.status) && !can('approvals.decide') ? <AwaitingSuperAdmin short />
+                : can('approvals.decide') && ['Submitted', 'Under Review'].includes(r.status) ? (
                 <div className="row g-2 end wrap">
                   <Button size="sm" variant="teal" icon="check" loading={approve.isPending && approve.variables === r.id} onClick={async () => {
                     if (await confirm({ title: `Approve ${r.hours} h for ${r.employeeName}?`, body: `${fmt.money(r.cost)} will be paid in the next payroll run.`, confirmLabel: 'Approve' })) approve.mutate(r.id);

@@ -333,7 +333,7 @@ export async function createTransfer(req: Request, b: { studentId: string; toCam
       `INSERT INTO student_transfers (student_id, from_campus_id, to_campus_id, reason, status, requested_by)
        VALUES ($1,$2,$3,$4,'Submitted',$5) RETURNING id`, [studentId, s.campus_id, b.toCampusId, b.reason, req.user!.id], db);
     await audit(req, { action: 'create', module: MODULE, description: `Requested transfer of ${s.full_name} to ${to.name}`, entityType: 'student_transfer', entityId: r!.id }, db);
-    await notifyRoles(['principal'], {
+    await notifyRoles(['principal', 'super_admin'], {
       category: 'Attention', topic: 'group', icon: 'refresh', title: `Transfer request: ${s.full_name} → ${to.name}`, body: b.reason,
       route: '/transfers', entityType: 'student_transfer', entityId: r!.id,
     }, db);

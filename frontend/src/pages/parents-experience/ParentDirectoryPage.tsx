@@ -131,6 +131,7 @@ function ParentProfileModal({ id, onClose, onEdit }: { id: string | null; onClos
       title={p?.fullName ?? 'Parent'}
       sub={p ? `${p.parentCode} · ${p.hasAppAccount ? 'Uses the parent app' : 'No app account'}` : undefined}
       foot={p && <>
+        {can(['parentlog.read', 'parentlog.manage']) && <Button icon="clock" to={`/parent-log?parent=${p.id}`}>Contact history</Button>}
         {can('parents.manage') && <Button icon="edit" onClick={() => onEdit(p)}>Edit</Button>}
         {can('communication.send') && <Button icon="phone" onClick={() => setLog(true)} disabled={!row}>Log call</Button>}
         {can('communication.send') && <Button variant="primary" icon="message" onClick={() => setMessage(true)} disabled={!row}>Message</Button>}

@@ -450,7 +450,7 @@
   post:
     tags: [Parent Experience]
     summary: Under Review → Released; notifies the audience (app + queued channels) and records the broadcast
-    x-permission: communication.send + notifications.broadcast
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:
@@ -462,7 +462,7 @@
   post:
     tags: [Parent Experience]
     summary: Under Review → Draft (returned for changes; author notified)
-    x-permission: communication.send + notifications.broadcast
+    x-permission: approvals.decide
     security: [{ bearerAuth: [] }]
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     responses:

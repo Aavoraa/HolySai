@@ -1,0 +1,223 @@
+# Job Cards — work requests raised by one department to another, and the department register.
+# Visibility: a user sees cards they raised, cards from or to a department they belong to (or head),
+# and cards assigned to them; jobcards.manage sees all. Cards outside scope return 404.
+/job-cards:
+  get:
+    tags: [Job Cards]
+    summary: List job cards visible to the signed-in user
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/Page'
+      - $ref: '#/components/parameters/PageSize'
+      - $ref: '#/components/parameters/Search'
+      - { name: sort, in: query, schema: { type: string, enum: [code, title, category, priority, status, due, created, updated, from, to, assignee] }, description: Default order is active first, overdue, priority, due date }
+      - $ref: '#/components/parameters/Dir'
+      - $ref: '#/components/parameters/CampusId'
+      - { name: status, in: query, schema: { type: string, enum: [active, Open, Assigned, In Progress, On Hold, Completed, Closed, Cancelled, Reopened] }, description: "active = not Completed / Closed / Cancelled" }
+      - { name: priority, in: query, schema: { type: string, enum: [Low, Medium, High, Urgent] } }
+      - { name: category, in: query, schema: { type: string, enum: [Maintenance, IT, Event support, Academic, Administrative, Transport, Housekeeping, Procurement, HR, Other] } }
+      - { name: direction, in: query, schema: { type: string, enum: [in, out, mine, all] }, description: "in = sent to my departments; out = raised by me or my departments; mine = assigned to me" }
+      - { name: departmentId, in: query, schema: { type: string, format: uuid }, description: Cards raised from or sent to this department }
+      - { name: overdue, in: query, schema: { type: boolean }, description: Due date passed and not Completed / Closed / Cancelled }
+    responses:
+      '200': { $ref: '#/components/responses/Paged' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Job Cards]
+    summary: Raise a job card (code JC-nnnn is generated; the receiving department head is notified)
+    description: Without jobcards.manage the raising department must be one of your own (it defaults to your department).
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [toDepartmentId, title]
+            properties:
+              fromDepartmentId: { type: string, format: uuid }
+              toDepartmentId: { type: string, format: uuid }
+              title: { type: string, minLength: 3, maxLength: 160 }
+              description: { type: string, maxLength: 2000 }
+              category: { type: string, enum: [Maintenance, IT, Event support, Academic, Administrative, Transport, Housekeeping, Procurement, HR, Other] }
+              priority: { type: string, enum: [Low, Medium, High, Urgent] }
+              dueOn: { type: string, format: date, description: Today or later }
+              location: { type: string }
+              campusId: { type: string, format: uuid }
+              estimatedHours: { type: number }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/job-cards/summary:
+  get:
+    tags: [Job Cards]
+    summary: Counts by status, overdue, completed this month, average completion time, tab counts and per-department open in/out
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/CampusId'
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/job-cards/{id}:
+  get:
+    tags: [Job Cards]
+    summary: Job card detail with its update timeline and the actions available to you
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '404': { $ref: '#/components/responses/NotFound' }
+  put:
+    tags: [Job Cards]
+    summary: Edit a job card (details by the raising department; hours by either side)
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              title: { type: string }
+              description: { type: string }
+              category: { type: string }
+              priority: { type: string, enum: [Low, Medium, High, Urgent] }
+              dueOn: { type: string, format: date }
+              location: { type: string }
+              estimatedHours: { type: number }
+              actualHours: { type: number }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/job-cards/{id}/status:
+  patch:
+    tags: [Job Cards]
+    summary: Move a job card through its workflow
+    description: >
+      Open/Assigned → In Progress → Completed → Closed, with On Hold, Cancelled and Reopened.
+      The receiving department starts, holds and completes; the raising department cancels (before work starts),
+      closes or reopens a completed card. A note is required for On Hold, Cancelled and Reopened.
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: { type: string, enum: [Open, Assigned, In Progress, On Hold, Completed, Closed, Cancelled, Reopened] }
+              note: { type: string }
+              actualHours: { type: number }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/job-cards/{id}/assign:
+  post:
+    tags: [Job Cards]
+    summary: Assign the card to an employee of the receiving department (Open / Reopened cards move to Assigned)
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [employeeId]
+            properties:
+              employeeId: { type: string, format: uuid }
+              note: { type: string }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/job-cards/{id}/comments:
+  post:
+    tags: [Job Cards]
+    summary: Comment on a job card (everyone involved is notified)
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { type: object, required: [body], properties: { body: { type: string, maxLength: 2000 } } }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/departments:
+  get:
+    tags: [Job Cards]
+    summary: List departments with head, member count and open job cards in / out
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/Search'
+      - { name: includeInactive, in: query, schema: { type: boolean } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+  post:
+    tags: [Job Cards]
+    summary: Create a department
+    x-permission: jobcards.manage
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [name, code]
+            properties:
+              name: { type: string }
+              code: { type: string, pattern: '^[A-Za-z0-9_-]+$' }
+              description: { type: string }
+              headEmployeeId: { type: string, format: uuid }
+              campusId: { type: string, format: uuid }
+              isActive: { type: boolean }
+    responses:
+      '201': { $ref: '#/components/responses/Created' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+/departments/{id}:
+  put:
+    tags: [Job Cards]
+    summary: Update a department (a renamed department keeps its old name as an alias for staff records)
+    x-permission: jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    requestBody: { content: { application/json: { schema: { type: object } } } }
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+/departments/{id}/members:
+  get:
+    tags: [Job Cards]
+    summary: Employees of a department (head first) — used for the assign-to dropdown
+    x-permission: jobcards.use | jobcards.manage
+    security: [{ bearerAuth: [] }]
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    responses:
+      '200': { $ref: '#/components/responses/Ok' }
+      '404': { $ref: '#/components/responses/NotFound' }

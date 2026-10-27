@@ -6,6 +6,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { Button, Card, ErrorState, FilterSelect, Page, PageHead, Pagination, SearchInput, Toolbar, useConfirm } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { LeadFormModal } from './LeadForms';
+import { NewApplicationModal } from './AdmissionForm';
 import { LeadProfileHost } from './LeadProfile';
 import { LeadsTable, useCounsellors, useLeadParam } from './shared';
 import { SOURCES, STAGES, type Lead } from './types';
@@ -20,6 +21,7 @@ export default function LeadsPage() {
   const q = usePagedQuery<Lead>('/enquiries', { ...list.query, ...campusParam });
   const unassigned = usePagedQuery<Lead>('/enquiries', { counsellorId: 'unassigned', open: true, pageSize: 1, ...campusParam });
   const [adding, setAdding] = useState(false);
+  const [formFlow, setFormFlow] = useState(false);
   const autoAssign = useApiMutation<Record<string, unknown>>('post', '/enquiries/auto-assign', { invalidate: ['/enquiries', '/admissions'] });
   const unassignedCount = unassigned.data?.meta.total ?? 0;
 
@@ -43,6 +45,7 @@ export default function LeadsPage() {
               title={unassignedCount ? undefined : 'Every open lead has a counsellor'}>
               Assign counsellor{unassignedCount ? ` (${unassignedCount})` : ''}
             </Button>
+            <Button icon="clipboard" onClick={() => setFormFlow(true)} title="The family returned a filled admission form">Add admission form</Button>
             <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add lead</Button>
           </>
         )}
@@ -66,6 +69,7 @@ export default function LeadsPage() {
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>
       {adding && <LeadFormModal onClose={() => setAdding(false)} onCreated={(code) => { setAdding(false); openLead(code); }} />}
+      {formFlow && <NewApplicationModal onClose={() => setFormFlow(false)} onDone={(code) => { setFormFlow(false); openLead(code); }} />}
       <LeadProfileHost />
     </Page>
   );

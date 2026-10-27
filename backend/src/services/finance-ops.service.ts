@@ -97,7 +97,7 @@ export async function createExpense(req: Request, input: any) {
         input.submit ? 'Submitted' : 'Draft', submittedBy, req.user!.id], db);
     await audit(req, { action: 'create', module: 'finance', entityType: 'expense', entityId: row!.id, description: `Raised expense ${code} — ${input.description} (${inr(input.amount)})` }, db);
     if (input.submit) {
-      await notifyRoles(['finance'], {
+      await notifyRoles(['finance', 'super_admin'], {
         category: 'Attention', topic: 'finance', icon: 'fileText', title: `Expense ${code} awaiting approval`,
         body: `${input.description} — ${inr(input.amount)}`, route: '/expenses', entityType: 'expense', entityId: row!.id,
       }, db);

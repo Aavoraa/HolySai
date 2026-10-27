@@ -340,6 +340,51 @@ export async function seed(db: Db, ctx: SeedContext): Promise<void> {
     const appId = app.rows[0].id;
     if (studentId) await db.query('UPDATE students SET created_at = $2 WHERE id = $1', [studentId, at[8]]);
 
+    // Admission form typed in by the office from the family's filled paper form
+    // (most applications). A few recent ones have no form yet so the
+    // "Not received" state, the form filter and the upload flow can be tried live.
+    if (!['LD-4405', 'LD-4362'].includes(l.code) && i % 7 !== 4) {
+      const femParent = MOTHERS.includes(l.parent) || ['Divya Menon', 'Fatima Basheer', 'Sunitha Rao', 'Nandini Gupta', 'Preethi Balan', 'Lavanya Suresh'].includes(l.parent);
+      const surname = last;
+      const father = femParent ? `${FATHERS[i % FATHERS.length].split(' ')[0]} ${surname}` : l.parent;
+      const mother = femParent ? l.parent : `${MOTHERS[i % MOTHERS.length].split(' ')[0]} ${surname}`;
+      const alt = `+91 9${String(800000000 + ((i * 104729) % 199999999)).slice(0, 4)} ${String(10000 + ((i * 7349) % 89999))}`;
+      const emailOf = (n: string) => `${n.toLowerCase().replace(/[^a-z]+/g, '.').replace(/\.$/, '')}@example.com`;
+      const city = l.campus === 'gdv' ? 'Guduvanchery' : 'Coimbatore';
+      const STREETS = ['Lake View Road', 'Gandhi Street', 'Anna Nagar 2nd Cross', 'Temple Street', 'GST Road', 'Nehru Nagar', 'Thadagam Road', 'Marudhamalai Road'];
+      const BLOOD = ['O+', 'B+', 'A+', 'AB+', 'O-', 'B-'];
+      const receivedOn = at[5].toISOString().slice(0, 10);
+      const form = {
+        studentFirstName: first, studentLastName: last, dateOfBirth: dob, gender: l.gender, gradeApplied: `Grade ${l.grade}`,
+        placeOfBirth: l.campus === 'gdv' ? 'Chennai' : 'Coimbatore', nationality: 'Indian', motherTongue: ['Tamil', 'Tamil', 'Malayalam', 'Telugu', 'Hindi'][i % 5],
+        bloodGroup: BLOOD[i % BLOOD.length],
+        fatherName: father, fatherOccupation: ['Software engineer', 'Business owner', 'Doctor', 'Bank manager', 'Civil engineer'][i % 5],
+        fatherPhone: femParent ? alt : l.phone, fatherEmail: emailOf(father),
+        motherName: mother, motherOccupation: ['Teacher', 'Homemaker', 'Architect', 'Chartered accountant', 'Nurse'][i % 5],
+        motherPhone: femParent ? l.phone : alt, motherEmail: emailOf(mother),
+        primaryContact: femParent ? 'Mother' : 'Father',
+        address: `${12 + (i % 80)}, ${STREETS[i % STREETS.length]}`, city, state: 'Tamil Nadu', pincode: l.campus === 'gdv' ? '603202' : '641041',
+        emergencyContactName: femParent ? father : mother, emergencyContactPhone: alt,
+        ...(l.grade > 1 ? { previousSchool: PREV[i % PREV.length], previousBoard: i % 3 ? 'State Board' : 'CBSE', previousGrade: `Grade ${l.grade - 1}`, reasonForLeaving: i % 2 ? 'Looking for a Cambridge curriculum' : 'Relocated closer to the campus' } : {}),
+        siblingsInSchool: i % 6 === 1, ...(i % 6 === 1 ? { siblingDetails: 'Elder sibling in Grade 7' } : {}),
+        ...(i % 5 === 2 ? { allergies: 'Peanuts' } : {}), ...(i % 9 === 4 ? { medicalNotes: 'Mild asthma — inhaler in school bag' } : {}),
+        transportRequired: l.transport, declarationSignedBy: l.parent, declarationDate: receivedOn,
+      };
+      const medical = [form.medicalNotes, form.allergies && `Allergies: ${form.allergies}`].filter(Boolean).join(' · ') || null;
+      await db.query(
+        `UPDATE admissions SET form_source = 'Manual', form_received_on = $2, form_data = $3, form_entered_by = $4, form_entered_at = $5,
+                form_completed_at = $5, father_name = $6, mother_name = $7, guardian_phone = $8, guardian_email = $9, address = $10,
+                city = $11, pincode = $12, nationality = 'Indian', blood_group = $13, mother_tongue = $14, previous_grade = $15,
+                siblings_in_school = $16, medical_notes = $17, transport_required = $18
+          WHERE id = $1`,
+        [appId, receivedOn, JSON.stringify(form), ctx.users.office, at[5], father, mother, l.phone, emailOf(l.parent), form.address,
+          city, form.pincode, form.bloodGroup, form.motherTongue, form.previousGrade ?? null, form.siblingsInSchool, medical, l.transport]);
+      if (studentId) {
+        await db.query('UPDATE students SET address = $2, city = $3, pincode = $4, blood_group = $5, medical_notes = $6 WHERE id = $1',
+          [studentId, form.address, city, form.pincode, form.bloodGroup, medical]);
+      }
+    }
+
     DOCS.forEach((name, d) => {
       let st = 'Verified';
       if (status === 'Submitted') st = l.code === 'LD-4405' ? 'Pending' : d % 2 ? 'Submitted' : 'Verified';

@@ -173,10 +173,10 @@ export default function MyTasksPage() {
         </div>
         <div className="grid g-2col g-3 mt-5">
           {[
-            ['Leave', 'Line manager, then HR if over 3 days'], ['Payroll', 'Prepared by HR, approved by a different authorised user'],
-            ['Expense', 'Budget owner, then Finance'], ['Reimbursement', 'Line manager, then Finance'],
-            ['Certificate', 'Front office, then Principal'], ['Admission offer', 'Counsellor, then Head of Admissions'],
-            ['Parent communication', 'Class teacher, then Section head'], ['AI-generated content', 'Always a named human reviewer'],
+            ['Leave', 'Reviewed by HR, approved by the Super Admin'], ['Payroll', 'Prepared by HR, approved by the Super Admin'],
+            ['Expense', 'Reviewed by Finance, approved by the Super Admin'], ['Reimbursement', 'Reviewed by Finance, approved by the Super Admin'],
+            ['Certificate', 'Front office, then the Super Admin'], ['Admission offer', 'Counsellor, then the Super Admin'],
+            ['Budget plan', 'Prepared by the department, approved by the Super Admin'], ['Parent circular', 'Class teacher, then the Super Admin'], ['AI-generated content', 'Always a named human reviewer'],
           ].map(([k, v]) => (
             <div key={k} className="card card--tint oi-tile">
               <div className="t-sm t-bold">{k}</div>
