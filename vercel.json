@@ -3,6 +3,7 @@
   "services": {
     "web": {
       "root": ".",
+      "framework": "container",
       "runtime": "container",
       "entrypoint": "Dockerfile",
       "bindings": [
@@ -16,6 +17,7 @@
     },
     "exam": {
       "root": "exam-vision/",
+      "framework": "container",
       "runtime": "container",
       "entrypoint": "Dockerfile"
     }
