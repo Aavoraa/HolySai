@@ -2,7 +2,7 @@ import type { Request } from 'express';
 import { many, one, query, tx } from '../config/db.js';
 import { Where } from '../utils/sql.js';
 import { likeTerm, limitOffset, orderBy } from '../utils/pagination.js';
-import { badRequest, conflict, notFound } from '../utils/errors.js';
+import { badRequest, conflict, forbidden, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
@@ -191,6 +191,9 @@ export async function transitionReimbursement(req: Request, id: string, t: Trans
     const r = await one('SELECT * FROM reimbursements WHERE id = $1 FOR UPDATE', [id], db);
     if (!r) throw notFound('Reimbursement not found');
     if (!FROM_STATES[t].includes(r.status)) throw conflict(`Claim ${r.code} is ${r.status} and cannot be moved to ${TO_STATE[t]}`, 'INVALID_STATE');
+    if ((t === 'approve' || t === 'reject') && r.employee_id === req.user!.employeeId) {
+      throw forbidden('You cannot decide on your own claim', 'SELF_APPROVAL');
+    }
     if (opts.payrollRunId) {
       const run = await one('SELECT id FROM payroll_runs WHERE id = $1', [opts.payrollRunId], db);
       if (!run) throw badRequest('Payroll run not found', 'PAYROLL_RUN_NOT_FOUND');
@@ -289,11 +292,14 @@ export async function createAllowance(req: Request, input: any) {
 
 export async function decideAllowance(req: Request, input: { allowanceType: string; decision: string; campusId?: string }) {
   const from = input.decision === 'Stopped' ? ['Approved'] : ['Submitted'];
+  // An approver's own allowance is left for another approver to decide.
+  const self = input.decision === 'Stopped' ? null : req.user!.employeeId ?? null;
   return tx(async (db) => {
     const r = await query(
       `UPDATE allowances a SET status = $1 FROM employees e
-        WHERE e.id = a.employee_id AND a.allowance_type = $2 AND a.status = ANY($3) AND ($4::uuid IS NULL OR e.campus_id = $4)`,
-      [input.decision, input.allowanceType, from, input.campusId ?? null], db);
+        WHERE e.id = a.employee_id AND a.allowance_type = $2 AND a.status = ANY($3) AND ($4::uuid IS NULL OR e.campus_id = $4)
+          AND a.employee_id IS DISTINCT FROM $5::uuid`,
+      [input.decision, input.allowanceType, from, input.campusId ?? null, self], db);
     if (!r.rowCount) throw conflict(`There are no ${from.join('/').toLowerCase()} "${input.allowanceType}" allowances to update`, 'INVALID_STATE');
     await audit(req, {
       action: input.decision === 'Approved' ? 'approve' : input.decision === 'Rejected' ? 'reject' : 'update', module: 'finance',
@@ -462,8 +468,12 @@ export async function runReconciliation(req: Request) {
          LEFT JOIN fee_payments p ON p.gateway_ref = l.reference AND p.status = 'Success'
         WHERE l.status = 'Unmatched' FOR UPDATE OF l`, [], db);
     let matched = 0, exceptions = 0;
+    // Payments matched earlier in this run (duplicate statement lines share a reference).
+    const used = new Set<string>();
     for (const l of lines) {
+      if (l.payment_id && used.has(l.payment_id)) l.reconciled = true;
       if (l.payment_id && !l.reconciled && Number(l.payment_amount) === Number(l.amount)) {
+        used.add(l.payment_id);
         await query(`UPDATE bank_statement_lines SET status = 'Matched', matched_payment_id = $2, note = 'Auto-matched on reference and amount' WHERE id = $1`, [l.id, l.payment_id], db);
         await query('UPDATE fee_payments SET reconciled = true, reconciled_at = now() WHERE id = $1', [l.payment_id], db);
         matched++;

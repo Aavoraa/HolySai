@@ -160,8 +160,13 @@ export async function updateStructure(req: Request, id: string, input: any) {
         WHERE id = $1 RETURNING id, amount, due_date AS "dueDate", status`,
       [id, input.amount ?? null, input.dueDate ?? null, input.status ?? null], db);
     if (input.dueDate && cur.applied > 0) {
-      // Keep unpaid charges in step with the structure's due date.
-      await query(`UPDATE student_fees SET due_date = $2 WHERE fee_structure_id = $1 AND status <> 'Paid'`, [id, input.dueDate], db);
+      // Keep unpaid charges in step with the structure's due date; a charge that is
+      // no longer past due stops being Overdue.
+      await query(
+        `UPDATE student_fees SET due_date = $2,
+                status = CASE WHEN status = 'Overdue' AND $2::date >= current_date
+                              THEN (CASE WHEN amount_paid > 0 THEN 'Partial' ELSE 'Pending' END) ELSE status END
+          WHERE fee_structure_id = $1 AND status <> 'Paid'`, [id, input.dueDate], db);
     }
     await audit(req, { action: 'update', module: 'finance', entityType: 'fee_structure', entityId: id, description: 'Updated fee structure', metadata: input }, db);
     return row;
