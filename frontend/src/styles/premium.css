@@ -80,7 +80,13 @@ h1, h2, h3, h4, h5, .h1, .h2, .h3 { letter-spacing: -.012em; }
 .sidebar .navhead, .sidebar .navquick > .navitem, .sidebar .navgroup--pinned .navitem, .sidebar .sidebar__foot .navitem {
   font-weight: 500; letter-spacing: .005em; border-radius: 10px; transition: background var(--t-fast), color var(--t-fast);
 }
-.sidebar .navhead:hover, .sidebar .navitem:hover { background: rgba(255, 255, 255, .07); }
+.sidebar .navhead:hover, .sidebar .navitem:not([aria-current="page"]):hover { background: rgba(255, 255, 255, .07); }
+/* The current page keeps its peach highlight on hover, just a touch brighter */
+.sidebar .navitem[aria-current="page"]:hover,
+.sidebar .navgroup:not(.navgroup--pinned) .navgroup__items .navitem[aria-current="page"]:hover {
+  background: var(--sidebar-active-bg); color: var(--sidebar-active-text); filter: brightness(1.03);
+}
+.sidebar .navitem[aria-current="page"]:hover .navitem__ico { color: var(--sidebar-active-text); }
 .sidebar .navgroup:not(.navgroup--pinned) .navgroup__items { border-left-color: rgba(226, 195, 140, .22); }
 .sidebar .navitem__count { background: #C8314F; box-shadow: 0 0 0 2px rgba(0, 0, 0, .12); }
 

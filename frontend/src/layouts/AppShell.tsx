@@ -184,7 +184,7 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
     const at = ql ? label.toLowerCase().indexOf(ql) : -1;
     const count = badgeFor(i);
     return (
-      <Link key={i.label + i.to} className="navitem" to={target} aria-current={owns && matches(i) ? 'page' : undefined} title={label} onClick={() => setQ('')}
+      <Link key={i.label + i.to} className="navitem" to={target} aria-current={owns && matches(i) ? 'page' : undefined} title={rail ? label : undefined} onClick={() => setQ('')}
         onMouseEnter={() => preloadRoute(target)} onFocus={() => preloadRoute(target)}>
         <span className="navitem__ico"><Icon name={i.icon} size={17} /></span>
         <span className="navitem__label">
@@ -261,7 +261,7 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
                 className="navhead"
                 data-group={g.group}
                 aria-expanded={isOpen}
-                title={t(g.label)}
+                title={rail ? t(g.label) : undefined}
                 onClick={(e) => {
                   followRoute.current = false;
                   anchor.current = { group: g.group, top: e.currentTarget.getBoundingClientRect().top };
@@ -298,7 +298,7 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
             className="navitem grow"
             to={can('settings.manage') ? '/admin/settings' : '/account?tab=security'}
             aria-current={current === '/admin/settings' || current === '/account' ? 'page' : undefined}
-            title={t('Settings')}
+            title={rail ? t('Settings') : undefined}
           >
             <span className="navitem__ico"><Icon name="settings" size={18} /></span>
             <span className="navitem__label">{t('Settings')}</span>
