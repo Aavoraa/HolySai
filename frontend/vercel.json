@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://holy-sai.onrender.com/api/:path*"
+      "destination": "https://holysai-vert.vercel.app/api/:path*"
     },
     {
       "source": "/((?!assets/|images/|.*\\.[a-z0-9]+$).*)",
