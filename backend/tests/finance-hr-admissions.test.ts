@@ -96,7 +96,9 @@ describe('finance', () => {
     expect(row!.status).toBe('Submitted');
   });
 
-  it('an HR approver cannot approve an allowance paid to themselves', async () => {
+  // Only the Super Admin decides (approvals.decide); decideAllowance also skips the decider's
+  // own row, which matters only if a decider is ever an employee.
+  it('HR cannot approve an allowance paid to themselves', async () => {
     const hr = await as('hr');
     const me = await empOf('lakshmi.n.demo@holysai.edu');
     const other = (await one<{ id: string }>(
@@ -106,11 +108,12 @@ describe('finance', () => {
       allowanceType: type, employeeIds: [me, other], amount: 1000, effectiveMonth: new Date().toISOString().slice(0, 10),
     });
     expect(c.status).toBe(201);
-    const d = await hr.post('/api/finance/allowances/decide', { allowanceType: type, decision: 'Approved' });
-    expect(d.status).toBe(200);
-    expect(d.body.data.updated).toBe(1);
+    expect((await hr.post('/api/finance/allowances/decide', { allowanceType: type, decision: 'Approved' })).status).toBe(403);
     const own = await one<{ status: string }>('SELECT status FROM allowances WHERE allowance_type = $1 AND employee_id = $2', [type, me]);
     expect(own!.status).toBe('Submitted');
+    const d = await (await as('superadmin')).post('/api/finance/allowances/decide', { allowanceType: type, decision: 'Approved' });
+    expect(d.status).toBe(200);
+    expect(d.body.data.updated).toBe(2);
   });
 
   it('reconciliation never matches one payment to two statement lines', async () => {

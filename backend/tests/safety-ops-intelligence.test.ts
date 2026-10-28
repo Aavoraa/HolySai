@@ -44,7 +44,7 @@ describe('operations partial updates', () => {
 
 describe('maintenance', () => {
   it('re-saving a completed request does not move its completion time', async () => {
-    const api = await as('principal');
+    const api = await as('superadmin'); // approving a request is the Super Admin's decision
     const c = await one<{ id: string }>('SELECT id FROM campuses WHERE is_active ORDER BY established LIMIT 1');
     const cr = await api.post('/api/maintenance', { campusId: c!.id, description: 'Test: leaking tap in staff room', priority: 'Low' });
     expect(cr.status).toBe(201);

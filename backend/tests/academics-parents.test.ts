@@ -73,7 +73,7 @@ describe('audience targeting', () => {
     expect(c.status).toBe(201);
     expect(c.body.data.targetCount).toBe(0);
     await principal.post(`/api/circulars/${c.body.data.id}/submit`);
-    const rel = await principal.post(`/api/circulars/${c.body.data.id}/release`);
+    const rel = await (await as('superadmin')).post(`/api/circulars/${c.body.data.id}/release`); // only the Super Admin releases
     expect(rel.status).toBe(200);
     expect(rel.body.data.notified).toBe(0);
     const n = await one<{ n: number }>(`SELECT count(*)::int AS n FROM notifications WHERE entity_id = $1 AND title = 'New circular from school'`, [c.body.data.id]);
@@ -84,9 +84,10 @@ describe('audience targeting', () => {
     const principal = await as('principal');
     const c = await principal.post('/api/circulars', { title: 'Race test circular', body: 'Please read this circular carefully.', audience: { kind: 'grades', grades: [5] } });
     await principal.post(`/api/circulars/${c.body.data.id}/submit`);
+    const admin = await as('superadmin');
     const [a, b] = await Promise.all([
-      principal.post(`/api/circulars/${c.body.data.id}/release`),
-      principal.post(`/api/circulars/${c.body.data.id}/release`),
+      admin.post(`/api/circulars/${c.body.data.id}/release`),
+      admin.post(`/api/circulars/${c.body.data.id}/release`),
     ]);
     expect([a.status, b.status].sort()).toEqual([200, 409]);
     const n = await one<{ n: number; users: number }>(
