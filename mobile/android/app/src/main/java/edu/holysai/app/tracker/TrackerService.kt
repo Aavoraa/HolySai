@@ -16,8 +16,10 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.BatteryManager
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -90,7 +92,15 @@ class TrackerService : Service() {
     @Volatile private var best: Location? = null
     @Volatile private var lastSentFixTime = 0L
 
-    private val listener = LocationListener { loc -> onFix(loc) }
+    // All four methods are implemented: on Android 10 and older the platform calls
+    // onStatusChanged/onProvider* directly, and a lambda listener would crash there.
+    private val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) = onFix(location)
+        override fun onProviderEnabled(provider: String) = Unit
+        override fun onProviderDisabled(provider: String) = Unit
+        @Deprecated("Deprecated in Java")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,7 +119,16 @@ class TrackerService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startInForeground()
+        try {
+            startInForeground()
+        } catch (e: Exception) {
+            // Android 14+ refuses a location service restarted from the background (START_STICKY
+            // after the process was killed) without "Allow all the time"; the app starts it again when opened.
+            Log.w("TrackerService", "Could not start in foreground", e)
+            _status.update { it.copy(running = false, message = "Open the tracker to resume tracking.", messageIsError = true) }
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (loop == null) {
             requestUpdates()
             loop = scope.launch { runLoop() }
