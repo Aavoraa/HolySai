@@ -139,6 +139,9 @@ const EXPECT: Record<string, RegExp[]> = {
   '/overview': [/signed in|first recorded sign-in/, /1\. School overview/, /Fees collected/, /Net position/, /What families still owe/],
 };
 
+// The Owner Overview shows its money parts only with finance.read (a role with just audit.read sees the rest).
+const MONEY = new Set([/Fees collected/, /Net position/, /What families still owe/].map(String));
+
 // The student's home screen shows their skill web
 EXPECT['/my-profile'] = [/My skill web/, /Strongest:/];
 
@@ -195,7 +198,9 @@ describe.each(Object.keys(ACCOUNTS).filter((r) => !onlyRoles || onlyRoles.includ
       // Paper Correction content needs its marking service; without it the page says "not connected".
       const paperOffline = target.startsWith('/paper-correction') && !params.examId;
       const skipContent = (trackingTarget && !canTrack) || (personalTarget && !ownsRecord) || paperOffline;
-      const missing = (skipContent ? [] : EXPECT[target] ?? []).filter((re) => !re.test(text)).map(String);
+      const missing = (skipContent ? [] : EXPECT[target] ?? [])
+        .filter((re) => perms.has('finance.read') || !MONEY.has(String(re)))
+        .filter((re) => !re.test(text)).map(String);
       if (missing.length) failures.push(`${path}: missing ${missing.join(', ')}`);
       const heading = container.querySelector('h1')?.textContent?.trim() ?? '(no h1)';
       if (!settled) failures.push(`${path}: still loading after 12 s`);
