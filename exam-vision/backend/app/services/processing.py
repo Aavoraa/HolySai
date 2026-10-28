@@ -4,7 +4,7 @@
 Rules kept here:
 - a failed reading is recorded and the submission marked "needs attention"; the original pages
   and finished work are kept, and the teacher can retry;
-- teacher edits and approved marks are never overwritten by a new reading;
+- teacher edits and approved marks are never overwritten by a new reading or a marking job;
 - answers with uncertain transcription are not marked until a teacher verifies them;
 - a missing rubric is flagged for the teacher, never invented.
 """
@@ -23,7 +23,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import ai_config, providers
-from ..models import Answer, Evaluation, Exam, Extraction, Page, Question, RubricVersion, Student, Submission
+from ..models import (
+    Answer, Evaluation, Exam, Extraction, MarkOverride, Page, Question, RubricVersion, Student, Submission,
+)
 from ..providers.base import ILLEGIBLE, ProviderError
 from ..security import audit
 from . import page_store, prompts, scoring
@@ -225,8 +227,9 @@ def evaluate_answer(db: Session, answer: Answer, evaluator, provider_name: str, 
                         provider="rules", model=None, status="ok", result=result, suggested_marks=0.0,
                         requires_review=True, review_reasons=result["review_reasons"], answer_text_used=text,
                         requested_by=user_id)
-        return _store(db, answer, ev)
+        return _store(db, answer, ev, user_id=user_id)
 
+    before = (answer.mark_status, answer.final_marks, answer.criterion_marks)
     message = prompts.build_user_message(exam=exam_dict(exam), question=qd, rubric=rubric,
                                          answer_text=text, ocr_status=answer.ocr_status)
     schema = prompts.output_schema(qd, rubric)
@@ -249,9 +252,11 @@ def evaluate_answer(db: Session, answer: Answer, evaluator, provider_name: str, 
                         answer_text_used=text, usage=usage_total, requested_by=user_id,
                         duration_ms=int((time.perf_counter() - started) * 1000))
         db.add(ev)
-        answer.mark_status = "needs_review"
+        if not _changed_meanwhile(db, answer, text, before):
+            answer.mark_status = "needs_review"
         return ev
     duration = int((time.perf_counter() - started) * 1000)
+    superseded = _changed_meanwhile(db, answer, text, before)
     common = dict(answer_id=answer.id, rubric_version=rubric["version"], prompt_version=prompts.PROMPT_VERSION,
                   provider=provider_name, model=getattr(evaluator, "model", None), answer_text_used=text,
                   usage=usage_total, requested_by=user_id, duration_ms=duration, checks=check.checks)
@@ -259,22 +264,44 @@ def evaluate_answer(db: Session, answer: Answer, evaluator, provider_name: str, 
         ev = Evaluation(**common, status="invalid", error="; ".join(check.errors), requires_review=True,
                         review_reasons=["the AI marking failed validation twice; mark manually"], result={"raw": raw})
         db.add(ev)
-        answer.mark_status = "needs_review"
+        if not superseded:
+            answer.mark_status = "needs_review"
         return ev
     ev = Evaluation(**common, status="ok", result=check.result, suggested_marks=check.result["suggested_marks"],
                     requires_review=check.result["requires_teacher_review"], review_reasons=check.result["review_reasons"])
-    return _store(db, answer, ev)
+    if superseded:
+        db.add(ev)  # kept in the history (and the cost), not applied
+        return ev
+    return _store(db, answer, ev, user_id=user_id)
 
 
-def _store(db: Session, answer: Answer, ev: Evaluation) -> Evaluation:
+def _changed_meanwhile(db: Session, answer: Answer, text: str, before: tuple) -> bool:
+    """True when a teacher approved, edited or marked the answer while Claude was working: theirs wins."""
+    db.refresh(answer)
+    return answer.text != text or (answer.mark_status, answer.final_marks, answer.criterion_marks) != before
+
+
+def _store(db: Session, answer: Answer, ev: Evaluation, *, user_id: str | None = None) -> Evaluation:
     db.add(ev)
     db.flush()
+    previous = db.get(Evaluation, answer.current_evaluation_id) if answer.current_evaluation_id else None
+    suggested = ({c["criterion_id"]: c["awarded_marks"] for c in previous.result.get("criteria", [])}
+                 if previous is not None and previous.status == "ok" else None)
+    teacher_marks = answer.final_marks is not None and answer.criterion_marks != suggested
+    if teacher_marks:  # marks a teacher entered are replaced: keep a record, like a manual override
+        db.add(MarkOverride(answer_id=answer.id, original_marks=answer.final_marks, new_marks=ev.suggested_marks,
+                            original_criteria=answer.criterion_marks,
+                            new_criteria={c["criterion_id"]: c["awarded_marks"] for c in ev.result.get("criteria", [])},
+                            reason="replaced by AI re-marking", user_id=user_id or "system"))
+    old_marks = answer.final_marks
     answer.current_evaluation_id = ev.id
     answer.final_marks = ev.suggested_marks
     answer.criterion_marks = {c["criterion_id"]: c["awarded_marks"] for c in ev.result.get("criteria", [])}
     answer.mark_status = "needs_review" if ev.requires_review else "suggested"
     answer.flags = [f for f in answer.flags if "re-evaluate" not in f and not f.startswith("rubric:")
                     and "verify the transcription" not in f]
+    if teacher_marks:
+        answer.flags = [*answer.flags, f"AI re-marking replaced the teacher's marks ({old_marks:g}); see the history"]
     return ev
 
 
@@ -299,13 +326,14 @@ def run_evaluation(db: Session, submission_id: str, *, user_id: str | None, answ
     counts = {"evaluated": 0, "failed": 0, "skipped": 0, "needs_review": 0}
     order = {q.id: q.order for q in exam.questions}
     for answer in sorted(answers, key=lambda a: order.get(a.question_id, 0)):
-        if answer.mark_status == "approved" and not force:
+        db.refresh(answer)  # a teacher may have changed it since the job started
+        if answer.mark_status == "approved":  # even when forced: approved marks change only after a reopen
             counts["skipped"] += 1
             continue
         current = db.get(Evaluation, answer.current_evaluation_id) if answer.current_evaluation_id else None
         q = db.get(Question, answer.question_id)
         if (current and not force and current.status == "ok" and current.answer_text_used == answer.text
-                and current.rubric_version == q.current_rubric_version):
+                and current.rubric_version == q.current_rubric_version and answer.mark_status != "pending"):
             counts["skipped"] += 1  # idempotent: same text, same rubric -> same evaluation
             continue
         say(f"marking question {q.number}")
@@ -313,10 +341,12 @@ def run_evaluation(db: Session, submission_id: str, *, user_id: str | None, answ
         db.commit()
         if ev is None or ev.status != "ok":
             counts["failed" if ev is not None else "needs_review"] += 1
+        elif answer.current_evaluation_id != ev.id:
+            counts["skipped"] += 1  # a teacher changed the answer meanwhile
         else:
             counts["evaluated"] += 1
     db.refresh(sub)
-    statuses = [a.mark_status for a in db.scalars(select(Answer).where(Answer.submission_id == sub.id))]
+    statuses = list(db.scalars(select(Answer.mark_status).where(Answer.submission_id == sub.id)))
     if all(s == "approved" for s in statuses):
         sub.status = "approved"
     elif any(s in ("pending",) for s in statuses) or counts["failed"]:

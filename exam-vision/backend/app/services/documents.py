@@ -68,7 +68,10 @@ def load_pages(data: bytes, max_pages: int) -> list[Image.Image]:
             raise DocumentError(f"The PDF has {len(pdf)} pages; at most {max_pages} are allowed.")
         pages = []
         for index in range(len(pdf)):
-            bitmap = pdf[index].render(scale=RENDER_DPI / 72)
+            page = pdf[index]
+            # never render bigger than a page is kept: a huge page size would need gigabytes
+            scale = min(RENDER_DPI / 72, MAX_PAGE_EDGE / max(*page.get_size(), 1))
+            bitmap = page.render(scale=scale)
             pages.append(_normalise(bitmap.to_pil()))
         return pages
     finally:

@@ -129,13 +129,16 @@ class ClaudeReader:
             number = str(a.get("question_number"))
             if number not in numbers:
                 continue
+            pages_of = sorted({int(x) for x in a.get("pages") or [] if 1 <= int(x) <= len(images)})
+            uncertain = [u for u in a.get("uncertain") or [] if u]
             if number in answers:  # the same question twice: keep both parts, in order, and say so
-                answers[number]["text"] += "\n" + (a.get("text") or "")
+                first = answers[number]
+                first["text"] += "\n" + (a.get("text") or "")
+                first["pages"] = sorted({*first["pages"], *pages_of})
+                first["uncertain"] += uncertain
                 warnings.append(f"question {number} was answered in two places; both parts kept")
                 continue
-            pages_of = sorted({int(x) for x in a.get("pages") or [] if 1 <= int(x) <= len(images)})
-            answers[number] = {"text": (a.get("text") or "").strip(), "pages": pages_of,
-                               "uncertain": [u for u in a.get("uncertain") or [] if u]}
+            answers[number] = {"text": (a.get("text") or "").strip(), "pages": pages_of, "uncertain": uncertain}
         name = data.get("name_on_sheet")
         return SheetReading(
             model=model, pages=pages, answers=answers, unassigned_text=(data.get("unassigned_text") or "").strip(),

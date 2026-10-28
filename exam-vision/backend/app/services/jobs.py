@@ -1,8 +1,9 @@
 # backend/app/services/jobs.py
 """Background jobs: reading and marking run off the request thread.
 
-Duplicate prevention: one active job per (submission, kind). On restart, jobs that were
-running are marked failed ("interrupted") so a user can retry them; queued jobs run again.
+Duplicate prevention: one active job per submission, enforced by a unique index. On restart,
+jobs that were running are marked failed ("interrupted") so a user can retry them; queued
+jobs run again.
 """
 
 from __future__ import annotations
@@ -11,11 +12,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..db import new_session
-from ..models import Job, Submission
+from ..models import Extraction, Job, Submission
 from . import processing
 
 log = logging.getLogger(__name__)
@@ -45,7 +47,14 @@ def enqueue(db: Session, kind: str, submission_id: str, *, options: dict | None 
         return existing, False
     job = Job(kind=kind, submission_id=submission_id, provider="claude", options=options or {}, requested_by=user_id)
     db.add(job)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # a parallel request (e.g. a double click) queued one first
+        db.rollback()
+        existing = active_job(db, submission_id)
+        if existing is None:
+            raise
+        return existing, False
     if settings.run_jobs:
         _pool().submit(_run, job.id)
     else:
@@ -90,9 +99,17 @@ def _run(job_id: str) -> None:
             sub = db.get(Submission, job.submission_id)
             if sub and sub.status in ("extracting", "evaluating"):
                 sub.status, sub.status_note = "needs_attention", str(exc)[:300]
+            _fail_running_extractions(db, job.submission_id, str(exc)[:500])
             db.commit()
     finally:
         db.close()
+
+
+def _fail_running_extractions(db: Session, submission_id: str, error: str) -> None:
+    """A reading cut short by an unexpected error must not stay "running" for ever."""
+    for ext in db.scalars(select(Extraction).where(Extraction.submission_id == submission_id,
+                                                   Extraction.status == "running")):
+        ext.status, ext.error = "failed", error
 
 
 def recover() -> None:
@@ -104,6 +121,7 @@ def recover() -> None:
             sub = db.get(Submission, job.submission_id)
             if sub and sub.status in ("extracting", "evaluating"):
                 sub.status, sub.status_note = "needs_attention", "interrupted by a server restart; retry"
+            _fail_running_extractions(db, job.submission_id, "interrupted by a server restart")
         db.commit()
         queued = [j.id for j in db.scalars(select(Job).where(Job.status == "queued"))]
     finally:

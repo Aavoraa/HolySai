@@ -176,7 +176,9 @@ def check_numeric_answer(answer: str, expected: str, tolerance: float, unit: str
         target = float(expected)
     except ValueError:
         return {"check": "final_answer", "ok": None, "detail": f"expected value {expected!r} is not a number"}
-    numbers = _numbers(answer)
+    # the unit and exponents are not the answer: "9.8 m/s^2" ends in 9.8, not 2
+    bare = re.sub(re.escape(unit), " ", answer, flags=re.IGNORECASE) if unit else answer
+    numbers = _numbers(re.sub(r"\^\s*[-+]?\d+", " ", bare))
     if not numbers:
         return {"check": "final_answer", "ok": False, "detail": "no number found in the answer"}
     final = numbers[-1]

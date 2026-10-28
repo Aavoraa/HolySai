@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import math
 import re
 from typing import Annotated
 
@@ -129,6 +130,11 @@ def _start(db: Session, sub: Submission, user: User, kind: str = "process") -> J
     return job
 
 
+async def _read(f: UploadFile) -> bytes:
+    """At most one byte over the limit, so an oversized file is refused without holding all of it."""
+    return await f.read(settings.max_upload_bytes + 1)
+
+
 @router.post("/exams/{exam_id}/submissions")
 async def upload(exam_id: str, user: StaffUser, db: DB, student_id: str = Form(...),
                  files: list[UploadFile] = File(...), auto_process: bool = Form(True)) -> dict:
@@ -136,7 +142,7 @@ async def upload(exam_id: str, user: StaffUser, db: DB, student_id: str = Form(.
     student = db.get(Student, student_id)
     if student is None:
         raise HTTPException(404, "Student not found.")
-    data = [(f.filename or "sheet", await f.read()) for f in files]
+    data = [(f.filename or "sheet", await _read(f)) for f in files]
     sub = _store_submission(db, exam, student, data, user)
     job, note = _maybe_start(db, sub, user) if auto_process else (None, "")
     return {**_sub_row(db, sub), "job": _job_out(job), "note": note}
@@ -159,7 +165,7 @@ async def bulk_upload(exam_id: str, user: StaffUser, db: DB, files: list[UploadF
                             "error": "no student with this admission number" if not match else "matches several students"})
             continue
         try:
-            sub = _store_submission(db, exam, match[0], [(name, await f.read())], user)
+            sub = _store_submission(db, exam, match[0], [(name, await _read(f))], user)
             job, note = _maybe_start(db, sub, user) if auto_process else (None, "")
             results.append({"file": name, "ok": True, "submission_id": sub.id, "student": match[0].name,
                             "job": _job_out(job), "note": note})
@@ -300,9 +306,14 @@ class IdentityIn(BaseModel):
 @router.post("/submissions/{submission_id}/identity")
 def confirm_identity(submission_id: str, body: IdentityIn, user: StaffUser, db: DB) -> dict:
     sub, exam = _submission(db, submission_id, user)
-    if body.student_id and body.student_id != sub.student_id:
+    reassign = bool(body.student_id and body.student_id != sub.student_id)
+    if (reassign or not body.verified) and db.scalars(
+            select(Answer).where(Answer.submission_id == sub.id, Answer.mark_status == "approved")).first():
+        raise HTTPException(409, "Marks on this sheet are approved; reopen them before changing the student.")
+    if reassign:
         student = db.get(Student, body.student_id)
-        if student is None or student.class_name != exam.class_name:
+        if student is None or student.class_name != exam.class_name or \
+                (exam.section and student.section and student.section != exam.section):
             raise HTTPException(400, "That student is not in this class.")
         if db.scalars(select(Submission).where(Submission.exam_id == exam.id,
                                                Submission.student_id == student.id)).first():
@@ -397,8 +408,11 @@ def correct_text(answer_id: str, body: TextIn, user: StaffUser, db: DB) -> dict:
     answer.corrected_by = user.id
     answer.ocr_status = "verified"
     flags = [f for f in answer.flags if "verify the transcription" not in f]
-    if answer.current_evaluation_id and "the transcription changed; re-evaluate" not in flags:
-        flags.append("the transcription changed; re-evaluate")
+    current = db.get(Evaluation, answer.current_evaluation_id) if answer.current_evaluation_id else None
+    if current is not None and current.answer_text_used != answer.text:
+        answer.mark_status = "pending"  # the marks were for other text: re-evaluate or enter marks first
+        if "the transcription changed; re-evaluate" not in flags:
+            flags.append("the transcription changed; re-evaluate")
     answer.flags = flags
     audit(db, user, "transcription_corrected", "answer", answer.id, chars=len(body.text))
     db.commit()
@@ -447,7 +461,7 @@ def set_marks(answer_id: str, body: MarksIn, user: StaffUser, db: DB) -> dict:
     if set(body.criterion_marks) != set(crits):
         raise HTTPException(400, "Give marks for every rubric criterion: " + ", ".join(crits))
     for cid, value in body.criterion_marks.items():
-        if value < 0 or value > crits[cid]["max_marks"] + 1e-9:
+        if not math.isfinite(value) or value < 0 or value > crits[cid]["max_marks"] + 1e-9:
             raise HTTPException(400, f"{cid}: marks must be between 0 and {crits[cid]['max_marks']}.")
         if not increments_ok(value, q.mark_increment):
             raise HTTPException(400, f"{cid}: marks must be in steps of {q.mark_increment}.")
@@ -483,6 +497,13 @@ def approve(answer_id: str, body: ApproveIn, user: StaffUser, db: DB) -> dict:
     answer, sub, exam = _answer(db, answer_id, user)
     if answer.final_marks is None:
         raise HTTPException(409, "There are no marks to approve yet.")
+    if answer.mark_status == "pending":
+        raise HTTPException(409, "The marks are out of date (the transcription or question changed); "
+                                 "re-evaluate or enter the marks first.")
+    q = db.get(Question, answer.question_id)
+    if answer.final_marks > q.max_marks + 1e-9:
+        raise HTTPException(409, f"The marks {answer.final_marks:g} exceed the question's maximum {q.max_marks:g}; "
+                                 "re-evaluate or enter the marks again.")
     if answer.ocr_status == "needs_verification":
         raise HTTPException(409, "Verify the transcription first.")
     if not sub.identity_verified:
