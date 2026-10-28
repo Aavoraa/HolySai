@@ -7,3 +7,5 @@ uploads/
 coverage/
 *.log
 LOGINS.txt
+
+.claude/settings.local.json

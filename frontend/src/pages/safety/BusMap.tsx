@@ -28,7 +28,7 @@ function useTiles() {
 }
 
 /** Marker colour per run status (classes in styles/modules/safety-tracking.css). */
-const statusClass = (status: string) => `bus-pin--${status.toLowerCase().replace(/s+/g, '-')}`;
+const statusClass = (status: string) => `bus-pin--${status.toLowerCase().replace(/\s+/g, '-')}`;
 
 function busIcon(label: string, status: string, selected: boolean, alert: boolean) {
   const cls = ['bus-pin', statusClass(status), selected && 'bus-pin--selected', alert && 'bus-pin--alert'].filter(Boolean).join(' ');
