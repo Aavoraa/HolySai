@@ -155,8 +155,12 @@ export async function advanceBatch(req: Request, id: string, toStage: number) {
     const b = await loadBatch(user, id, db, true);
     if (toStage !== b.stage + 1) throw conflict(`This class is at "${REPORT_CARD_STAGES[b.stage]}" — it can only move to the next stage`, 'INVALID_TRANSITION');
     const roster = await one<{ n: number }>(`SELECT count(*)::int AS n FROM students WHERE section_id = $1 AND deleted_at IS NULL AND status = 'active'`, [b.section_id], db);
+    // Only comments of students currently in the class count against the roster;
+    // a comment left behind by a student who moved away must not stand in for a missing one.
     const c = await one<{ total: number; approved: number }>(
-      `SELECT count(*)::int AS total, count(*) FILTER (WHERE status = 'Approved')::int AS approved FROM report_card_comments WHERE batch_id = $1`, [id], db,
+      `SELECT count(*)::int AS total, count(*) FILTER (WHERE rc.status = 'Approved')::int AS approved
+         FROM report_card_comments rc JOIN students s ON s.id = rc.student_id
+        WHERE rc.batch_id = $1 AND s.section_id = $2 AND s.deleted_at IS NULL AND s.status = 'active'`, [id, b.section_id], db,
     );
     let drafted = 0;
     let notified = 0;

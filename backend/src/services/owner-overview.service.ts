@@ -1,6 +1,7 @@
 import { many, one } from '../config/db.js';
 import type { AuthUser } from '../types.js';
 import { BAL, NET } from './finance-fees.service.js';
+import { schoolToday } from './academics.service.js';
 
 /**
  * Owner Overview — the Super Admin's landing page.
@@ -409,12 +410,14 @@ async function approvalsWaiting(campusId: string | null) {
       `SELECT ${AGG('co.amount', 'co.')} FROM concessions co JOIN students s ON s.id = co.student_id
         WHERE co.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR s.campus_id = $1)`, [c]),
     one<Waiting>(
-      `SELECT ${AGG('amount')} FROM reimbursements WHERE status IN ('Submitted', 'Under Review')`, []),
+      `SELECT ${AGG('rb.amount', 'rb.')} FROM reimbursements rb JOIN employees emp ON emp.id = rb.employee_id
+        WHERE rb.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR emp.campus_id = $1)`, [c]),
     one<Waiting>(
       `SELECT ${AGG('net_total')} FROM payroll_runs
         WHERE status IN ('Calculated', 'Under Review') AND ($1::uuid IS NULL OR campus_id = $1)`, [c]),
     one<Waiting>(
-      `SELECT ${AGG('days')} FROM leave_requests WHERE status IN ('Submitted', 'Under Review')`, []),
+      `SELECT ${AGG('lr.days', 'lr.')} FROM leave_requests lr JOIN employees emp ON emp.id = lr.employee_id
+        WHERE lr.status IN ('Submitted', 'Under Review') AND ($1::uuid IS NULL OR emp.campus_id = $1)`, [c]),
   ]);
 
   const row = (label: string, w: Waiting | null, to: string, icon: string, unit: 'money' | 'days') => ({
@@ -659,8 +662,9 @@ async function finalApprovals(c: string | null) {
   );
 
   // Past its deadline, payroll, or a large sum is High; due within two days or a mid-sized sum is Medium.
-  const today = new Date().toISOString().slice(0, 10);
-  const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  // School dates (Asia/Kolkata), like the deadlines; a UTC date lags by a day before 05:30 IST.
+  const today = schoolToday();
+  const soon = new Date(Date.parse(`${today}T00:00:00Z`) + 2 * 86_400_000).toISOString().slice(0, 10);
   const rank = { High: 0, Medium: 1, Low: 2 } as const;
   const items = rows.map((r) => {
     const priority: keyof typeof rank =

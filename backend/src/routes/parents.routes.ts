@@ -6,7 +6,8 @@ import { paginationSchema } from '../utils/pagination.js';
 import { historyQuerySchema } from '../validators/tracking.validators.js';
 import * as svc from '../services/parents.service.js';
 import * as tracking from '../services/tracking.service.js';
-import { assertSelfParent, isGuardianOf, resolveStudentId } from '../services/access.service.js';
+import { assertSelfParent, canAccessStudent, isGuardianOf, resolveStudentId } from '../services/access.service.js';
+import { isClassScoped, visibleParent } from '../services/parents-experience.service.js';
 import { audit } from '../services/audit.service.js';
 import { created, ok, paged } from '../utils/response.js';
 import { forbidden, notFound } from '../utils/errors.js';
@@ -26,15 +27,22 @@ const parentBody = z.object({
 });
 
 /**
- * Resolves :id/:studentId for family routes. A parent can only address their
- * own parent id, and only children linked to them. Staff with parents.read
- * may look up any family (for the front office).
+ * A parent can only address their own parent id. School-wide staff with
+ * parents.read may look up any family (for the front office); class-scoped
+ * staff (teachers) only families with a child in their sections (404 otherwise).
  */
+async function assertFamily(req: Request, parentId: string) {
+  assertSelfParent(req, parentId);
+  if (!req.user!.parentId && isClassScoped(req.user!)) await visibleParent(req.user!, parentId);
+}
+
+/** Resolves :id/:studentId for family routes: the family, and only children linked to it. */
 async function familyChild(req: Request, requireTracking = false) {
   const { id, studentId } = v(req, 'params');
-  assertSelfParent(req, id);
+  await assertFamily(req, id);
   const sid = await resolveStudentId(studentId);
   if (!(await isGuardianOf(id, sid, requireTracking))) throw notFound('Student not found', 'STUDENT_NOT_FOUND');
+  if (!req.user!.parentId && !(await canAccessStudent(req.user!, sid))) throw notFound('Student not found', 'STUDENT_NOT_FOUND');
   return { parentId: id as string, studentId: sid };
 }
 
@@ -48,14 +56,14 @@ r.get('/me', requirePermission('parent_portal.use'), async (req: Request, res: R
 // ---- Directory (staff) --------------------------------------------------------
 r.get('/', requirePermission('parents.read'), validate(paginationSchema.extend({ campusId: z.uuid().optional() }), 'query'), async (req: Request, res: Response) => {
   const f = v(req, 'query');
-  const { rows, total } = await svc.listParents(f);
+  const { rows, total } = await svc.listParents(req.user!, f);
   return paged(res, rows, total, f.page, f.pageSize, 'Parents retrieved successfully');
 });
 r.post('/', requirePermission('parents.manage'), validate(parentBody), async (req: Request, res: Response) =>
   created(res, await svc.createParent(req, v(req)), 'Parent created successfully'));
 
 r.get('/:id', requireAny('parents.read', 'parent_portal.use'), validate(parentParam, 'params'), async (req: Request, res: Response) => {
-  assertSelfParent(req, v(req, 'params').id);
+  await assertFamily(req, v(req, 'params').id);
   return ok(res, await svc.getParent(v(req, 'params').id), 'Parent retrieved successfully');
 });
 r.put('/:id', requirePermission('parents.manage'), validate(parentParam, 'params'), validate(parentBody.partial()), async (req: Request, res: Response) =>
@@ -63,8 +71,8 @@ r.put('/:id', requirePermission('parents.manage'), validate(parentParam, 'params
 
 // ---- Children -------------------------------------------------------------------
 r.get('/:id/children', requireAny('parents.read', 'parent_portal.use'), validate(parentParam, 'params'), async (req: Request, res: Response) => {
-  assertSelfParent(req, v(req, 'params').id);
-  return ok(res, await svc.getChildren(v(req, 'params').id), 'Children retrieved successfully');
+  await assertFamily(req, v(req, 'params').id);
+  return ok(res, await svc.getChildren(v(req, 'params').id, req.user!.parentId ? undefined : req.user!), 'Children retrieved successfully');
 });
 
 r.get('/:id/children/:studentId/overview', requireAny('parents.read', 'parent_portal.use'), validate(childParams, 'params'), async (req: Request, res: Response) => {
