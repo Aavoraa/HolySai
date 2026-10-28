@@ -15,7 +15,8 @@ export type Pagination = z.infer<typeof paginationSchema>;
  * reaches ORDER BY directly.
  */
 export function orderBy(sort: string | undefined, dir: 'asc' | 'desc', allowed: Record<string, string>, fallback: string) {
-  const col = (sort && allowed[sort]) || allowed[fallback] || fallback;
+  // Own keys only: 'constructor', 'toString' … would otherwise resolve to Object.prototype members.
+  const col = (sort && Object.hasOwn(allowed, sort) && allowed[sort]) || allowed[fallback] || fallback;
   return `${col} ${dir === 'desc' ? 'DESC' : 'ASC'} NULLS LAST`;
 }
 

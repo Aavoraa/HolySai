@@ -141,7 +141,7 @@ r.put('/circulars/:id', SEND, validate(val.idParam, 'params'), validate(val.circ
 r.get('/circulars/:id/acknowledgements', CIRC_READ, validate(val.idParam, 'params'), validate(val.ackListQuery, 'query'),
   async (req: Request, res: Response) => {
     const f = v(req, 'query');
-    const { rows, total } = await circ.listAcknowledgements(v(req, 'params').id, f);
+    const { rows, total } = await circ.listAcknowledgements(req.user!, v(req, 'params').id, f);
     return paged(res, rows, total, f.page, f.pageSize, 'Acknowledgements retrieved');
   });
 

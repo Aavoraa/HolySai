@@ -41,13 +41,15 @@ export async function login(identifier: string, password: string, ctx: { clientT
   }
   const valid = await bcrypt.compare(password, row.password_hash);
   if (!valid) {
-    const failed = row.failed_login_count + 1;
-    const lock = failed >= MAX_FAILED;
+    // Counted in SQL, not from the value read above: concurrent guesses must not
+    // overwrite each other's count, nor clear a lock another attempt just set.
     await query(
-      `UPDATE users SET failed_login_count = $2,
-              locked_until = CASE WHEN $3 THEN now() + make_interval(mins => $4) ELSE NULL END
+      `UPDATE users SET failed_login_count = CASE WHEN locked_until > now() THEN failed_login_count
+                                                 WHEN failed_login_count + 1 >= $2 THEN 0 ELSE failed_login_count + 1 END,
+              locked_until = CASE WHEN locked_until > now() THEN locked_until
+                                  WHEN failed_login_count + 1 >= $2 THEN now() + make_interval(mins => $3) ELSE NULL END
         WHERE id = $1`,
-      [row.id, lock ? 0 : failed, lock, LOCK_MINUTES],
+      [row.id, MAX_FAILED, LOCK_MINUTES],
     );
     throw unauthorized('Incorrect email/mobile or password', 'INVALID_CREDENTIALS');
   }

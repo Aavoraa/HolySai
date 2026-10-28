@@ -169,8 +169,8 @@ export async function listLeads(f: LeadFilters) {
   w.addIf(f.grade, 'e.grade_applied = ?');
   if (f.open) w.add(`e.stage NOT IN ('Enrolled', 'Lost')`);
   if (f.overdue) w.add(`e.next_action_at < now() AND e.stage NOT IN ('Enrolled', 'Lost')`);
-  w.addIf(f.from, `e.created_at >= (?::date AT TIME ZONE 'Asia/Kolkata')`);
-  w.addIf(f.to, `e.created_at < ((?::date + 1) AT TIME ZONE 'Asia/Kolkata')`);
+  w.addIf(f.from, `e.created_at >= ((?::date)::timestamp AT TIME ZONE 'Asia/Kolkata')`);
+  w.addIf(f.to, `e.created_at < ((?::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`);
   if (f.q) w.add('(e.student_name ILIKE ? OR e.parent_name ILIKE ? OR e.code ILIKE ? OR e.phone ILIKE ?)', likeTerm(f.q), likeTerm(f.q), likeTerm(f.q), likeTerm(f.q));
   const { limit, offset } = limitOffset(f);
   const rows = await many(
@@ -384,6 +384,13 @@ export async function changeStage(req: Request, idOrCode: string, input: { stage
         await query(`UPDATE admissions SET status = 'Assessment Scheduled', assessment_at = COALESCE(assessment_at, now() + interval '3 days') WHERE id = $1`, [appRow.id], db);
       }
       if (to === 'Offer' && ['Submitted', 'Under Review', 'Assessment Scheduled'].includes(appRow.status)) {
+        // Same gate as the application's own Offer Made step.
+        const docs = await one<{ outstanding: number }>(
+          `SELECT count(*) FILTER (WHERE status <> 'Verified')::int AS outstanding
+             FROM documents WHERE owner_type = 'admission' AND owner_id = $1 AND deleted_at IS NULL`, [appRow.id], db);
+        if (docs && docs.outstanding > 0) {
+          throw badRequest(`Verify all documents before making an offer (${docs.outstanding} outstanding)`, 'DOCUMENTS_INCOMPLETE');
+        }
         await query(
           `UPDATE admissions SET status = 'Offer Made', offer_expires_on = COALESCE(offer_expires_on, current_date + 14),
                   decided_by = $2, decided_at = now() WHERE id = $1`, [appRow.id, req.user!.id], db);
@@ -479,7 +486,8 @@ export async function updateFollowUp(req: Request, id: string, input: { status?:
   return tx(async (db) => {
     const f = await one(`SELECT f.*, e.code, e.stage, e.parent_name FROM follow_ups f JOIN enquiries e ON e.id = f.enquiry_id WHERE f.id = $1 AND e.deleted_at IS NULL FOR UPDATE OF f`, [id], db);
     if (!f) throw notFound('Follow-up not found', 'FOLLOW_UP_NOT_FOUND');
-    if (f.status !== 'Scheduled' && input.status && input.status !== f.status) {
+    // A closed follow-up cannot be closed again (a repeat "Completed" would log the outcome twice).
+    if (f.status !== 'Scheduled' && input.status) {
       throw badRequest(`This follow-up is already ${f.status.toLowerCase()}`, 'FOLLOW_UP_CLOSED');
     }
     if (input.assignedTo) await assertCounsellor(input.assignedTo, db);

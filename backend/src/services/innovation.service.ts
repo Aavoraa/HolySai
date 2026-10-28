@@ -12,6 +12,7 @@ import { audit } from './audit.service.js';
 import { authorizeStudent, studentScope } from './access.service.js';
 import { notifyGuardians, notifyUsers } from './notification.service.js';
 import { splitTotal, updateById } from './operations-helpers.js';
+import { schoolToday } from './intelligence-common.service.js';
 import type { AuthUser } from '../types.js';
 import { STAGES, STAGE_STATUS } from '../validators/innovation.validators.js';
 
@@ -451,8 +452,9 @@ export async function advanceStage(req: Request, id: string, b: { achievementTit
     let achievementId: string | null = null;
     if (next === 6) {
       if (!b.achievementTitle) throw badRequest('Describe the achievement to record on the Student 360 profile', 'ACHIEVEMENT_REQUIRED', [{ field: 'achievementTitle', message: 'Required to complete the project' }]);
-      const achievedOn = b.achievedOn ?? new Date().toISOString().slice(0, 10);
-      if (achievedOn > new Date().toISOString().slice(0, 10)) throw badRequest('Achievement date cannot be in the future', 'FUTURE_DATE', [{ field: 'achievedOn', message: 'Cannot be in the future' }]);
+      // School day (Asia/Kolkata), not the UTC date, which lags until 05:30.
+      const achievedOn = b.achievedOn ?? schoolToday();
+      if (achievedOn > schoolToday()) throw badRequest('Achievement date cannot be in the future', 'FUTURE_DATE', [{ field: 'achievedOn', message: 'Cannot be in the future' }]);
       const a = await one<{ id: string }>(
         `INSERT INTO achievements (student_id, title, achievement_type, level, achieved_on, is_verified, verified_by, verified_at, created_by)
          VALUES ($1,$2,'Innovation',$3,$4,true,$5,now(),$5) RETURNING id`,
@@ -607,7 +609,7 @@ export async function updateMilestone(req: Request, milestoneId: string, b: {
   title?: string; dueOn?: string | null; completed?: boolean; completedOn?: string; evidence?: string | null; feedback?: string | null;
 }) {
   const { m, p } = await loadMilestone(req.user!, milestoneId);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = schoolToday();
   const input: Record<string, unknown> = { title: b.title, dueOn: b.dueOn, evidence: b.evidence, feedback: b.feedback };
   if (b.completed === true) {
     const on = b.completedOn ?? today;

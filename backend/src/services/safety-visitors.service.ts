@@ -137,7 +137,9 @@ async function transition(req: Request, id: string, from: string[], to: 'Inside'
   if (!v) throw notFound('Visitor not found', 'VISITOR_NOT_FOUND');
   if (!from.includes(v.status)) throw conflict(`${v.full_name} is ${v.status.toLowerCase()} and cannot be ${verb}`, 'VISITOR_STATE');
   await tx(async (db) => {
-    await query(`UPDATE visitors SET status = $2, ${set} WHERE id = $1`, [id, to], db);
+    // Re-check the state in the UPDATE itself so a double submit cannot apply the transition twice.
+    const r = await query(`UPDATE visitors SET status = $2, ${set} WHERE id = $1 AND status = ANY($3)`, [id, to, from], db);
+    if (!r.rowCount) throw conflict(`${v.full_name} has already been updated. Reload and try again.`, 'VISITOR_STATE');
     if (to === 'Inside') {
       const uid = await employeeUserId(v.host_employee_id, db);
       if (uid) {

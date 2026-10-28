@@ -5,7 +5,7 @@ import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagina
 import { badRequest, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
-import { studentScope } from './access.service.js';
+import { isGuardianOf, studentScope } from './access.service.js';
 import type { AuthUser } from '../types.js';
 
 /**
@@ -70,7 +70,8 @@ export const STUDENT_ROW_SQL = `
     LEFT JOIN attendance_records td ON td.student_id = s.id AND td.attendance_date = current_date
     LEFT JOIN student_tracking_profiles tp ON tp.student_id = s.id`;
 
-// Always listed first in the students list (GPS tracking demo student, Aditya Raman).
+// Listed first in the default students list (GPS tracking demo student, Aditya Raman);
+// a sort the user picks is honoured as asked.
 const PINNED_ADMISSION_NO = 'HS-2026-1077';
 
 const SORTS: Record<string, string> = {
@@ -115,7 +116,7 @@ export async function listStudents(user: AuthUser, f: StudentFilters) {
     `SELECT q.*, count(*) OVER() AS total
        FROM (${STUDENT_ROW_SQL} ${w.sql}) q
       ${outerParts.length ? 'WHERE ' + outerParts.join(' AND ') : ''}
-      ORDER BY (q."admissionNo" = '${PINNED_ADMISSION_NO}') DESC, ${orderBy(f.sort, f.dir, SORTS, 'name')}, q."fullName"
+      ORDER BY ${f.sort ? '' : `(q."admissionNo" = '${PINNED_ADMISSION_NO}') DESC, `}${orderBy(f.sort, f.dir, SORTS, 'name')}, q."fullName"
       LIMIT $${n - 1} OFFSET $${n}`,
     params,
   );
@@ -224,6 +225,18 @@ export async function updateStudent(req: Request, id: string, input: Record<stri
   return tx(async (db) => {
     const before = await one('SELECT * FROM students WHERE id = $1 AND deleted_at IS NULL FOR UPDATE', [id], db);
     if (!before) throw notFound('Student not found', 'STUDENT_NOT_FOUND');
+    // As on create: the section must belong to the student's (new) campus.
+    const sectionId = input.sectionId ?? before.section_id;
+    if ((input.sectionId !== undefined || input.campusId !== undefined) && sectionId) {
+      const section = await one<{ campus_id: string }>(
+        'SELECT c.campus_id FROM sections sec JOIN classes c ON c.id = sec.class_id WHERE sec.id = $1',
+        [sectionId], db,
+      );
+      if (!section) throw badRequest('Section not found', 'SECTION_NOT_FOUND');
+      if (section.campus_id !== (input.campusId ?? before.campus_id)) {
+        throw badRequest('Section does not belong to the selected campus', 'SECTION_CAMPUS_MISMATCH');
+      }
+    }
     const sets: string[] = [];
     const params: unknown[] = [];
     const changed: string[] = [];
@@ -263,6 +276,14 @@ export async function archiveStudent(req: Request, id: string) {
   );
   if (!r) throw notFound('Student not found', 'STUDENT_NOT_FOUND');
   await query(`UPDATE student_tracking_profiles SET tracking_enabled = false, tracking_status = 'disabled' WHERE student_id = $1`, [id]);
+  // The student's tracker goes back to the pool instead of staying "assigned" to an archived record.
+  await query(
+    `WITH ended AS (
+       UPDATE device_assignments SET status = 'inactive', unassigned_at = now(), unassigned_by = $2, unassign_reason = 'Student archived'
+        WHERE student_id = $1 AND status = 'active' RETURNING device_id)
+     UPDATE gps_devices SET status = 'available' WHERE id IN (SELECT device_id FROM ended) AND status = 'assigned'`,
+    [id, req.user!.id],
+  );
   await audit(req, { action: 'delete', module: 'students', description: `Archived student ${r.admission_no}`, entityType: 'student', entityId: id });
 }
 
@@ -484,7 +505,9 @@ export async function getStudentProfile(user: AuthUser, id: string) {
     delete profile.observations;
   }
 
-  const canTrack = perms.has('tracking.read_all') || perms.has('tracking.read_assigned') || perms.has('tracking.read_own_children');
+  // Same rule as authorizeStudentTracking: a guardian also needs can_view_tracking for this child.
+  const canTrack = perms.has('tracking.read_all') || perms.has('tracking.read_assigned')
+    || (perms.has('tracking.read_own_children') && !!user.parentId && (await isGuardianOf(user.parentId, id, true)));
   if (canTrack) {
     profile.tracking = await one(
       `SELECT tp.tracking_enabled AS enabled, tp.tracking_status AS status, tp.device_type AS "deviceType",

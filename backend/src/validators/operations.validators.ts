@@ -33,7 +33,9 @@ export const assetCreate = z.object({
   nextServiceOn: isoDate.optional().nullable(),
   status: z.enum(ASSET_STATUSES).default('Active'),
 });
-export const assetUpdate = assetCreate.partial();
+// Zod applies .default() inside .partial(), so defaulted fields are re-declared
+// without a default; otherwise every partial update would reset them.
+export const assetUpdate = assetCreate.partial().extend({ status: z.enum(ASSET_STATUSES).optional() });
 export const assetService = z.object({
   servicedOn: isoDate,
   nextServiceOn: isoDate,
@@ -49,7 +51,7 @@ export const facilityCreate = z.object({
   capacity: z.coerce.number().int().min(1).max(5000).optional().nullable(),
   status: z.enum(['Available', 'In use', 'Maintenance', 'Closed']).default('Available'),
 });
-export const facilityUpdate = facilityCreate.partial();
+export const facilityUpdate = facilityCreate.partial().extend({ status: z.enum(['Available', 'In use', 'Maintenance', 'Closed']).optional() });
 export const bookingQuery = z.object({ from: isoDate.optional(), to: isoDate.optional() });
 export const bookingCreate = z.object({
   bookedOn: isoDate,
@@ -98,7 +100,8 @@ export const inventoryCreate = z.object({
   reorderLevel: z.coerce.number().int().min(0).max(1e7),
   unitCost: z.coerce.number().min(0).max(1e7).default(0),
 });
-export const inventoryUpdate = inventoryCreate.omit({ quantity: true, sku: true }).partial();
+export const inventoryUpdate = inventoryCreate.omit({ quantity: true, sku: true }).partial()
+  .extend({ unitCost: z.coerce.number().min(0).max(1e7).optional() });
 export const movementCreate = z.object({
   movementType: z.enum(['in', 'out', 'adjust']),
   quantity: z.coerce.number().int().min(0).max(1e7),

@@ -9,10 +9,11 @@ import { Where } from '../utils/sql.js';
 import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagination.js';
 import { conflict, notFound } from '../utils/errors.js';
 import { audit } from './audit.service.js';
+import { schoolToday } from './academics.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
 import type { Audience } from '../validators/parents-experience.validators.js';
 import {
-  audienceLabel, audienceParentSql, countAudience, normalizeAudience, notifyAudience, selfParentId,
+  addParentScope, audienceLabel, audienceParentSql, countAudience, normalizeAudience, notifyAudience, selfParentId,
 } from './parents-experience.service.js';
 
 const total = <T extends { total?: unknown }>(rows: T[]) => Number(rows[0]?.total ?? 0);
@@ -87,11 +88,12 @@ export async function acknowledgementSummary(campusId?: string) {
 }
 
 /** Families in the circular's audience with their acknowledgement state. */
-export async function listAcknowledgements(id: string, f: Pagination & { state: 'pending' | 'acknowledged' }) {
+export async function listAcknowledgements(user: AuthUser, id: string, f: Pagination & { state: 'pending' | 'acknowledged' }) {
   await getCircular(id);
   const w = new Where();
   const cid = w.param(id);
   w.add('p.deleted_at IS NULL');
+  addParentScope(user, w); // teachers: only the families of their own classes
   w.add(audienceParentSql('c.audience_filter', 'c.campus_id', 'p.id'));
   w.add(f.state === 'acknowledged' ? 'a.parent_id IS NOT NULL' : 'a.parent_id IS NULL');
   if (f.q) w.add('(p.full_name ILIKE ? OR p.phone ILIKE ?)', likeTerm(f.q), likeTerm(f.q));
@@ -150,7 +152,9 @@ export async function submitCircular(req: Request, id: string) {
   const c = await getCircular(id);
   if (c.status !== 'Draft') throw conflict(`Only drafts can be sent for approval (this circular is ${c.status})`, 'INVALID_TRANSITION');
   await tx(async (db) => {
-    await query(`UPDATE circulars SET status = 'Under Review', submitted_by = $2, submitted_at = now() WHERE id = $1`, [id, req.user!.id], db);
+    // Conditional on the status read above, so a double-submit cannot notify approvers twice.
+    const r = await query(`UPDATE circulars SET status = 'Under Review', submitted_by = $2, submitted_at = now() WHERE id = $1 AND status = 'Draft'`, [id, req.user!.id], db);
+    if (!r.rowCount) throw conflict('This circular has already been sent for approval', 'INVALID_TRANSITION');
     await notifyRoles(['principal', 'school_admin', 'super_admin'], {
       category: 'Attention', topic: 'circulars', icon: 'megaphone', title: 'Circular awaiting approval',
       body: `${c.title} · ${c.audience} · submitted by ${req.user!.fullName}`, route: '/circulars', entityType: 'circular', entityId: id,
@@ -180,9 +184,11 @@ export async function releaseCircular(req: Request, id: string) {
   const aud = normalizeAudience(c.audienceFilter);
   const notified = await tx(async (db) => {
     const target = await countAudience(aud, c.campusId, db);
-    await query(
-      `UPDATE circulars SET status = 'Released', published_at = now(), released_by = $2, target_count = $3 WHERE id = $1`,
+    // Conditional on the status read above, so two approvals racing release (and notify) once.
+    const r = await query(
+      `UPDATE circulars SET status = 'Released', published_at = now(), released_by = $2, target_count = $3 WHERE id = $1 AND status = 'Under Review'`,
       [id, req.user!.id, target], db);
+    if (!r.rowCount) throw conflict('This circular has already been released or returned', 'INVALID_TRANSITION');
     const n = await notifyAudience(aud, c.campusId, {
       category: c.requiresAck ? 'Attention' : 'Information', topic: 'circulars', icon: 'megaphone',
       title: c.requiresAck ? 'Circular needs your acknowledgement' : 'New circular from school',
@@ -367,7 +373,7 @@ export async function cancelEvent(req: Request, id: string) {
   const notified = await tx(async (db) => {
     await query(`UPDATE events SET status = 'Cancelled' WHERE id = $1`, [id], db);
     let n = 0;
-    if (e.status === 'Published' && (e.endsOn ?? e.startsOn) >= new Date().toISOString().slice(0, 10)) {
+    if (e.status === 'Published' && (e.endsOn ?? e.startsOn) >= schoolToday()) {
       n = await notifyAudience(normalizeAudience(e.audienceFilter), e.campusId, {
         category: 'Attention', topic: 'events', icon: 'calendar', title: `Event cancelled: ${e.title}`,
         body: `Originally scheduled for ${e.startsOn}${e.venue ? ` at ${e.venue}` : ''}.`, route: '/parent-360?tab=more',

@@ -24,7 +24,7 @@ fine for sideloading but not for Play Store. To use your own key, create
 
 ## Server address
 
-The default is `https://holy-sai.onrender.com` (`DEFAULT_API_URL` in `app/build.gradle.kts`).
+The default is `https://holysai-vert.vercel.app` (`DEFAULT_API_URL` in `app/build.gradle.kts`).
 You can change it on the sign-in screen under **Server settings**. For a local API on the
 emulator, use `http://10.0.2.2:4000`. Plain HTTP is allowed only for the local development
 hosts listed in `res/xml/network_security_config.xml`.

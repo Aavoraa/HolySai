@@ -177,6 +177,12 @@ def update_question(question_id: str, body: QuestionIn, user: ManagerUser, db: D
     approved = db.scalars(select(Answer).where(Answer.question_id == q.id, Answer.mark_status == "approved")).first()
     if approved and body.max_marks != q.max_marks:
         raise HTTPException(409, "Marks are already approved for this question; its maximum cannot change.")
+    if body.max_marks != q.max_marks:
+        # marks given against the old maximum must be redone before anyone approves them
+        for a in db.scalars(select(Answer).where(Answer.question_id == q.id, Answer.final_marks.is_not(None))):
+            a.mark_status = "pending"
+            if "the question's maximum changed; re-evaluate" not in a.flags:
+                a.flags = [*a.flags, "the question's maximum changed; re-evaluate"]
     for k, v in body.model_dump().items():
         if k == "number":
             v = v.strip().lower()

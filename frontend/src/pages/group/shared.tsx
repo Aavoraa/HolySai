@@ -1,5 +1,5 @@
 import { Card } from '@/components/ui';
-import { fmt } from '@/lib/format';
+import { fmt, todayKey } from '@/lib/format';
 
 export interface CampusMetrics {
   id: string; code: string; name: string; shortName: string; place: string; curriculum: string | null; address: string | null; established: number | null;
@@ -63,7 +63,7 @@ export function comparisonCsv(campuses: CampusMetrics[], rows: MetricRow[]) {
   const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = `campus-comparison-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `campus-comparison-${todayKey()}.csv`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

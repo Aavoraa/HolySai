@@ -256,7 +256,8 @@ export function IncidentModal({ onClose, defaultType = 'Safeguarding' }: { onClo
       <div className="formsection">
         <div className="formsection__title">What happened</div>
         <div className="form-grid">
-          <SelectField label="Type" required value={f.incidentType} onChange={set('incidentType')} options={INCIDENT_TYPES} />
+          {/* Confidential follows the type: only safeguarding leads may mark other types confidential (API 403). */}
+          <SelectField label="Type" required value={f.incidentType} onChange={(v) => setF((x) => ({ ...x, incidentType: v, isConfidential: v === 'Safeguarding' }))} options={INCIDENT_TYPES} />
           <SelectField label="Severity" required value={f.severity} onChange={set('severity')} options={SEVERITIES} />
           <TextField className="span-2" label="Summary" required value={f.summary} onChange={set('summary')} maxLength={200} error={fe.errors.summary} />
           <TextArea className="span-2" label="Details" rows={4} value={f.details} onChange={set('details')} maxLength={4000}

@@ -69,7 +69,8 @@ export async function refresh(req: Request, res: Response) {
 }
 
 export async function logout(req: Request, res: Response) {
-  const token: string | undefined = req.body?.refreshToken ?? req.cookies?.[COOKIE];
+  // Not validated by a schema (logout always succeeds), so ignore anything that is not a string.
+  const token = [req.body?.refreshToken, req.cookies?.[COOKIE]].find((t): t is string => typeof t === 'string' && t.length > 0);
   if (token) {
     const r = await revokeRefreshToken(token);
     if (r) await audit(req, { action: 'logout', module: 'auth', description: 'Signed out', entityType: 'user', entityId: r.user_id }, undefined, { id: r.user_id, name: 'User', role: 'user' });

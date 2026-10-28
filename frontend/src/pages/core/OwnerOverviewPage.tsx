@@ -8,7 +8,7 @@ import { useSchool } from '@/layouts/SchoolContext';
 import {
   AlertItem, Badge, Banner, Button, Card, Chart, charts, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter, Page, PageSkeleton,
   Person, StudentLink, CampusBanner, DashLayout, DashRail, UpcomingEvents, SchoolPulse } from '@/components/ui';
-import { fmt } from '@/lib/format';
+import { fmt, todayKey } from '@/lib/format';
 
 /**
  * Owner Overview — the Super Admin's landing page.
@@ -228,7 +228,7 @@ export default function OwnerOverviewPage() {
 
   const d = q.data;
   const { previousVisit: visit, welcome, revenue, activity, school: sc } = d;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = todayKey();
 
   const ex = sc?.exceptions;
   const exceptions = ex ? [

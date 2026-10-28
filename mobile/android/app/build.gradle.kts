@@ -23,7 +23,7 @@ android {
         versionCode = 4
         versionName = "2.2.0"
         // Default API server; users can change it on the sign-in screen.
-        buildConfigField("String", "DEFAULT_API_URL", "\"https://holy-sai.onrender.com\"")
+        buildConfigField("String", "DEFAULT_API_URL", "\"https://holysai-vert.vercel.app\"")
     }
 
     signingConfigs {

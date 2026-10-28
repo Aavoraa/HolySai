@@ -168,7 +168,7 @@ fun ChildHomeworkScreen() {
             if (list.isEmpty()) item { Text("No homework right now.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(list) { h ->
                 InfoCard(h.str("title") ?: "", subtitle = "${h.str("subject").orEmpty()} · due ${prettyDate(h.str("dueOn"))}",
-                    trailing = { StatusChip(h.str("submitted") ?: h.str("status")) })
+                    trailing = { StatusChip(if (h.optBoolean("submitted")) "Submitted" else h.str("status")) })
             }
         }
     }

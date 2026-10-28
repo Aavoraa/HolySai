@@ -65,7 +65,7 @@ export default function WellbeingPage() {
       <Grid cols="g-4col">
         <Kpi label="Positive notes this term" icon="star" value={fmt.n(d.positive.value)} tone="teal" delta={d.positive.delta} foot={`Since ${fmt.date(d.termStart)}`} />
         <Kpi label="Concerns logged" icon="flag" value={fmt.n(d.concerns.value)} tone="amber" delta={d.concerns.delta} inverse foot="Concerns and incidents"
-          onClick={() => list.setFilter('type', 'Concern')} />
+          onClick={() => { list.setFilter('tab', ''); list.setFilter('type', 'Concern'); }} />
         <Kpi label="Counselling sessions" icon="message" value={d.counselling.sessions} tone="info" foot={`${d.counselling.students} students · ${d.counselling.upcoming} upcoming`} />
         <Kpi label="Safeguarding concerns" icon="shield" value={d.safeguarding.total} tone="critical"
           foot={d.safeguarding.total ? `${d.safeguarding.closed} closed · ${d.safeguarding.open} open` : 'None this term'} />
