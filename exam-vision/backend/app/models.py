@@ -12,7 +12,7 @@ import datetime as dt
 import uuid
 
 from sqlalchemy import (
-    JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, Index,
+    JSON, Boolean, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text, UniqueConstraint, Index, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -270,7 +270,13 @@ class MarkOverride(Base):
 
 class Job(Base):
     __tablename__ = "jobs"
-    __table_args__ = (Index("ix_jobs_active", "submission_id", "kind", "status"),)
+    __table_args__ = (
+        Index("ix_jobs_active", "submission_id", "kind", "status"),
+        # at most one queued or running job per sheet (see db._v4)
+        Index("ux_jobs_one_active", "submission_id", unique=True,
+              sqlite_where=text("status IN ('queued', 'running')"),
+              postgresql_where=text("status IN ('queued', 'running')")),
+    )
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_id)
     kind: Mapped[str] = mapped_column(String(20))  # extract|evaluate|compare
     submission_id: Mapped[str] = mapped_column(ForeignKey("submissions.id", ondelete="CASCADE"))

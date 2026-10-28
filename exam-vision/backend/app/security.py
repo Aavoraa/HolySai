@@ -89,7 +89,7 @@ def gateway_signature(*parts: str) -> str:
 def gateway_fresh(ts: str) -> bool:
     try:
         return abs(dt.datetime.now(dt.timezone.utc).timestamp() - int(ts)) <= GATEWAY_MAX_SKEW
-    except ValueError:
+    except (ValueError, OverflowError):  # OverflowError: a number too large for a float
         return False
 
 

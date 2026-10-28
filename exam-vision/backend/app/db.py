@@ -108,7 +108,16 @@ def _v3(conn) -> None:
     PageImage.__table__.create(conn, checkfirst=True)
 
 
-MIGRATIONS: list[Callable] = [_v1, _v2, _v3]
+def _v4(conn) -> None:
+    # at most one queued or running job per sheet: two at once read and marked it twice
+    jobs = f"{PG_SCHEMA}.jobs" if conn.dialect.name == "postgresql" else "jobs"
+    active = "status IN ('queued', 'running')"
+    conn.execute(text(f"UPDATE {jobs} SET status = 'failed', error = 'duplicate job' WHERE {active} AND id NOT IN "
+                      f"(SELECT MIN(id) FROM {jobs} WHERE {active} GROUP BY submission_id)"))
+    conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS ux_jobs_one_active ON {jobs} (submission_id) WHERE {active}"))
+
+
+MIGRATIONS: list[Callable] = [_v1, _v2, _v3, _v4]
 
 
 def migrate(eng: Engine) -> int:

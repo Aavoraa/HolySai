@@ -70,7 +70,8 @@ export const STUDENT_ROW_SQL = `
     LEFT JOIN attendance_records td ON td.student_id = s.id AND td.attendance_date = current_date
     LEFT JOIN student_tracking_profiles tp ON tp.student_id = s.id`;
 
-// Always listed first in the students list (GPS tracking demo student, Aditya Raman).
+// Listed first in the default students list (GPS tracking demo student, Aditya Raman);
+// a sort the user picks is honoured as asked.
 const PINNED_ADMISSION_NO = 'HS-2026-1077';
 
 const SORTS: Record<string, string> = {
@@ -115,7 +116,7 @@ export async function listStudents(user: AuthUser, f: StudentFilters) {
     `SELECT q.*, count(*) OVER() AS total
        FROM (${STUDENT_ROW_SQL} ${w.sql}) q
       ${outerParts.length ? 'WHERE ' + outerParts.join(' AND ') : ''}
-      ORDER BY (q."admissionNo" = '${PINNED_ADMISSION_NO}') DESC, ${orderBy(f.sort, f.dir, SORTS, 'name')}, q."fullName"
+      ORDER BY ${f.sort ? '' : `(q."admissionNo" = '${PINNED_ADMISSION_NO}') DESC, `}${orderBy(f.sort, f.dir, SORTS, 'name')}, q."fullName"
       LIMIT $${n - 1} OFFSET $${n}`,
     params,
   );
