@@ -196,7 +196,9 @@ export function PaymentModal({ account, open, onClose, onPaid }: {
     setAmount(account ? String(account.summary.outstanding) : '');
     setMethod('Cash'); setReference(''); setTouched(false);
   }, [open, account]);
-  const selectedTotal = open_.filter((l) => sel.has(l.id)).reduce((a, l) => a + l.balance, 0);
+  // Summed in paise so e.g. 1500.10 + 1200.20 is exactly 2700.30, not 2700.2999… (which would fail the 2-decimal check).
+  const sumBalances = (ids: Set<string>) => open_.filter((l) => ids.has(l.id)).reduce((a, l) => a + Math.round(l.balance * 100), 0) / 100;
+  const selectedTotal = sumBalances(sel);
   const cap = sel.size ? selectedTotal : account?.summary.outstanding ?? 0;
   const pay = useApiMutation<Record<string, unknown>, { id: string; receiptNo: string }>('post', `/finance/accounts/${account?.student.id}/payments`, {
     invalidate: ['/finance'], onSuccess: (r) => onPaid(r.data.id),
@@ -217,7 +219,7 @@ export function PaymentModal({ account, open, onClose, onPaid }: {
     const n = new Set(sel);
     if (n.has(id)) n.delete(id); else n.add(id);
     setSel(n);
-    const tot = open_.filter((l) => n.has(l.id)).reduce((a, l) => a + l.balance, 0);
+    const tot = sumBalances(n);
     setAmount(String(n.size ? tot : account?.summary.outstanding ?? ''));
   };
   return (

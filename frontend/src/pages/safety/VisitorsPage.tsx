@@ -90,7 +90,7 @@ export default function VisitorsPage() {
                     {manage && r.status === 'Inside' && <Button size="sm" onClick={() => run(r, 'check-out')} loading={act.isPending && act.variables?.id === r.id}>Check out</Button>}
                     {manage && r.status === 'Expected' && (
                       <>
-                        <Button size="sm" variant="primary" onClick={() => run(r, 'check-in')}>Arrived</Button>
+                        <Button size="sm" variant="primary" onClick={() => run(r, 'check-in')} loading={act.isPending && act.variables?.id === r.id}>Arrived</Button>
                         <Button size="sm" variant="quiet" onClick={() => run(r, 'deny')}>Deny</Button>
                       </>
                     )}
