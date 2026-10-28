@@ -18,6 +18,10 @@ import { FORM_FILTER, formStatusSql } from './admissions-forms.service.js';
 
 const LIVE = `a.status NOT IN ('Enrolled', 'Rejected', 'Withdrawn')`;
 
+/** Today's date (YYYY-MM-DD) in the school timezone, independent of the server clock's zone. */
+const kolkataDate = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+
 const NEXT: Record<string, string[]> = {
   Draft: ['Submitted', 'Withdrawn'],
   Submitted: ['Under Review', 'Rejected', 'Withdrawn'],
@@ -170,7 +174,7 @@ export async function setStatus(req: Request, id: string, input: { status: strin
     if (to === 'Offer Made' && docs && docs.total > docs.verified) {
       throw badRequest(`Verify all documents before making an offer (${docs.total - docs.verified} outstanding)`, 'DOCUMENTS_INCOMPLETE');
     }
-    if (to === 'Accepted' && app.offer_expires_on && app.offer_expires_on < new Date().toISOString().slice(0, 10)) {
+    if (to === 'Accepted' && app.offer_expires_on && app.offer_expires_on < kolkataDate()) {
       throw badRequest('The offer has expired — extend the offer date first', 'OFFER_EXPIRED');
     }
     const decided = ['Offer Made', 'Accepted', 'Rejected', 'Withdrawn'].includes(to);
@@ -189,6 +193,10 @@ export async function setStatus(req: Request, id: string, input: { status: strin
       const note = `${app.application_no}: ${input.note}`;
       if (to === 'Assessment Scheduled') {
         await advanceTo(db, req, lead as any, 'Assessment', note);
+        // A reschedule replaces the open assessment follow-up rather than adding a second one.
+        await query(
+          `UPDATE follow_ups SET status = 'Cancelled' WHERE enquiry_id = $1 AND status = 'Scheduled' AND notes = 'Entrance assessment'`,
+          [lead.id], db);
         await query(
           `INSERT INTO follow_ups (enquiry_id, follow_up_type, scheduled_at, notes, status, assigned_to, created_by)
            VALUES ($1, 'Meeting', $2, 'Entrance assessment', 'Scheduled', $3, $4)`,
@@ -340,7 +348,7 @@ export async function enrol(req: Request, id: string, raw: EnrolInput) {
       parentCreated = true;
     }
 
-    const year = new Date().getFullYear();
+    const year = kolkataDate().slice(0, 4);
     const admissionNo = await nextCode('students', 'admission_no', `HS-${year}-`, db);
     const s = await one<{ id: string }>(
       `INSERT INTO students (admission_no, first_name, last_name, date_of_birth, gender, campus_id, section_id, academic_year_id,

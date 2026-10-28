@@ -538,7 +538,7 @@ export async function deviceSelfStatus(req: Request) {
     ? await many<{ latitude: number; longitude: number; recorded_at: Date }>(
       `SELECT latitude, longitude, recorded_at FROM student_locations
         WHERE device_id = $1 AND student_id = $2
-          AND recorded_at >= (now() AT TIME ZONE 'Asia/Kolkata')::date AT TIME ZONE 'Asia/Kolkata'
+          AND recorded_at >= (now() AT TIME ZONE 'Asia/Kolkata')::date::timestamp AT TIME ZONE 'Asia/Kolkata'
         ORDER BY recorded_at, id`,
       [d.id, d.studentId])
     : [];

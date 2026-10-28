@@ -7,7 +7,7 @@ import { many, one, type Queryable } from '../config/db.js';
 import { Where } from '../utils/sql.js';
 import { notFound } from '../utils/errors.js';
 import { studentScope } from './access.service.js';
-import { notifyRoles, notifyUsers, type NotifyInput } from './notification.service.js';
+import { notifyUsers, type NotifyInput } from './notification.service.js';
 import type { Audience } from '../validators/parents-experience.validators.js';
 
 /**
@@ -117,7 +117,14 @@ export async function countAudience(a: Audience, campusId: string | null | undef
 
 /** Notifies everyone in an audience who has an app account; returns the number notified. */
 export async function notifyAudience(a: Audience, campusId: string | null | undefined, n: NotifyInput, db?: Queryable) {
-  if (a.kind === 'staff') return (await notifyRoles(STAFF_ROLES, { ...n, route: n.route?.startsWith('/parent-360') ? undefined : n.route }, db)).length;
+  if (a.kind === 'staff') {
+    // Same staff accounts countAudience counts: a campus circular reaches that campus only.
+    const staff = await many<{ id: string }>(
+      `SELECT u.id FROM users u JOIN roles r ON r.id = u.role_id
+        WHERE r.key = ANY($1) AND u.status = 'active' AND u.deleted_at IS NULL AND ($2::uuid IS NULL OR u.campus_id = $2::uuid)`,
+      [STAFF_ROLES, campusId ?? null], db);
+    return (await notifyUsers(staff.map((u) => u.id), { ...n, route: n.route?.startsWith('/parent-360') ? undefined : n.route }, db)).length;
+  }
   const users = await many<{ user_id: string }>(
     `SELECT p.user_id FROM parents p
       WHERE p.deleted_at IS NULL AND p.user_id IS NOT NULL AND ${audienceParentSql('$1::jsonb', '$2::uuid', 'p.id')}`,

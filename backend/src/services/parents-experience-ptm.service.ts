@@ -128,7 +128,12 @@ export async function createSession(req: Request, b: {
   if (isClassScoped(user) && b.employeeId !== user.employeeId) throw forbidden('Teachers can only create sessions for themselves');
   const emp = await one<{ full_name: string }>(`SELECT full_name FROM employees WHERE id = $1 AND deleted_at IS NULL AND employee_type = 'teaching'`, [b.employeeId]);
   if (!emp) throw badRequest('Choose a teacher', 'INVALID_TEACHER', [{ field: 'employeeId', message: 'Choose a teacher' }]);
-  const sec = await one('SELECT 1 FROM sections WHERE id = $1', [b.sectionId]);
+  // Teachers may only open sessions for sections they teach or are class teacher of:
+  // the session view lists every family in the section with phone numbers.
+  const sec = isClassScoped(user)
+    ? await one(`SELECT 1 FROM sections sec WHERE sec.id = $1 AND (sec.class_teacher_id = $2
+                   OR EXISTS (SELECT 1 FROM teacher_assignments ta WHERE ta.section_id = sec.id AND ta.employee_id = $2))`, [b.sectionId, user.employeeId])
+    : await one('SELECT 1 FROM sections WHERE id = $1', [b.sectionId]);
   if (!sec) throw badRequest('Choose a class section', 'INVALID_SECTION', [{ field: 'sectionId', message: 'Choose a class section' }]);
   const today = await one<{ d: string }>(`SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS d`);
   if (b.sessionDate < today!.d) throw badRequest('The session date cannot be in the past', 'INVALID_DATE', [{ field: 'sessionDate', message: 'Choose today or a later date' }]);
@@ -143,6 +148,10 @@ export async function createSession(req: Request, b: {
 export async function updateSession(req: Request, id: string, b: { totalSlots?: number; venue?: string; startsAt?: string; sessionDate?: string }) {
   const s = await getSession(req.user!, id);
   if (s.past) throw conflict('Past sessions cannot be changed', 'PTM_SESSION_PAST');
+  if (b.sessionDate !== undefined) {
+    const today = await one<{ d: string }>(`SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date::text AS d`);
+    if (b.sessionDate < today!.d) throw badRequest('The session date cannot be in the past', 'INVALID_DATE', [{ field: 'sessionDate', message: 'Choose today or a later date' }]);
+  }
   if (b.totalSlots !== undefined) {
     const maxSlot = Math.max(0, ...s.bookings.filter((x: any) => x.status !== 'Cancelled').map((x: any) => x.slotNo));
     if (b.totalSlots < maxSlot) throw conflict(`Slot ${maxSlot} is booked, so the session needs at least ${maxSlot} slots`, 'SLOTS_IN_USE');
@@ -267,6 +276,8 @@ export async function familyBook(req: Request, sessionId: string, b: { studentId
   if (b.slotNo > s.totalSlots) throw badRequest(`Choose a slot between 1 and ${s.totalSlots}`, 'INVALID_SLOT', [{ field: 'slotNo', message: 'Slot does not exist' }]);
   const student = await one<{ full_name: string }>('SELECT full_name FROM students WHERE id = $1', [studentId]);
   const id = await tx(async (db) => {
+    // Serialise bookings per session so two requests for the same child cannot both pass the check below.
+    await query('SELECT 1 FROM ptm_sessions WHERE id = $1 FOR UPDATE', [sessionId], db);
     const dup = await one(
       `SELECT 1 FROM ptm_bookings WHERE ptm_session_id = $1 AND student_id = $2 AND status <> 'Cancelled'`, [sessionId, studentId], db);
     if (dup) throw conflict('You already have a slot in this session for this child. Cancel it first to change the time.', 'ALREADY_BOOKED');

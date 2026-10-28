@@ -361,7 +361,8 @@ export async function attendanceAnalytics(campusId: string | undefined) {
   const t = todayRow!;
   const pct = t.marked ? Math.round((1000 * (t.present + t.late)) / t.marked) / 10 : null;
   const series = trend.reverse();
-  const prior = series.slice(0, -1).filter((x) => x.date !== today);
+  // Every day except today (when today has no marks yet, the last row is already a prior day).
+  const prior = series.filter((x) => x.date !== today);
   const avgPrior = prior.length ? prior.reduce((a, x) => a + x.pct, 0) / prior.length : null;
   const DAYS = ['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const top = [...weekday].sort((a, b) => b.n - a.n)[0];

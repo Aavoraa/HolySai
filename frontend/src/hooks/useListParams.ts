@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { Sort } from '@/components/ui/table';
 
@@ -11,6 +11,11 @@ import type { Sort } from '@/components/ui/table';
  */
 export function useListParams(defaults: { sort?: string; dir?: 'asc' | 'desc'; pageSize?: number } = {}, filterKeys: string[] = []) {
   const [sp, setSp] = useSearchParams();
+  // setSearchParams hands its updater the params of the last render, so two calls in one
+  // handler (e.g. set the class, then clear the section) would drop the first change.
+  // Each update builds on the previous one until the URL re-renders.
+  const latest = useRef(sp);
+  latest.current = sp;
 
   const state = useMemo(() => {
     const filters: Record<string, string> = {};
@@ -25,15 +30,14 @@ export function useListParams(defaults: { sort?: string; dir?: 'asc' | 'desc'; p
   }, [sp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback((patch: Record<string, string | number | null | undefined>, resetPage = true) => {
-    setSp((prev) => {
-      const next = new URLSearchParams(prev);
-      for (const [k, v] of Object.entries(patch)) {
-        if (v === null || v === undefined || v === '') next.delete(k);
-        else next.set(k, String(v));
-      }
-      if (resetPage && !('page' in patch)) next.delete('page');
-      return next;
-    }, { replace: true });
+    const next = new URLSearchParams(latest.current);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null || v === undefined || v === '') next.delete(k);
+      else next.set(k, String(v));
+    }
+    if (resetPage && !('page' in patch)) next.delete('page');
+    latest.current = next;
+    setSp(next, { replace: true });
   }, [setSp]);
 
   return {

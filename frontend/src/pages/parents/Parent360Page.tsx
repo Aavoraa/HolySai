@@ -529,7 +529,7 @@ function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab:
   const events = [
     ...d.gateToday.map((g) => ({ at: g.occurredAt, title: `${g.direction === 'in' ? 'Gate entry' : 'Gate exit'} — ${g.gate}`, tone: 'teal' })),
     ...(d.bus?.boardingToday ?? []).map((b) => ({ at: b.at, title: b.type === 'boarded' ? `Boarded ${d.bus?.busNo ?? 'the bus'}` : `Exited ${d.bus?.busNo ?? 'the bus'}`, tone: 'amber' })),
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)); // gate times are UTC (Z), boarding times carry +05:30: compare instants, not strings
   const entry = d.gateToday.find((g) => g.direction === 'in');
   const phoneOk = /^\+?[0-9 ]{8,16}$/.test(form.phone);
 
@@ -570,8 +570,8 @@ function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab:
                 <Item key={p.id} wrap lead={<Avatar name={p.personName} size="sm" />} title={p.personName} meta={`${p.relation} · ${p.method}`}
                   end={<>
                     <Status value={p.status} />
-                    {p.status === 'Pending' && <Button size="sm" variant="teal" onClick={() => pickupAction.mutate({ id: p.id, action: 'confirm' })}>Confirm</Button>}
-                    <Button size="sm" variant="quiet" icon="x" onClick={async () => {
+                    {p.status === 'Pending' && <Button size="sm" variant="teal" disabled={pickupAction.isPending} onClick={() => pickupAction.mutate({ id: p.id, action: 'confirm' })}>Confirm</Button>}
+                    <Button size="sm" variant="quiet" icon="x" disabled={pickupAction.isPending} onClick={async () => {
                       if (await confirm({ title: 'Revoke pickup authorisation?', body: `${p.personName} will no longer be allowed to collect ${child.firstName}.`, confirmLabel: 'Revoke', danger: true })) {
                         pickupAction.mutate({ id: p.id, action: 'revoke' });
                       }
@@ -600,7 +600,7 @@ function SafetyTab({ pid, child, onTab }: { pid: string; child: ChildRow; onTab:
 
 // ---------------------------------------------------------------------------
 interface FamilyFees {
-  summary: { billed: number; paid: number; outstanding: number; nextDue: string | null };
+  summary: { billed: number; paid: number; outstanding: number; nextDue: { date: string; amount: number } | null };
   lines: { id: string; description: string; head: string; amountDue: number; concession: number; amountPaid: number; balance: number; dueDate: string; status: string }[];
   payments: { id: string; receiptNo: string; amount: number; method: string; paidAt: string; status: string }[];
 }
@@ -612,7 +612,6 @@ interface FamilyReceipt {
 
 function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: boolean; onAutoPayDone: () => void }) {
   const { t } = useI18n();
-  const toast = useToast();
   const q = useApiQuery<FamilyFees>(`/family/children/${child.id}/fees`);
   const [paying, setPaying] = useState(false);
   const [method, setMethod] = useState<'UPI' | 'Card' | 'Net Banking'>('UPI');
@@ -647,7 +646,7 @@ function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: 
         <div className="portal-stack">
           <Card icon="wallet" title="Total outstanding">
             <div className={cx('portal-amount', d.summary.outstanding > 0 ? 'portal-amount--due' : 'portal-amount--clear')}>{fmt.money(d.summary.outstanding)}</div>
-            <div className="t-xs t-muted mt-1">{d.summary.nextDue ? `Next instalment due ${fmt.date(d.summary.nextDue)}` : 'All dues cleared'}</div>
+            <div className="t-xs t-muted mt-1">{d.summary.nextDue ? `Next instalment due ${fmt.date(d.summary.nextDue.date)}` : 'All dues cleared'}</div>
             <div className="t-xs t-muted mt-1">Billed {fmt.money(d.summary.billed)} · paid {fmt.money(d.summary.paid)}</div>
             {d.summary.outstanding > 0 && <div className="mt-4"><Button variant="teal" block icon="creditCard" onClick={() => setPaying(true)}>{t('Pay Now')}</Button></div>}
           </Card>
@@ -677,7 +676,7 @@ function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: 
 
       <Modal open={paying} onClose={() => setPaying(false)} title="Pay fees" sub={`${child.fullName} · ${child.grade}${child.section}`} busy={pay.isPending}
         foot={<><Button onClick={() => setPaying(false)} disabled={pay.isPending}>Cancel</Button><Button variant="teal" icon="lock" loading={pay.isPending} disabled={!total}
-          onClick={() => pay.mutate({ amount: total, method, feeIds: [...selected] }, { onError: (e) => toast(e.message, 'critical') })}>Pay {fmt.money(total)}</Button></>}>
+          onClick={() => pay.mutate({ amount: total, method, feeIds: [...selected] })}>Pay {fmt.money(total)}</Button></>}>
         <div className="col g-3">
           <div className="portal-paybox">
             {open.map((l) => (

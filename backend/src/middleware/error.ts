@@ -43,7 +43,11 @@ export function errorHandler(err: any, req: Request, res: Response, _next: NextF
   if (err?.name === 'MulterError') {
     return res.status(400).json({ success: false, message: err.message, error: `UPLOAD_${err.code}` });
   }
-  const pg = err?.code && PG_MAP[err.code];
+  // Other client errors raised by body-parser / http-errors (unsupported charset or encoding, aborted request …)
+  if (err?.expose && Number.isInteger(err.status) && err.status >= 400 && err.status < 500) {
+    return res.status(err.status).json({ success: false, message: err.message, error: 'BAD_REQUEST' });
+  }
+  const pg = err?.code && Object.hasOwn(PG_MAP, err.code) ? PG_MAP[err.code] : undefined;
   if (pg) {
     logger.warn({ code: err.code, detail: err.detail, path: req.path }, 'database constraint');
     return res.status(pg.status).json({ success: false, message: pg.message, error: pg.code });

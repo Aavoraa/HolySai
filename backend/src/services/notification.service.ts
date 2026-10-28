@@ -67,12 +67,16 @@ export async function notifyRoles(roleKeys: string[], n: NotifyInput, db?: Query
   return notifyUsers(users.map((u) => u.id), n, db);
 }
 
-/** Notifies the guardians (with user accounts) of a student. */
+/**
+ * Notifies the guardians (with user accounts) of a student. Location alerts
+ * (topic 'tracking') go only to guardians allowed to see the child's tracking.
+ */
 export async function notifyGuardians(studentId: string, n: NotifyInput, db?: Queryable) {
   const users = await many<{ user_id: string }>(
     `SELECT p.user_id FROM student_guardians sg JOIN parents p ON p.id = sg.parent_id
-      WHERE sg.student_id = $1 AND p.user_id IS NOT NULL AND p.deleted_at IS NULL`,
-    [studentId],
+      WHERE sg.student_id = $1 AND p.user_id IS NOT NULL AND p.deleted_at IS NULL
+        AND ($2::boolean = false OR sg.can_view_tracking)`,
+    [studentId, n.topic === 'tracking'],
     db,
   );
   return notifyUsers(users.map((u) => u.user_id), { channels: ['whatsapp', 'push'], ...n }, db);

@@ -122,7 +122,8 @@ async function viewLogin() {
     const body = status.needs_setup ? { username: user.value, name: name.value, password: pass.value } : { username: user.value, password: pass.value };
     const r = await run(() => api(status.needs_setup ? "/api/auth/setup" : "/api/auth/login", { body }));
     state.token = r.token; state.user = r.user; sessionStorage.setItem("exam_token", r.token);
-    location.hash = r.user.role === "student" ? "#/my" : "#/exams";
+    // route() renders even when the hash is already the target (no hashchange fires then)
+    route(r.user.role === "student" ? "#/my" : "#/exams");
   };
   mount(h("div", { class: "login" }, h("form", { class: "panel", onsubmit: submit },
     h("h1", {}, status.needs_setup ? "Create the administrator" : "Sign in"),

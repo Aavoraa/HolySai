@@ -43,7 +43,8 @@ export function clearPermissionCache() {
   permCache.clear();
 }
 
-export async function loadAuthUser(userId: string, clientType: AuthUser['clientType'] = 'web'): Promise<AuthUser | null> {
+/** `issuedAt` (JWT iat, seconds): an access token issued before the last password change is refused. */
+export async function loadAuthUser(userId: string, clientType: AuthUser['clientType'] = 'web', issuedAt?: number): Promise<AuthUser | null> {
   const u = await one<UserRow>(
     `SELECT u.id, u.email, u.full_name, u.title, u.status, u.campus_id, u.password_changed_at,
             r.id AS role_id, r.key AS role_key, r.name AS role_name, r.scope, r.home_route,
@@ -57,6 +58,9 @@ export async function loadAuthUser(userId: string, clientType: AuthUser['clientT
     [userId],
   );
   if (!u || u.status !== 'active') return null;
+  if (issuedAt != null && issuedAt < Math.floor(new Date(u.password_changed_at).getTime() / 1000)) {
+    throw unauthorized('Your password was changed; please sign in again', 'TOKEN_REVOKED');
+  }
   return {
     id: u.id,
     email: u.email,
@@ -81,7 +85,7 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
   const [kind, token] = header.split(' ');
   if (kind !== 'Bearer' || !token) return next(unauthorized());
   const claims = verifyAccessToken(token);
-  const user = await loadAuthUser(claims.sub, claims.ct);
+  const user = await loadAuthUser(claims.sub, claims.ct, claims.iat);
   if (!user) return next(unauthorized('Account is not active', 'ACCOUNT_INACTIVE'));
   req.user = user;
   next();

@@ -11,6 +11,7 @@ export interface AccessClaims {
   role: string;
   typ: 'access';
   ct: ClientType;
+  iat?: number;
 }
 
 export function signAccessToken(userId: string, roleKey: string, clientType: ClientType) {

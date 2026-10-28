@@ -302,7 +302,7 @@ export async function updateMaintenanceStatus(req: Request, id: string, b: { sta
           SET status = $2,
               assigned_to = COALESCE($3, assigned_to),
               cost = COALESCE($4, cost),
-              completed_at = CASE WHEN $2 = 'Completed' THEN now() ELSE completed_at END
+              completed_at = CASE WHEN $2 = 'Completed' AND status <> 'Completed' THEN now() ELSE completed_at END
         WHERE id = $1`, [id, b.status, b.assignedTo ?? null, b.cost ?? null], db);
     if (m.asset_id && b.status === 'In Progress') await query(`UPDATE assets SET status = 'In maintenance' WHERE id = $1 AND status <> 'Retired'`, [m.asset_id], db);
     if (m.asset_id && b.status === 'Completed') await query(`UPDATE assets SET status = 'Active' WHERE id = $1 AND status = 'In maintenance'`, [m.asset_id], db);

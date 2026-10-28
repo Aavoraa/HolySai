@@ -26,6 +26,15 @@ export const pool = new pg.Pool({
   idleTimeoutMillis: 30_000,
   // Managed poolers drop idle connections; fail fast instead of hanging.
   connectionTimeoutMillis: 15_000,
+  // "Today" is the school's day (docs/ASSUMPTIONS.md): current_date, now()::date and date
+  // casts follow the session time zone, and managed Postgres runs in UTC, which would put
+  // 00:00-05:30 IST on the previous day. Runs before the connection is handed out.
+  // Migration 118 sets the same default on the role, for transaction-mode poolers.
+  onConnect: (client) =>
+    client.query("SET TIME ZONE 'Asia/Kolkata'").then(
+      () => undefined,
+      (err: Error) => logger.warn({ err: err.message }, 'Could not set the session time zone'),
+    ),
 });
 
 // An idle client can be dropped by the server or a pooler (e.g. Supabase
@@ -35,7 +44,6 @@ export const pool = new pg.Pool({
 pool.on('error', (err) => {
   logger.warn({ err: err.message }, 'Idle database connection closed; it will be replaced on next use');
 });
-
 export type Queryable = pg.Pool | pg.PoolClient;
 
 /** Parameterised query helper. Never interpolate user input into `text`. */

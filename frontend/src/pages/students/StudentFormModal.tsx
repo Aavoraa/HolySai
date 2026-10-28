@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ApiError } from '@/api/client';
+import { useAuth } from '@/auth/AuthContext';
 import { useApiMutation } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
@@ -47,6 +48,10 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
   onSaved: (id: string) => void;
 }) {
   const editing = !!studentId;
+  const { can } = useAuth();
+  // Without students.sensitive the profile omits the current medical notes, so an edit
+  // would show an empty box and silently replace notes the editor cannot see.
+  const medicalEditable = !editing || can('students.sensitive');
   const { lookups, classOptions, sectionOptions } = useLookups();
   const school = useSchool();
   const [v, setV] = useState<StudentFormValues>({ ...EMPTY, campusId: school.campusId ?? '', ...initial });
@@ -102,7 +107,7 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
     const body: Record<string, unknown> = {
       firstName: v.firstName.trim(), lastName: v.lastName.trim(), dateOfBirth: v.dateOfBirth, gender: v.gender,
       bloodGroup: opt(v.bloodGroup), campusId: v.campusId, sectionId: v.sectionId, house: opt(v.house),
-      address: opt(v.address), city: opt(v.city), pincode: opt(v.pincode), admittedOn: opt(v.admittedOn), medicalNotes: opt(v.medicalNotes),
+      address: opt(v.address), city: opt(v.city), pincode: opt(v.pincode), admittedOn: opt(v.admittedOn), medicalNotes: medicalEditable ? opt(v.medicalNotes) : undefined,
     };
     if (!editing) {
       body.guardians = [{ fullName: v.guardianName.trim(), phone: v.guardianPhone.trim(), email: opt(v.guardianEmail), relationship: v.guardianRelationship, isPrimary: true }];
@@ -205,7 +210,7 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
           <div className="form-grid">
             <SelectField label="Blood group" value={v.bloodGroup} onChange={(x) => set('bloodGroup', x)} placeholder="Not recorded"
               options={['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']} />
-            <TextArea className="span-2" label="Medical notes" hint="Allergies, conditions or medication. Visible only to staff with access to sensitive records." value={v.medicalNotes} onChange={(x) => set('medicalNotes', x)} rows={2} maxLength={1000} />
+            {medicalEditable && <TextArea className="span-2" label="Medical notes" hint="Allergies, conditions or medication. Visible only to staff with access to sensitive records." value={v.medicalNotes} onChange={(x) => set('medicalNotes', x)} rows={2} maxLength={1000} />}
           </div>
         </div>
       </form>

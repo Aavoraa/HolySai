@@ -231,7 +231,8 @@ function UploadModal({ collection, onClose }: { collection: string | null; onClo
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const f = useForm({ name: '', category: 'General', collection: collection ?? '', newCollection: '' });
+  // "Unfiled" is the label for documents with no set (listed by collection IS NULL), not a set to upload into.
+  const f = useForm({ name: '', category: 'General', collection: collection && collection !== 'Unfiled' ? collection : '', newCollection: '' });
   const v = f.values;
   const target = v.collection === '__new' ? v.newCollection.trim() : v.collection;
   const submit = async () => {

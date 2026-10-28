@@ -193,11 +193,17 @@ export async function commandCenter(user: AuthUser, campusId: string | null) {
   }
   };
 
-  // Parent engagement: average engagement score and unanswered queries.
+  // Parent engagement: average engagement score and unanswered queries (for a campus,
+  // the queries about its students or families — the Parent Communication campus rule).
+  const UNANSWERED = `FROM communications cm WHERE cm.needs_reply AND cm.replied_at IS NULL
+      AND ($1::uuid IS NULL OR (cm.student_id IS NULL AND cm.parent_id IS NULL)
+           OR EXISTS (SELECT 1 FROM students cs WHERE cs.id = cm.student_id AND cs.campus_id = $1)
+           OR (cm.student_id IS NULL AND EXISTS (SELECT 1 FROM student_guardians cg JOIN students cs ON cs.id = cg.student_id
+                                                  WHERE cg.parent_id = cm.parent_id AND cs.campus_id = $1)))`;
   const engagement = async () => { out.parentEngagement = await one(
     `SELECT round(avg(p.engagement_score))::int AS score,
-            (SELECT count(*) FROM communications cm WHERE cm.needs_reply AND cm.replied_at IS NULL)::int AS unanswered,
-            (SELECT min(cm.occurred_at) FROM communications cm WHERE cm.needs_reply AND cm.replied_at IS NULL) AS "oldestUnanswered"
+            (SELECT count(*) ${UNANSWERED})::int AS unanswered,
+            (SELECT min(cm.occurred_at) ${UNANSWERED}) AS "oldestUnanswered"
        FROM parents p
       WHERE p.deleted_at IS NULL AND ($1::uuid IS NULL OR EXISTS (
             SELECT 1 FROM student_guardians sg JOIN students s ON s.id = sg.student_id WHERE sg.parent_id = p.id AND s.campus_id = $1))`, [c]); };

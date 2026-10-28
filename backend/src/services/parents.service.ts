@@ -6,6 +6,9 @@ import { notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
 import { STUDENT_ROW_SQL } from './students.service.js';
+import { studentScope } from './access.service.js';
+import { addParentScope, audienceParentSql } from './parents-experience.service.js';
+import type { AuthUser } from '../types.js';
 
 const SORTS: Record<string, string> = {
   name: 'p.full_name',
@@ -13,9 +16,10 @@ const SORTS: Record<string, string> = {
   lastContact: 'p.last_contact_at',
 };
 
-export async function listParents(f: Pagination & { campusId?: string }) {
+export async function listParents(user: AuthUser, f: Pagination & { campusId?: string }) {
   const w = new Where();
   w.add('p.deleted_at IS NULL');
+  addParentScope(user, w);
   if (f.q) w.add('(p.full_name ILIKE ? OR p.phone ILIKE ? OR p.email::text ILIKE ?)', likeTerm(f.q), likeTerm(f.q), likeTerm(f.q));
   if (f.campusId) w.add('EXISTS (SELECT 1 FROM student_guardians sg JOIN students s ON s.id = sg.student_id WHERE sg.parent_id = p.id AND s.campus_id = ?)', f.campusId);
   const { limit, offset } = limitOffset(f);
@@ -51,16 +55,21 @@ export async function getParent(id: string) {
   return p;
 }
 
-/** The parent's children with the same derived figures staff see. */
-export async function getChildren(parentId: string) {
+/**
+ * The parent's children with the same derived figures staff see. With `staff`,
+ * only the children that staff member may see (teachers: their own sections).
+ */
+export async function getChildren(parentId: string, staff?: AuthUser) {
+  const w = new Where().add('s.deleted_at IS NULL');
+  if (staff) studentScope(staff, w);
   return many(
     `SELECT q.*, g.relationship, g.is_primary AS "isPrimary", g.can_view_tracking AS "canViewTracking",
             cl.location_status AS "locationStatus", cl.recorded_at AS "locationRecordedAt"
-       FROM (${STUDENT_ROW_SQL} WHERE s.deleted_at IS NULL) q
-       JOIN student_guardians g ON g.student_id = q.id AND g.parent_id = $1
+       FROM (${STUDENT_ROW_SQL} ${w.sql}) q
+       JOIN student_guardians g ON g.student_id = q.id AND g.parent_id = ${w.param(parentId)}
        LEFT JOIN student_current_locations cl ON cl.student_id = q.id
       ORDER BY q."fullName"`,
-    [parentId],
+    w.params,
   );
 }
 
@@ -129,8 +138,10 @@ export async function childOverview(parentId: string, studentId: string) {
     many(`SELECT n.id, n.category, n.tone, n.icon, n.title, n.body, n.route, n.created_at AS "createdAt", n.read_at AS "readAt"
             FROM notifications n JOIN parents p ON p.user_id = n.user_id
            WHERE p.id = $1 ORDER BY n.created_at DESC LIMIT 6`, [parentId]),
-    many(`SELECT id, title, starts_on AS "startsOn", ends_on AS "endsOn", venue, audience FROM events
-           WHERE status = 'Published' AND starts_on >= current_date ORDER BY starts_on LIMIT 5`),
+    many(`SELECT e.id, e.title, e.starts_on AS "startsOn", e.ends_on AS "endsOn", e.venue, e.audience FROM events e
+           WHERE e.status = 'Published' AND e.starts_on >= current_date
+             AND ${audienceParentSql('e.audience_filter', 'e.campus_id', '$1::uuid')}
+           ORDER BY e.starts_on LIMIT 5`, [parentId]),
     many(`SELECT id, person_name AS "personName", relation, method, status, last_pickup_at AS "lastPickupAt"
             FROM pickup_authorisations WHERE student_id = $1 AND status <> 'Revoked' ORDER BY person_name`, [studentId]),
   ]);
