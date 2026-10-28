@@ -323,6 +323,8 @@ export async function close(req: Request, id: string, input: { outcome: string; 
 export async function runCheck(req: Request, campusId?: string) {
   const user = req.user!;
   return tx(async (db) => {
+    // One check at a time: a second run waits, then sees the first run's signals as open.
+    await query('SELECT pg_advisory_xact_lock(hashtext($1))', ['early_warning:run_check'], db);
     const t = await earlyWarningThresholds(db);
     const w = new Where().add("s.deleted_at IS NULL AND s.status = 'active'");
     studentScope(user, w);

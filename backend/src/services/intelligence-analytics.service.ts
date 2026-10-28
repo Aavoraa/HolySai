@@ -579,7 +579,7 @@ const CORE_REPORTS: ReportDef[] = [
                 (SELECT round(avg(x.score)) FROM (SELECT r.score, r.term_order, max(r.term_order) OVER () AS mx FROM student_academic_records r
                    JOIN academic_years ay ON ay.id = r.academic_year_id AND ay.is_current JOIN students s ON s.id = r.student_id WHERE s.campus_id = cp.id) x
                   WHERE x.term_order = x.mx)::int AS average,
-                (SELECT count(*) FROM students s WHERE s.campus_id = cp.id AND s.deleted_at IS NULL AND s.risk_level = 'At Risk')::int AS "atRisk",
+                (SELECT count(*) FROM students s WHERE s.campus_id = cp.id AND s.deleted_at IS NULL AND s.status = 'active' AND s.risk_level = 'At Risk')::int AS "atRisk",
                 (SELECT count(*) FROM early_warning_signals e JOIN students s ON s.id = e.student_id WHERE s.campus_id = cp.id AND e.closed_at IS NULL)::int AS "openSignals",
                 (SELECT count(*) FROM employees e WHERE e.campus_id = cp.id AND e.deleted_at IS NULL AND e.employment_status = 'active')::int AS staff
            FROM campuses cp WHERE cp.is_active ORDER BY cp.established`),

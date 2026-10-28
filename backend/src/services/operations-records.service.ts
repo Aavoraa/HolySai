@@ -13,6 +13,7 @@ import { audit } from './audit.service.js';
 import { authorizeStudent, studentScope } from './access.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
 import { assertCampus, splitTotal, updateById } from './operations-helpers.js';
+import { schoolToday } from './intelligence-common.service.js';
 import type { AuthUser } from '../types.js';
 
 const MODULE = 'operations';
@@ -373,7 +374,7 @@ export async function completeCompliance(req: Request, id: string, b: { complete
     const ci = await one<{ item: string; due_on: string; campus_id: string; authority: string; owner_name: string; owner_id: string | null; notes: string | null }>(
       `SELECT item, due_on, campus_id, authority, owner_name, owner_id, notes FROM compliance_items WHERE id = $1 AND completed_on IS NULL FOR UPDATE`, [id], db);
     if (!ci) throw notFound('Open compliance item not found');
-    if (b.completedOn > new Date().toISOString().slice(0, 10)) throw badRequest('Completion date cannot be in the future', 'FUTURE_DATE', [{ field: 'completedOn', message: 'Cannot be in the future' }]);
+    if (b.completedOn > schoolToday()) throw badRequest('Completion date cannot be in the future', 'FUTURE_DATE', [{ field: 'completedOn', message: 'Cannot be in the future' }]);
     if (b.nextDueOn && b.nextDueOn <= b.completedOn) throw badRequest('Next due date must be after completion', 'BAD_NEXT_DUE', [{ field: 'nextDueOn', message: 'Must be after the completion date' }]);
     await query(`UPDATE compliance_items SET status = 'Completed', completed_on = $2, notes = COALESCE($3, notes) WHERE id = $1`, [id, b.completedOn, b.notes ?? null], db);
     let nextId: string | null = null;

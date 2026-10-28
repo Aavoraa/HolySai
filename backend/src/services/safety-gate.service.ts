@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { many, one, tx } from '../config/db.js';
+import { many, one, query, tx } from '../config/db.js';
 import { conflict } from '../utils/errors.js';
 import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagination.js';
 import { Where } from '../utils/sql.js';
@@ -404,6 +404,8 @@ export async function recordGateEvent(req: Request, input: { studentId: string; 
   const studentId = await authorizeSafetyStudent(req, input.studentId);
   return tx(async (db) => {
     const s = await studentBrief(studentId, db);
+    // Serialise scans for the same child so a double tap cannot record two entries.
+    await query('SELECT pg_advisory_xact_lock(hashtext($1))', [`gate:${studentId}`], db);
     const last = await one<{ direction: string }>(
       `SELECT direction FROM gate_events WHERE student_id = $1 AND ${localDate('occurred_at')} = ${TODAY} ORDER BY occurred_at DESC LIMIT 1`,
       [studentId], db,

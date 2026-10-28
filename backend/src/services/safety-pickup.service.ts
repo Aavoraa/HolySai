@@ -305,29 +305,34 @@ export async function sendOtp(req: Request, id: string) {
 export async function verifyOtp(req: Request, id: string, code: string) {
   const row = await staffAuthorisation(req, id);
   if (row.status === 'Revoked') throw conflict('This authorisation has been revoked', 'PICKUP_REVOKED');
-  const ch = await one<{ id: string; code_hash: string; attempts: number }>(
-    `SELECT id, code_hash, attempts FROM pickup_otp_challenges
-      WHERE authorisation_id = $1 AND consumed_at IS NULL AND expires_at > now()
-      ORDER BY created_at DESC LIMIT 1`,
-    [id],
-  );
-  if (!ch) throw badRequest('No active code. The code may have expired — send a new one.', 'OTP_EXPIRED');
-  if (ch.attempts >= OTP_MAX_ATTEMPTS) {
-    await query('UPDATE pickup_otp_challenges SET consumed_at = now() WHERE id = $1', [ch.id]);
-    throw badRequest('Too many wrong attempts. Send a new code.', 'OTP_LOCKED');
-  }
-  const expected = Buffer.from(ch.code_hash, 'hex');
-  const given = Buffer.from(hashCode(id, code), 'hex');
-  if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
-    const left = OTP_MAX_ATTEMPTS - ch.attempts - 1;
-    await query(
-      `UPDATE pickup_otp_challenges SET attempts = attempts + 1, consumed_at = CASE WHEN attempts + 1 >= $2 THEN now() END WHERE id = $1`,
-      [ch.id, OTP_MAX_ATTEMPTS],
+  // The challenge row is locked for the whole check, so parallel guesses are counted
+  // one at a time and cannot get past the attempt limit (or succeed after it).
+  // Failures are committed before the error is thrown, hence the result object.
+  const outcome = await tx(async (db) => {
+    // Authorisation first, then challenge: the same lock order as a revoke.
+    const pa = await one<{ status: string }>('SELECT status FROM pickup_authorisations WHERE id = $1 FOR UPDATE', [id], db);
+    if (pa?.status === 'Revoked') return { error: 'revoked' as const };
+    const ch = await one<{ id: string; code_hash: string; attempts: number }>(
+      `SELECT id, code_hash, attempts FROM pickup_otp_challenges
+        WHERE authorisation_id = $1 AND consumed_at IS NULL AND expires_at > now()
+        ORDER BY created_at DESC LIMIT 1 FOR UPDATE`,
+      [id], db,
     );
-    await audit(req, { action: 'verify_failed', module: 'safety', description: `Wrong pickup OTP entered for ${row.person_name}`, entityType: 'pickup_authorisation', entityId: id });
-    throw badRequest(left > 0 ? `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Incorrect code. Send a new code.', 'OTP_INVALID', [{ field: 'code', message: 'Incorrect code' }]);
-  }
-  await tx(async (db) => {
+    if (!ch) return { error: 'expired' as const };
+    if (ch.attempts >= OTP_MAX_ATTEMPTS) {
+      await query('UPDATE pickup_otp_challenges SET consumed_at = now() WHERE id = $1', [ch.id], db);
+      return { error: 'locked' as const };
+    }
+    const expected = Buffer.from(ch.code_hash, 'hex');
+    const given = Buffer.from(hashCode(id, code), 'hex');
+    if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
+      await query(
+        `UPDATE pickup_otp_challenges SET attempts = attempts + 1, consumed_at = CASE WHEN attempts + 1 >= $2 THEN now() END WHERE id = $1`,
+        [ch.id, OTP_MAX_ATTEMPTS], db,
+      );
+      await audit(req, { action: 'verify_failed', module: 'safety', description: `Wrong pickup OTP entered for ${row.person_name}`, entityType: 'pickup_authorisation', entityId: id }, db);
+      return { error: 'invalid' as const, left: OTP_MAX_ATTEMPTS - ch.attempts - 1 };
+    }
     await query('UPDATE pickup_otp_challenges SET consumed_at = now(), verified = true WHERE id = $1', [ch.id], db);
     await query(`UPDATE pickup_authorisations SET status = 'Verified' WHERE id = $1`, [id], db);
     const s = await studentBrief(row.student_id, db);
@@ -335,7 +340,15 @@ export async function verifyOtp(req: Request, id: string, code: string) {
       action: 'approve', module: 'safety', description: `Verified pickup person ${row.person_name} for ${s.full_name} by OTP`,
       entityType: 'pickup_authorisation', entityId: id,
     }, db);
+    return { error: null };
   });
+  if (outcome.error === 'expired') throw badRequest('No active code. The code may have expired — send a new one.', 'OTP_EXPIRED');
+  if (outcome.error === 'locked') throw badRequest('Too many wrong attempts. Send a new code.', 'OTP_LOCKED');
+  if (outcome.error === 'revoked') throw conflict('This authorisation has been revoked', 'PICKUP_REVOKED');
+  if (outcome.error === 'invalid') {
+    const { left } = outcome;
+    throw badRequest(left > 0 ? `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} left.` : 'Incorrect code. Send a new code.', 'OTP_INVALID', [{ field: 'code', message: 'Incorrect code' }]);
+  }
   return getAuthorisation(id);
 }
 
@@ -357,6 +370,8 @@ export async function recordCollection(req: Request, id: string, input: { gate: 
       [s.id, s.campus_id, row.id, row.person_name, row.method, input.gate, input.notes ?? null, req.user!.id], db,
     );
     await query('UPDATE pickup_authorisations SET last_pickup_at = $2 WHERE id = $1', [row.id, ev.occurredAt], db);
+    // Same lock as a manual gate scan, so the two cannot both record an exit.
+    await query('SELECT pg_advisory_xact_lock(hashtext($1))', [`gate:${s.id}`], db);
     const last = await one<{ direction: string }>(
       `SELECT direction FROM gate_events WHERE student_id = $1 AND ${localDate('occurred_at')} = ${TODAY} ORDER BY occurred_at DESC LIMIT 1`,
       [s.id], db,
