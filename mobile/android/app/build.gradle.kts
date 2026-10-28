@@ -20,8 +20,8 @@ android {
         applicationId = "edu.holysai.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.1.0"
+        versionCode = 4
+        versionName = "2.2.0"
         // Default API server; users can change it on the sign-in screen.
         buildConfigField("String", "DEFAULT_API_URL", "\"https://holy-sai.onrender.com\"")
     }

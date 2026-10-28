@@ -1,8 +1,9 @@
 <resources>
     <style name="Theme.HolySai" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#5C001D</item>
+        <item name="android:statusBarColor">#4C0923</item>
         <item name="android:windowBackground">@color/bg</item>
     </style>
     <color name="bg">#F8F5F2</color>
     <color name="brand">#990033</color>
+    <color name="icon_bg">#FFFFFF</color>
 </resources>

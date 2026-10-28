@@ -51,8 +51,30 @@ import androidx.compose.ui.unit.dp
 import edu.holysai.app.data.Api
 import edu.holysai.app.data.User
 import edu.holysai.app.ui.screens.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import edu.holysai.app.R
 import edu.holysai.app.ui.theme.Gold
-import edu.holysai.app.ui.theme.MagentaDeep
+import edu.holysai.app.ui.theme.Magenta
+import edu.holysai.app.ui.theme.MaroonGradient
+import edu.holysai.app.ui.theme.Peach
+import edu.holysai.app.ui.theme.PrimaryGradient
+import edu.holysai.app.ui.theme.Wine
+import edu.holysai.app.ui.theme.cardBorder
 import kotlinx.coroutines.launch
 
 /** App-wide helpers every screen can reach: navigation, toasts and the signed-in user. */
@@ -119,42 +141,50 @@ private fun MainShell(user: User, onSignOut: () -> Unit) {
         ModalNavigationDrawer(
             drawerState = drawer,
             drawerContent = {
-                ModalDrawerSheet {
-                    Column(Modifier.verticalScroll(rememberScrollState())) {
-                        Column(Modifier.fillMaxWidth().background(MagentaDeep).padding(20.dp, 28.dp, 20.dp, 20.dp)) {
-                            Text(user.fullName, color = Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text(user.roleName, color = Gold, style = MaterialTheme.typography.bodyMedium)
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        NavigationDrawerItem(
-                            label = { Text("Home") }, selected = route == Route.Home,
-                            icon = { Icon(Icons.Outlined.Home, null) },
-                            onClick = { nav.home(); scope.launch { drawer.close() } },
-                            modifier = Modifier.padding(horizontal = 12.dp),
-                        )
-                        menuGroups(user).forEach { group ->
-                            HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-                            Text(
-                                group.title.uppercase(), style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 28.dp, vertical = 6.dp),
-                            )
-                            group.items.forEach { f ->
-                                NavigationDrawerItem(
-                                    label = { Text(f.label) }, selected = route == f.route,
-                                    icon = { Icon(f.icon, null) },
-                                    onClick = { nav.home(); if (f.route != Route.Home) nav.go(f.route); scope.launch { drawer.close() } },
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                )
+                ModalDrawerSheet(drawerContainerColor = Color.Transparent, drawerShape = RoundedCornerShape(topEnd = 22.dp, bottomEnd = 22.dp)) {
+                    Box(Modifier.fillMaxSize().background(MaroonGradient)) {
+                        Column(Modifier.verticalScroll(rememberScrollState()).statusBarsPadding()) {
+                            // Brand: the lotus on its white tile, as in the web sidebar
+                            Row(Modifier.padding(20.dp, 22.dp, 20.dp, 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                LogoTile(48)
+                                Spacer(Modifier.width(12.dp))
+                                Column {
+                                    Text("Holy Sai", color = Color.White, style = MaterialTheme.typography.headlineSmall, lineHeight = 26.sp)
+                                    Text("Smart School 360", color = Color.White.copy(alpha = .75f), style = MaterialTheme.typography.bodySmall)
+                                }
                             }
+                            // Who is signed in
+                            Row(
+                                Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .background(Color.White.copy(alpha = .08f)).padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Initials(user.fullName, 38)
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(user.fullName, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(user.roleName, color = Gold, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            DrawerItem("Home", Icons.Outlined.Home, route == Route.Home) { nav.home(); scope.launch { drawer.close() } }
+                            menuGroups(user).forEach { group ->
+                                Text(
+                                    group.title.uppercase(), style = MaterialTheme.typography.labelSmall, color = Gold.copy(alpha = .9f),
+                                    modifier = Modifier.padding(start = 28.dp, end = 20.dp, top = 18.dp, bottom = 6.dp),
+                                )
+                                group.items.forEach { f ->
+                                    DrawerItem(f.label, f.icon, route == f.route) {
+                                        nav.home(); if (f.route != Route.Home) nav.go(f.route); scope.launch { drawer.close() }
+                                    }
+                                }
+                            }
+                            HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 14.dp), color = Color.White.copy(alpha = .12f))
+                            DrawerItem("Sign out", Icons.AutoMirrored.Outlined.Logout, false) {
+                                scope.launch { drawer.close(); Api.logout(); onSignOut() }
+                            }
+                            Spacer(Modifier.height(20.dp))
                         }
-                        HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-                        NavigationDrawerItem(
-                            label = { Text("Sign out") }, selected = false,
-                            icon = { Icon(Icons.AutoMirrored.Outlined.Logout, null) },
-                            onClick = { scope.launch { drawer.close(); Api.logout(); onSignOut() } },
-                            modifier = Modifier.padding(horizontal = 12.dp).padding(bottom = 16.dp),
-                        )
                     }
                 }
             },
@@ -162,23 +192,81 @@ private fun MainShell(user: User, onSignOut: () -> Unit) {
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbar) },
                 topBar = {
-                    TopAppBar(
-                        title = { Text(if (route == Route.Home) "Holy Sai 360" else route.title, maxLines = 1) },
-                        navigationIcon = {
-                            if (route == Route.Home) IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Menu") }
-                            else IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MagentaDeep, titleContentColor = Color.White,
-                            navigationIconContentColor = Color.White, actionIconContentColor = Color.White,
-                        ),
-                    )
+                    Column {
+                        TopAppBar(
+                            title = {
+                                if (route == Route.Home) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        LogoTile(32, bordered = true)
+                                        Spacer(Modifier.width(10.dp))
+                                        Text("Holy Sai", style = MaterialTheme.typography.headlineSmall, color = Magenta)
+                                    }
+                                } else {
+                                    Text(route.title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            },
+                            navigationIcon = {
+                                if (route == Route.Home) IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Filled.Menu, "Menu") }
+                                else IconButton(onClick = { nav.back() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                            },
+                            actions = {
+                                if (route == Route.Home) {
+                                    IconButton(onClick = { nav.go(Route.Notifications) }) { Icon(Icons.Outlined.Notifications, "Notifications") }
+                                    Box(Modifier.padding(end = 12.dp)) { Initials(user.fullName, 34) }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.surface, titleContentColor = MaterialTheme.colorScheme.onSurface,
+                                navigationIconContentColor = MaterialTheme.colorScheme.onSurface, actionIconContentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                        )
+                        HorizontalDivider(color = cardBorder)
+                    }
                 },
                 containerColor = MaterialTheme.colorScheme.background,
             ) { pad ->
                 Box(Modifier.padding(pad).fillMaxSize()) { Screen(route) }
             }
         }
+    }
+}
+
+/** A menu row in the maroon drawer: white text, the current page on a peach pill. */
+@Composable
+private fun DrawerItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+    NavigationDrawerItem(
+        label = { Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium) },
+        icon = { Icon(icon, null, Modifier.size(21.dp)) },
+        selected = selected, onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = Peach, unselectedContainerColor = Color.Transparent,
+            selectedTextColor = Wine, selectedIconColor = Wine,
+            unselectedTextColor = Color.White.copy(alpha = .92f), unselectedIconColor = Color.White.copy(alpha = .88f),
+        ),
+        modifier = Modifier.padding(horizontal = 14.dp).height(48.dp),
+    )
+}
+
+/** The Holy Sai lotus on its rounded white tile (the web sidebar's brand mark). */
+@Composable
+fun LogoTile(size: Int, bordered: Boolean = false) {
+    Box(
+        Modifier.size(size.dp).clip(RoundedCornerShape((size * 0.26f).dp)).background(Color.White)
+            .let { if (bordered) it.border(1.dp, cardBorder, RoundedCornerShape((size * 0.26f).dp)) else it }
+            .padding((size * 0.12f).dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(painterResource(R.drawable.logo_mark), "Holy Sai", contentScale = ContentScale.Fit)
+    }
+}
+
+/** Initials in a wine circle, like the web's profile avatar. */
+@Composable
+fun Initials(name: String, size: Int) {
+    val letters = name.split(' ').filter { it.isNotBlank() }.let { p -> (p.firstOrNull()?.take(1).orEmpty() + (if (p.size > 1) p.last().take(1) else "")).uppercase() }
+    Box(Modifier.size(size.dp).clip(CircleShape).background(PrimaryGradient), contentAlignment = Alignment.Center) {
+        Text(letters, color = Color.White, fontWeight = FontWeight.Bold, fontSize = (size * 0.36f).sp)
     }
 }
 

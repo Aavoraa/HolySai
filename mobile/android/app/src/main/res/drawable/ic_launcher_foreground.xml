@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Gold graduation cap on the magenta adaptive-icon background -->
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp" android:height="108dp"
-    android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#FEDB6E"
-        android:pathData="M54,34 L84,48 L54,62 L24,48 Z" />
-    <path android:fillColor="#FEDB6E"
-        android:pathData="M38,55 L38,66 C38,71 46,75 54,75 C62,75 70,71 70,66 L70,55 L54,63 Z" />
-    <path android:fillColor="#FEDB6E"
-        android:pathData="M79,50 L81,50 L81,66 L79,66 Z" />
-</vector>
+<!-- The Holy Sai lotus on a white adaptive-icon background, as in the web app's favicon -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/logo_mark"
+    android:insetLeft="24%" android:insetRight="24%"
+    android:insetTop="28%" android:insetBottom="28%" />

@@ -70,11 +70,38 @@ import edu.holysai.app.ui.SectionTitle
 import edu.holysai.app.ui.hasParentPortal
 import edu.holysai.app.ui.homeTiles
 import edu.holysai.app.ui.rememberLoad
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.ui.BiasAlignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontStyle
+import edu.holysai.app.R
+import edu.holysai.app.ui.IconTile
+import edu.holysai.app.ui.LogoTile
+import edu.holysai.app.ui.theme.BlushGradient
 import edu.holysai.app.ui.theme.Gold
-import edu.holysai.app.ui.theme.Magenta
-import edu.holysai.app.ui.theme.MagentaDeep
+import edu.holysai.app.ui.theme.GoldDeep
+import edu.holysai.app.ui.theme.GoldTint
+import edu.holysai.app.ui.theme.MaroonGradient
+import edu.holysai.app.ui.theme.MaroonTop
+import edu.holysai.app.ui.theme.Serif
+import edu.holysai.app.ui.theme.cardBorder
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun LoginScreen(onSignedIn: (User) -> Unit, onTracker: () -> Unit = {}) {
@@ -101,32 +128,58 @@ fun LoginScreen(onSignedIn: (User) -> Unit, onTracker: () -> Unit = {}) {
         }
     }
 
+    Box(Modifier.fillMaxSize().background(MaroonGradient)) {
+        // The campus photo across the top, fading into the maroon (the web sign-in page's hero)
+        Box(Modifier.fillMaxWidth().height(340.dp)) {
+            Image(
+                painterResource(R.drawable.login_hero), null, contentScale = ContentScale.Crop,
+                alignment = BiasAlignment(1f, -0.2f), modifier = Modifier.fillMaxSize(),
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(0f to MaroonTop.copy(alpha = .7f), .5f to MaroonTop.copy(alpha = .86f), 1f to MaroonTop),
+                ),
+            )
+        }
     Column(
         Modifier.fillMaxSize()
-            .background(Brush.verticalGradient(listOf(MagentaDeep, Color(0xFF3E0013))))
             .statusBarsPadding().imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(horizontal = 22.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Spacer(Modifier.height(48.dp))
-        Surface(shape = CircleShape, color = Gold, modifier = Modifier.size(72.dp)) {
-            Box(contentAlignment = Alignment.Center) { Text("HS", color = MagentaDeep, fontWeight = FontWeight.Black, style = MaterialTheme.typography.headlineSmall) }
-        }
-        Spacer(Modifier.height(16.dp))
-        Text("Holy Sai 360", color = Color.White, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Holy Sai International School", color = Gold, style = MaterialTheme.typography.bodyMedium)
-        Spacer(Modifier.height(32.dp))
-        Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Sign in", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(28.dp))
+        LogoTile(72)
+        Spacer(Modifier.height(18.dp))
+        Text("INTELLIGENT DIGITAL CAMPUS", color = Gold, style = MaterialTheme.typography.labelSmall)
+        Spacer(Modifier.height(6.dp))
+        Text("Holy Sai International", color = Color.White, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+        Text(
+            "More than a school. A smarter tomorrow.", color = Color.White.copy(alpha = .82f),
+            style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 6.dp),
+        )
+        Spacer(Modifier.height(28.dp))
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+        ) {
+            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Column {
+                    Text("Welcome back", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text("Sign in to your Smart School 360 account", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 OutlinedTextField(
                     identifier, { identifier = it }, label = { Text("Email or phone") }, singleLine = true,
+                    leadingIcon = { Icon(Icons.Outlined.Email, null) },
+                    shape = RoundedCornerShape(14.dp),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
                     password, { password = it }, label = { Text("Password") }, singleLine = true,
+                    leadingIcon = { Icon(Icons.Outlined.Lock, null) },
+                    shape = RoundedCornerShape(14.dp),
                     visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     trailingIcon = {
@@ -140,19 +193,27 @@ fun LoginScreen(onSignedIn: (User) -> Unit, onTracker: () -> Unit = {}) {
                     OutlinedTextField(
                         server, { server = it }, label = { Text("Server address") }, singleLine = true,
                         supportingText = { Text("Emulator + local API: http://10.0.2.2:4000") },
+                        shape = RoundedCornerShape(14.dp),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                PrimaryButton("Sign in", busy = busy) { submit() }
+                PrimaryButton("Sign in to Campus  →", busy = busy) { submit() }
                 TextButton(onClick = { showServer = !showServer }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    Text(if (showServer) "Hide server settings" else "Server settings")
+                    Text(if (showServer) "Hide server settings" else "Server settings", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        TextButton(onClick = onTracker) { Text("Use this phone as a GPS tracker", color = Gold) }
+        Spacer(Modifier.height(18.dp))
+        TextButton(onClick = onTracker) {
+            Icon(Icons.Outlined.MyLocation, null, tint = Gold, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Use this phone as a GPS tracker", color = Gold, fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text("Education beyond classrooms", color = Color.White.copy(alpha = .6f), style = MaterialTheme.typography.titleMedium.copy(fontFamily = Serif, fontStyle = FontStyle.Italic))
+    }
     }
 }
 
@@ -161,26 +222,55 @@ fun HomeScreen() {
     val nav = LocalNav.current
     val user = nav.user
     val tiles = homeTiles(user)
-    val greeting = when (LocalTime.now().hour) { in 0..11 -> "Good morning"; in 12..16 -> "Good afternoon"; else -> "Good evening" }
+    val greeting = when (LocalTime.now().hour) { in 0..11 -> "Good Morning"; in 12..16 -> "Good Afternoon"; else -> "Good Evening" }
+    val today = remember { LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy")) }
+    val dark = isSystemInDarkTheme()
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 32.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
+        // Welcome banner: the web dashboard's blush card with the campus fading in on the right
         item(span = { GridItemSpan(2) }) {
-            Surface(shape = RoundedCornerShape(20.dp), color = Magenta) {
-                Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                    Text("$greeting,", color = Color.White.copy(alpha = .8f))
-                    Text(user.fullName, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+                    .background(if (dark) SolidColor(MaterialTheme.colorScheme.surface) else BlushGradient)
+                    .border(1.dp, cardBorder, RoundedCornerShape(20.dp)),
+            ) {
+                Image(
+                    painterResource(R.drawable.campus_banner), null, contentScale = ContentScale.Crop,
+                    alignment = BiasAlignment(0.2f, 0.4f),
+                    modifier = Modifier.matchParentSize().padding(start = 120.dp),
+                )
+                Box(
+                    Modifier.matchParentSize().background(
+                        Brush.horizontalGradient(
+                            0f to (if (dark) MaterialTheme.colorScheme.surface else Color(0xFFFFF6F3)),
+                            .5f to (if (dark) MaterialTheme.colorScheme.surface else Color(0xFFFFF4F0)).copy(alpha = .93f),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+                )
+                Column(Modifier.padding(20.dp, 18.dp, 20.dp, 20.dp)) {
+                    Text("$greeting,", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+                    Text(user.fullName, style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, maxLines = 2)
                     Spacer(Modifier.height(10.dp))
-                    Surface(shape = RoundedCornerShape(50), color = Gold) {
-                        Text(
-                            user.roleName, color = MagentaDeep, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 5.dp),
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(shape = RoundedCornerShape(50), color = GoldTint, border = BorderStroke(1.dp, Gold.copy(alpha = .6f))) {
+                            Text(
+                                user.roleName, color = GoldDeep, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.CalendarToday, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(6.dp))
+                        Text(today, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -188,18 +278,21 @@ fun HomeScreen() {
         if (hasParentPortal(user)) {
             item(span = { GridItemSpan(2) }) { ChildPicker() }
         }
-        items(tiles) { f ->
+        item(span = { GridItemSpan(2) }) { SectionTitle("Quick Actions") }
+        itemsIndexed(tiles) { i, f ->
             Card(
-                modifier = Modifier.aspectRatio(1.1f).clickable { nav.go(f.route) },
+                modifier = Modifier.aspectRatio(1.45f).clip(RoundedCornerShape(18.dp)).clickable { nav.go(f.route) },
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                border = BorderStroke(1.dp, cardBorder),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.SpaceBetween) {
-                    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(52.dp)) {
-                        Box(contentAlignment = Alignment.Center) { Icon(f.icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp)) }
+                    IconTile(f.icon, i, 48)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(f.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 2)
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text(f.label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -207,7 +300,7 @@ fun HomeScreen() {
             Text(
                 "More options are in the ☰ menu", textAlign = TextAlign.Center,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
             )
         }
     }
