@@ -246,8 +246,9 @@ r.get('/audit-logs', requirePermission('audit.read'),
     w.addIf(f.action, 'a.action = ?');
     w.addIf(f.userId, 'a.user_id = ?');
     w.addIf(f.entityId, 'a.entity_id = ?');
-    w.addIf(f.from, `a.created_at >= ?::date`);
-    w.addIf(f.to, `a.created_at < ?::date + 1`);
+    // School days (Asia/Kolkata), whatever the database server's own timezone is.
+    w.addIf(f.from, `a.created_at >= (?::date::timestamp AT TIME ZONE 'Asia/Kolkata')`);
+    w.addIf(f.to, `a.created_at < ((?::date + 1)::timestamp AT TIME ZONE 'Asia/Kolkata')`);
     if (f.q) w.add('(a.description ILIKE ? OR a.user_name ILIKE ?)', likeTerm(f.q), likeTerm(f.q));
     const { limit, offset } = limitOffset(f);
     const rows = await many(
@@ -303,6 +304,10 @@ r.patch('/users/:id', requirePermission('users.manage'), validate(uuidParam, 'pa
     const id = v(req, 'params').id;
     const b = v(req);
     if (id === req.user!.id && (b.roleKey || b.status === 'suspended')) throw badRequest('You cannot change your own role or suspend yourself', 'SELF_CHANGE');
+    if (req.user!.roleKey !== 'super_admin') {
+      const target = await one<{ key: string }>('SELECT r.key FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1', [id]);
+      if (target?.key === 'super_admin') throw forbidden('Only a Super Admin can change a Super Admin account');
+    }
     let roleId: string | null = null;
     if (b.roleKey) {
       if (b.roleKey === 'super_admin' && req.user!.roleKey !== 'super_admin') throw forbidden('Only a Super Admin can grant Super Admin');
@@ -372,13 +377,17 @@ r.put('/settings/:key', requirePermission('settings.manage'),
 // =============================================================================
 r.post('/documents', requireAny('documents.manage', 'students.update', 'parent_portal.use'), upload.single('file'),
   async (req: Request, res: Response) => {
-    const body = z.object({
+    const parsed = z.object({
       name: z.string().min(2).max(160),
       category: z.string().max(60).default('General'),
       studentId: z.string().max(64).optional(),
       documentId: z.uuid().optional(),     // fulfil an existing "Pending" request
       collection: z.string().max(80).optional(),
-    }).parse(req.body);
+    }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+      throw badRequest('Validation failed', 'VALIDATION_ERROR', parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })));
+    }
+    const body = parsed.data;
     if (!req.file) throw badRequest('Attach a file in the "file" field', 'FILE_REQUIRED');
     const u = req.user!;
     let studentId: string | null = null;
@@ -421,6 +430,12 @@ r.get('/documents/:id/download', any, validate(uuidParam, 'params'), async (req:
   res.setHeader('Content-Type', d.mime_type ?? 'application/octet-stream');
   res.setHeader('Content-Disposition', `attachment; filename="${safeFilename(d.original_name ?? d.name)}"`);
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // A read error mid-transfer (file removed, storage connection dropped) must end this
+  // response, not surface as an unhandled 'error' event that takes the process down.
+  stream.on('error', (err) => {
+    req.log?.error({ err, document: d.id }, 'document download failed');
+    res.destroy(err);
+  });
   stream.pipe(res);
 });
 
