@@ -90,10 +90,15 @@ async function parse(res: Response) {
   }
 }
 
-/** Obtains a new access token from the refresh cookie. Concurrent callers share one request. */
+/**
+ * Obtains a new access token from the refresh cookie. Concurrent callers share one request.
+ * The refresh token rotates and re-presenting a rotated one revokes the session, so refreshes
+ * are also serialised across tabs (Web Locks): several tabs opening at once must not all send
+ * the same cookie.
+ */
 export async function refreshAccessToken(): Promise<SessionPayload | null> {
   if (!refreshing) {
-    refreshing = (async () => {
+    const run = async () => {
       try {
         const res = await fetch(`${API_BASE}/auth/refresh`, {
           method: 'POST',
@@ -111,7 +116,11 @@ export async function refreshAccessToken(): Promise<SessionPayload | null> {
       } finally {
         setTimeout(() => (refreshing = null), 0);
       }
-    })();
+    };
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    refreshing = locks
+      ? locks.request('hs-auth-refresh', run).then((r) => r, () => { setTimeout(() => (refreshing = null), 0); return null; })
+      : run();
   }
   return refreshing;
 }
@@ -147,7 +156,9 @@ async function request<T>(method: string, path: string, opts: RequestOptions = {
     throw new ApiError(0, 'NETWORK_ERROR', 'Cannot reach the server. Check your connection and try again.');
   }
 
-  if (res.status === 401 && !retried && !path.startsWith('/auth/')) {
+  // Only the session endpoints themselves skip the refresh; /auth/me, /auth/sessions and
+  // /auth/change-password need a valid access token like any other route.
+  if (res.status === 401 && !retried && !/^\/auth\/(login|refresh|logout)$/.test(path)) {
     const refreshed = await refreshAccessToken();
     if (refreshed) return request<T>(method, path, opts, true);
     accessToken = null;

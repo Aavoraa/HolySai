@@ -24,7 +24,14 @@ export function PageSkeleton({ kpis = 4 }: { kpis?: number }) {
 }
 
 export function errorMessage(err: unknown) {
-  if (err instanceof ApiError) return err.message;
+  if (err instanceof ApiError) {
+    // A bare "Validation failed" does not say what to fix; name the fields the API rejected.
+    const fields = Array.isArray(err.details) ? err.details.filter((d) => d?.message) : [];
+    if (err.code === 'VALIDATION_ERROR' && fields.length) {
+      return `${err.message}: ${fields.slice(0, 3).map((d) => (d.field ? `${d.field} — ${d.message}` : d.message)).join('; ')}`;
+    }
+    return err.message;
+  }
   if (err instanceof Error) return err.message;
   return 'Something went wrong.';
 }
