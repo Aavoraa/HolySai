@@ -7,6 +7,7 @@ import {
   studentCreateSchema, studentListQuery, studentUpdateSchema,
 } from '../validators/students.validators.js';
 import { historyQuerySchema, locationInputSchema } from '../validators/tracking.validators.js';
+import { upload } from '../services/documents.service.js';
 
 const r = Router();
 const READ = requireAny('students.read', 'students.read_assigned', 'parent_portal.use', 'student_portal.use');
@@ -23,7 +24,8 @@ r.delete('/:id', requirePermission('students.delete'), validate(idParam, 'params
 r.get('/:id/profile', READ, validate(idParam, 'params'), c.profile);
 
 r.post('/:id/behaviour', STAFF_READ, validate(idParam, 'params'), validate(behaviourSchema), c.addBehaviour);
-r.post('/:id/achievements', STAFF_READ, validate(idParam, 'params'), validate(achievementSchema), c.addAchievement);
+// JSON, or multipart with an optional certificate/photo in "file" (stored only after the student check).
+r.post('/:id/achievements', STAFF_READ, validate(idParam, 'params'), upload.single('file'), validate(achievementSchema), c.addAchievement);
 r.post('/:id/observations', STAFF_READ, validate(idParam, 'params'), validate(observationSchema), c.addObservation);
 
 // GPS tracking for one student. Scope (all / assigned / own child) is enforced in the controller.

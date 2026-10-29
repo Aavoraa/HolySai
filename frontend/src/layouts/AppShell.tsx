@@ -128,16 +128,35 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
 
   const current = location.pathname;
   const routeOf = (i: NavItem) => pathOf(i.dynamicHome ? user!.role.homeRoute : i.to);
-  const matches = (i: NavItem) => {
-    const r = routeOf(i);
-    return current === r || current.startsWith(r + '/');
-  };
+  const matches = (i: NavItem) => [routeOf(i), ...(i.also ?? [])].some((r) => current === r || current.startsWith(r + '/'));
 
   // Exactly one section owns the current page: Overview first, then the first section listing it.
   const owner = useMemo(() => {
     for (const g of model) if (g.items.some(matches)) return g.pinned ? '__pinned__' : g.group;
     return null;
   }, [model, current]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Captions (Student Management, Admissions, Finance…) fold their groups away; remembered per browser.
+  const [closedSections, setClosedSections] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('hs.navSections') ?? '[]');
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('hs.navSections', JSON.stringify(closedSections));
+    } catch {
+      /* private mode: the choice simply isn't remembered */
+    }
+  }, [closedSections]);
+  const toggleSection = (s: string) => setClosedSections((c) => (c.includes(s) ? c.filter((x) => x !== s) : [...c, s]));
+  // Navigating to a page in a folded section opens that section.
+  const ownerSection = model.find((g) => g.group === owner)?.section;
+  useEffect(() => {
+    if (ownerSection) setClosedSections((c) => (c.includes(ownerSection) ? c.filter((x) => x !== ownerSection) : c));
+  }, [ownerSection, current]);
   // A page with its own direct link is highlighted there, and its group stays closed.
   const quickHit = useMemo(() => model.some((g) => g.quick.some(matches)), [model, current]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -254,9 +273,19 @@ function Sidebar({ rail, onToggleRail, onExpand, counts }: { rail: boolean; onTo
           const isOpen = ql ? true : open === g.group;
           const idx = model.indexOf(g);
           const newSection = !!g.section && model[idx - 1]?.section !== g.section;
+          // Folding applies to the full sidebar only; the icon rail and search results always show every group.
+          const sectionClosed = !ql && !rail && !!g.section && closedSections.includes(g.section);
+          const caption = newSection && !ql && (
+            <button type="button" className="navsection" data-closed={String(sectionClosed)} aria-expanded={!sectionClosed}
+              onClick={() => { followRoute.current = false; toggleSection(g.section!); }}>
+              <span className="grow">{t(g.section)}</span>
+              <span className="navsection__chev"><Icon name="chevronDown" size={12} /></span>
+            </button>
+          );
+          if (sectionClosed) return caption ? <div className="navgroup" key={g.group}>{caption}</div> : null;
           return (
             <div className="navgroup" data-open={String(isOpen)} data-current={owns ? 'true' : undefined} key={g.group} data-hue={g.hue}>
-              {newSection && !ql && <div className="navsection" aria-hidden="true">{t(g.section)}</div>}
+              {caption}
               <button
                 className="navhead"
                 data-group={g.group}

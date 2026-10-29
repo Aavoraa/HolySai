@@ -11,6 +11,8 @@ import type { CurrentLocation, StudentRow } from '@/api/types';
 import { cx, fmt, todayKey } from '@/lib/format';
 import { gradeMeterTone } from '@/lib/grades';
 import type { Profile } from '../students/Student360Page';
+import { AttachmentList } from '../parents-experience/CircularAttachments';
+import type { CircularAttachment } from '../parents-experience/types';
 
 type ChildRow = StudentRow & { relationship: string; isPrimary: boolean; canViewTracking: boolean; locationStatus: string | null; locationRecordedAt: string | null };
 interface ParentMe {
@@ -30,7 +32,7 @@ interface Overview {
   events: { id: string; title: string; startsOn: string; endsOn: string | null; venue: string | null; audience: string }[];
   pickup: { id: string; personName: string; relation: string; method: string; status: string; lastPickupAt: string | null }[];
 }
-interface FamilyCircular { id: string; title: string; publishedAt: string; audience: string; requiresAck: boolean; acknowledged: boolean; body?: string }
+interface FamilyCircular { id: string; title: string; publishedAt: string; audience: string; requiresAck: boolean; acknowledged: boolean; body?: string; attachments?: CircularAttachment[] }
 
 type Tab = 'home' | 'track' | 'academics' | 'safety' | 'fees' | 'more';
 const TABS: { id: Tab; label: string }[] = [
@@ -890,6 +892,9 @@ function MoreTab({ child, autoCompose, onAutoComposeDone }: { child: ChildRow; a
           ? <Button variant="primary" icon="check" onClick={() => { ack.mutate(openCircular.id); setOpenCircular(null); }}>Acknowledge</Button>
           : <Button onClick={() => setOpenCircular(null)}>Close</Button>}>
         <p className="t-sm pre-wrap">{openCircular?.body ?? 'Open the circular from the school notice to read the full text.'}</p>
+        {openCircular && (
+          <div className="mt-4"><AttachmentList items={openCircular.attachments ?? []} base={`/family/circulars/${openCircular.id}/attachments`} /></div>
+        )}
       </Modal>
     </>
   );

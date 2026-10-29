@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/auth/AuthContext';
 import { useSchool } from '@/layouts/SchoolContext';
-import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
+import { api } from '@/api/client';
+import { useApiMutation, useApiQuery, useInvalidate, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { fmt } from '@/lib/format';
 import {
-  Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Modal, Page, PageHead, Pagination, Person, SearchInput,
-  SelectField, Status, TextField, Toolbar, useConfirm,
+  AttachField, Button, Card, DataTable, ErrorState, FilterSelect, Grid, IconButton, InlineError, Kpi, Modal, Page, PageHead, Pagination, Person, SearchInput,
+  SelectField, Status, TextField, Toolbar, errorMessage, useConfirm, useToast,
 } from '@/components/ui';
+import { viewFile } from '../admissions/AdmissionForm';
 import type { ReimbursementRow, ReimbursementSummary } from './types';
 import { fieldErrors, isMoney, ListCount, Money, ReasonModal, todayIso, useFinanceLookups } from './shared';
 import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
@@ -21,6 +23,7 @@ export default function ReimbursementsPage() {
   const q = usePagedQuery<ReimbursementRow>('/finance/reimbursements', { ...list.query, ...campusParam });
   const s = useApiQuery<ReimbursementSummary>('/finance/reimbursements/summary', campusParam);
   const confirm = useConfirm();
+  const toast = useToast();
   const [creating, setCreating] = useState(false);
   const [rejecting, setRejecting] = useState<ReimbursementRow | null>(null);
   const opts = { invalidate: ['/finance/reimbursements'], body: () => ({}) };
@@ -63,6 +66,12 @@ export default function ReimbursementsPage() {
               { key: 'code', label: 'Reference', render: (r) => <span className="t-num">{r.code}</span> },
               { key: 'employee', label: 'Employee', render: (r) => <Person name={r.employee} meta={r.department} /> },
               { key: 'what', label: 'Claim', sortable: false, render: (r) => <>{r.description}<div className="t-micro t-muted">{r.claimType}</div></> },
+              {
+                key: 'receipt', label: 'Receipt', sortable: false, render: (r) => r.receipt
+                  ? <IconButton icon={r.receipt.mimeType.startsWith('image/') ? 'camera' : 'fileText'} label={`View receipt for ${r.code}`} title={r.receipt.name}
+                      onClick={() => viewFile(`/finance/reimbursements/${r.id}/receipt`, (e) => toast(errorMessage(e), 'critical'))} />
+                  : <span className="t-micro t-faint" title="Recorded before receipts were required">None</span>,
+              },
               { key: 'amount', label: 'Amount', className: 'num', render: (r) => <Money v={r.amount} strong /> },
               { key: 'date', label: 'Submitted', render: (r) => fmt.date(r.claimDate) },
               { key: 'status', label: 'Status', render: (r) => <><Status value={r.status} />{r.decidedBy && <div className="t-micro t-muted">{r.decidedBy}</div>}</> },
@@ -102,30 +111,55 @@ function ClaimModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const init = () => ({ employeeId: '', claimType: 'Travel', description: '', amount: '', claimDate: todayIso() });
   const [f, setF] = useState(init);
   const [touched, setTouched] = useState(false);
-  useEffect(() => { if (open) { setF(init()); setTouched(false); } }, [open]);
-  const save = useApiMutation<Record<string, unknown>, { code: string }>('post', '/finance/reimbursements', {
-    invalidate: ['/finance/reimbursements'], onSuccess: onClose, success: (r) => `Claim ${r.data.code} recorded`,
-  });
+  // The receipt is required; the claim is sent as multipart with it.
+  const [receipt, setReceipt] = useState<File | null>(null);
+  const [receiptError, setReceiptError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  useEffect(() => { if (open) { setF(init()); setTouched(false); setReceipt(null); setReceiptError(undefined); setError(null); } }, [open]);
+  const submit = async () => {
+    setTouched(true);
+    if (Object.values(problems).some(Boolean)) return;
+    const form = new FormData();
+    form.append('employeeId', f.employeeId);
+    form.append('claimType', f.claimType);
+    form.append('description', f.description.trim());
+    form.append('amount', String(Number(f.amount)));
+    form.append('claimDate', f.claimDate);
+    form.append('file', receipt!);
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await api.upload<{ code: string }>('/finance/reimbursements', form, 120_000);
+      toast(`Claim ${r.data.code} recorded`, 'success');
+      await invalidate('/finance/reimbursements');
+      onClose();
+    } catch (e) {
+      setError(e);
+    } finally {
+      setSaving(false);
+    }
+  };
   const problems = {
     employeeId: !f.employeeId && 'Choose the employee.',
     description: f.description.trim().length < 3 && 'Describe what was paid for.',
     amount: !isMoney(f.amount) && 'Enter an amount greater than zero.',
     claimDate: (!f.claimDate || f.claimDate > todayIso()) && 'Choose a date that is not in the future.',
+    file: !receipt && 'Attach the receipt — a bill, ticket or invoice.',
   };
-  const errs: Record<string, string> = { ...fieldErrors(save.error) };
+  const errs: Record<string, string> = { ...fieldErrors(error) };
   if (touched) for (const [k, v] of Object.entries(problems)) if (v) errs[k] = v;
   const set = (k: keyof ReturnType<typeof init>) => (v: string) => setF((x) => ({ ...x, [k]: v }));
   return (
-    <Modal open={open} onClose={onClose} busy={save.isPending} title="Record a claim" sub="The claim is submitted for approval."
+    <Modal open={open} onClose={onClose} busy={saving} title="Record a claim" sub="The claim and its receipt are submitted for approval."
       foot={<>
-        <Button onClick={onClose} disabled={save.isPending}>Cancel</Button>
-        <Button variant="primary" loading={save.isPending} onClick={() => {
-          setTouched(true);
-          if (Object.values(problems).some(Boolean)) return;
-          save.mutate({ ...f, description: f.description.trim(), amount: Number(f.amount) });
-        }}>Submit claim</Button>
+        <Button onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="primary" loading={saving} onClick={submit}>Submit claim</Button>
       </>}>
       <div className="col g-3">
+        {error && !Object.keys(fieldErrors(error)).length ? <InlineError error={error} /> : null}
         <SelectField label="Employee" required value={f.employeeId} onChange={set('employeeId')} placeholder="Choose…" error={errs.employeeId}
           options={(lk.data?.employees ?? []).map((e) => ({ value: e.id, label: `${e.fullName} · ${e.department}` }))} />
         <SelectField label="Claim type" required value={f.claimType} onChange={set('claimType')} options={CLAIM_TYPES} />
@@ -133,6 +167,11 @@ function ClaimModal({ open, onClose }: { open: boolean; onClose: () => void }) {
         <div className="grid g-2col">
           <TextField label="Amount (₹)" required type="number" min="0" step="0.01" value={f.amount} onChange={set('amount')} error={errs.amount} />
           <TextField label="Date spent" required type="date" max={todayIso()} value={f.claimDate} onChange={set('claimDate')} error={errs.claimDate} />
+        </div>
+        <div>
+          <span className="label">Receipt <span className="req">*</span></span>
+          <AttachField file={receipt} onFile={(file, err) => { setReceipt(file); setReceiptError(err); }} disabled={saving}
+            error={receiptError ?? errs.file} label="Attach the receipt" inputLabel="Receipt file" />
         </div>
       </div>
     </Modal>

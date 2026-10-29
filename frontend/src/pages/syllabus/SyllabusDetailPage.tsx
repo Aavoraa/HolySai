@@ -5,12 +5,12 @@ import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import {
-  Badge, Banner, BulkBar, Button, Card, DataTable, Dl, Empty, ErrorState, FilterSelect, Grid, InlineError, Kpi, Meter, Modal, Page, PageHead,
+  Badge, Banner, BulkBar, Button, Card, DataTable, Dl, Empty, ErrorState, FilterSelect, Grid, Icon, InlineError, Kpi, Meter, Modal, Page, PageHead,
   PageSkeleton, Pagination, SearchInput, SelectField, StudentLink, Tabs, TextArea, TextField, Toolbar, useConfirm,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import {
-  COVERAGE_TONE, StageBanner, SyllabusForm, TierBadge, TYPE_LABEL, fieldErrors, minutes,
+  COVERAGE_TONE, GradeDocs, StageBanner, SyllabusForm, TierBadge, TYPE_LABEL, fieldErrors, gradesLabel, minutes,
   type ComponentTier, type CoverageStatus, type EntryRow, type SyllabusComponent, type SyllabusDetail, type SyllabusTopic,
 } from './shared';
 
@@ -125,12 +125,23 @@ function OverviewTab({ s }: { s: SyllabusDetail }) {
           <Dl items={[
             ['Code', s.syllabusCode ?? 'School-assessed (no Cambridge code)'],
             ['Subject', s.subject],
+            ['Taught in', gradesLabel(s.gradeLevels)],
             ['Awarding body', s.awardingBody],
             ['Exam series', s.examSeriesYears ?? '—'],
             ['Grading', s.tiered ? 'A*–G · Core C–G (capped at C), Extended A*–E' : 'A*–G, U below G'],
             ['Status', s.isActive ? 'Active' : 'Inactive'],
           ]} />
         </Card>
+        {s.cambridge && (
+          <Card icon="bookOpen" title="Cambridge syllabus documents" sub="The syllabus each grade is examined on, from the year it sits the exams">
+            <GradeDocs byGrade={s.cambridge.byGrade} subjectPage={s.cambridge.subjectPage} />
+            {s.cambridge.subjectPage && (
+              <a className="row g-2 mt-3 t-sm" style={{ alignItems: 'center' }} href={s.cambridge.subjectPage} target="_blank" rel="noopener noreferrer">
+                Cambridge subject page — past papers, all syllabus versions <Icon name="external" size={14} />
+              </a>
+            )}
+          </Card>
+        )}
         <Card icon="checkSquare" title="Coverage by section" sub="Topics marked Covered">
           {s.sections.length ? (
             <div className="col g-3">

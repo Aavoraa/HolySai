@@ -6,7 +6,7 @@ import { badRequest, forbidden, notFound } from '../utils/errors.js';
 import { audit } from './audit.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
 import { ACTIVE, guardUnique, todayKolkata } from './workforce.service.js';
-import { calculatePayslip } from './workforce-paycalc.js';
+import { calculatePayslip, workingDaysInMonth } from './workforce-paycalc.js';
 
 export const STAGES = ['Draft', 'Inputs', 'Calculated', 'Under Review', 'Approved', 'Released', 'Paid'] as const;
 type Stage = (typeof STAGES)[number];
@@ -141,7 +141,7 @@ export async function createRun(req: Request, campusId: string, payMonth: string
 
 async function lockRun(id: string, db: Queryable) {
   const r = await one(
-    `SELECT r.*, to_char(r.pay_month, 'FMMonth YYYY') AS label, ${monthEndSql} AS month_end, cp.short_name AS campus_name
+    `SELECT r.*, to_char(r.pay_month, 'FMMonth YYYY') AS label, to_char(r.pay_month, 'YYYY-MM-DD') AS pay_month_text, ${monthEndSql} AS month_end, cp.short_name AS campus_name
        FROM payroll_runs r LEFT JOIN campuses cp ON cp.id = r.campus_id WHERE r.id = $1 FOR UPDATE OF r`, [id], db);
   if (!r) throw notFound('Payroll run not found', 'PAYROLL_RUN_NOT_FOUND');
   return r;
@@ -202,10 +202,12 @@ export async function calculateRun(req: Request, id: string) {
       `SELECT id, employee_id, amount::float FROM reimbursements
         WHERE employee_id = ANY($1) AND status = 'Approved' AND paid_in_run_id IS NULL AND claim_date <= $2`,
       [ids, run.month_end], db);
-    const days = await many<{ employee_id: string; days: number }>(
-      `SELECT employee_id, sum(CASE WHEN status IN ('Present', 'Late', 'On Leave') THEN 1 WHEN status = 'Half Day' THEN 0.5 ELSE 0 END)::float AS days
+    const days = await many<{ employee_id: string; days: number; unpaid: number }>(
+      `SELECT employee_id, sum(CASE WHEN status IN ('Present', 'Late', 'On Leave') THEN 1 WHEN status = 'Half Day' THEN 0.5 ELSE 0 END)::float AS days,
+              sum(CASE WHEN status = 'Absent' THEN 1 WHEN status = 'Half Day' THEN 0.5 ELSE 0 END)::float AS unpaid
          FROM staff_attendance WHERE employee_id = ANY($1) AND attendance_date BETWEEN $2 AND $3 GROUP BY employee_id`,
       [ids, run.pay_month, run.month_end], db);
+    const workingDays = workingDaysInMonth(run.pay_month_text);
 
     const sum = <T extends { employee_id: string }>(rows: T[], id: string, f: (r: T) => number) =>
       rows.filter((r) => r.employee_id === id).reduce((a, r) => a + f(r), 0);
@@ -217,6 +219,9 @@ export async function calculateRun(req: Request, id: string) {
         overtimeHours: sum(ot, e.id, (r) => r.hours),
         overtimeAmount: sum(ot, e.id, (r) => r.value),
         reimbursements: sum(reimb, e.id, (r) => r.amount),
+        // Loss of pay for unpaid absences recorded in staff attendance.
+        unpaidDays: days.find((d) => d.employee_id === e.id)?.unpaid ?? 0,
+        workingDays,
       });
       await query(
         `INSERT INTO payslips (payroll_run_id, employee_id, earnings, deductions, gross, total_deductions, net, days_worked, status)

@@ -126,8 +126,8 @@ Password for every demo account = the SEED_DEMO_PASSWORD value in .env
   Second parent            sudha.raman.demo@parents.holysai.edu
   Second teacher           ganesh.venkat.demo@holysai.edu
 
-On the sign-in page click a role tile to fill in the email (or
-"More accounts" for the full list), then type the password.
+On the sign-in page choose the campus, type the email and the password.
+The role comes from the account: each user lands on their own workspace.
 
 5 wrong passwords lock an account for 15 minutes. A Super Admin can
 unlock it at Administration -> Users & Roles, or just wait.
@@ -175,6 +175,10 @@ Things to try:
   IGCSE syllabus     Academics -> IGCSE Syllabus (Grades 9-10: papers, topics,
                      coverage, Core/Extended entries) and Grading Scheme
                      (A* to G, then U; boundaries editable by the Principal).
+                     Each syllabus links to the Cambridge PDF for each grade's
+                     exam year (Grade 10 sits exams this year, Grade 9 next year).
+                     "Cambridge catalogue" lists all Cambridge IGCSE syllabuses
+                     (database/data/cambridge-igcse-syllabuses.csv) to add more.
   Admission forms    Office -> Applications -> New application, or a lead ->
                      "Add admission form": type the filled form in, upload the
                      scanned form (PDF/photo), or both. "Import forms" takes a CSV.
@@ -193,6 +197,8 @@ D. USEFUL COMMANDS
   npm run db:migrate       apply new database migrations only (keeps data)
   npm run db:seed          load sample data into an EMPTY database
   npm run db:reset         wipe + recreate + reload sample data
+  npm run db:sample-files  attach SAMPLE PDFs to received student documents
+                           (Verified/Submitted) so View/Download work; keeps data
   npm run test:db          prepare the separate test database (holysai_test)
   npm test                 run the API tests (run test:db first)
   npm run test:screens     open every screen as 8 roles and check for errors

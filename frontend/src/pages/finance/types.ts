@@ -103,6 +103,8 @@ export interface ExpenseSummary {
 export interface ReimbursementRow {
   id: string; code: string; claimType: string; description: string; amount: number; claimDate: string; status: string;
   decidedAt: string | null; decidedBy: string | null; payrollRunId: string | null; employeeId: string; employee: string; department: string; campus: string;
+  /** The claim's receipt; null for claims recorded before receipts were required. */
+  receipt: { name: string; mimeType: string; sizeBytes: number } | null;
 }
 export interface ReimbursementSummary { pending: number; pendingValue: number; approvedUnpaid: number; paidThisMonth: number; rejected: number }
 

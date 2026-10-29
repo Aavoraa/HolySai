@@ -5,6 +5,7 @@ import { likeTerm, limitOffset, orderBy } from '../utils/pagination.js';
 import { badRequest, conflict, forbidden, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
+import { openStoredFile, safeFilename, verifyUploadedFile } from './documents.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
 import { BAL, NET } from './finance-fees.service.js';
 
@@ -150,9 +151,11 @@ export async function listReimbursements(f: any) {
     `SELECT r.id, r.code, r.claim_type AS "claimType", r.description, r.amount, r.claim_date AS "claimDate", r.status,
             r.approved_at AS "decidedAt", au.full_name AS "decidedBy", r.paid_in_run_id AS "payrollRunId",
             emp.id AS "employeeId", emp.full_name AS employee, emp.department, cp.short_name AS campus,
+            CASE WHEN d.id IS NULL THEN NULL ELSE json_build_object('name', d.original_name, 'mimeType', d.mime_type, 'sizeBytes', d.size_bytes) END AS receipt,
             count(*) OVER() AS total
        FROM reimbursements r JOIN employees emp ON emp.id = r.employee_id JOIN campuses cp ON cp.id = emp.campus_id
        LEFT JOIN users au ON au.id = r.approved_by
+       LEFT JOIN documents d ON d.id = r.receipt_document_id AND d.deleted_at IS NULL
        ${w.sql}
       ORDER BY ${orderBy(f.sort, f.dir, RMB_SORT, 'date')}, r.code DESC
       LIMIT ${w.param(limit)} OFFSET ${w.param(offset)}`, w.params);
@@ -171,19 +174,40 @@ export async function reimbursementSummary(campusId?: string) {
        FROM reimbursements r JOIN employees emp ON emp.id = r.employee_id ${w.sql}`, w.params);
 }
 
-export async function createReimbursement(req: Request, input: any) {
+/** Records a claim; the receipt (bill, ticket, invoice) is required and kept as an employee document. */
+export async function createReimbursement(req: Request, input: any, file?: Express.Multer.File) {
+  if (!file) throw badRequest('Attach the receipt for this claim', 'RECEIPT_REQUIRED', [{ field: 'file', message: 'Upload the bill, ticket or invoice' }]);
   return tx(async (db) => {
     const emp = await one('SELECT id, full_name FROM employees WHERE id = $1 AND deleted_at IS NULL', [input.employeeId], db);
     if (!emp) throw badRequest('Employee not found', 'EMPLOYEE_NOT_FOUND');
     await query(`SELECT pg_advisory_xact_lock(hashtext('reimbursements.code'))`, [], db);
     const code = await nextCode('reimbursements', 'code', 'RMB-', db, 3);
+    const stored = await verifyUploadedFile(file);
+    const doc = await one<{ id: string }>(
+      `INSERT INTO documents (owner_type, owner_id, employee_id, name, category, status, storage_key, original_name,
+                              mime_type, size_bytes, checksum_sha256, uploaded_by)
+       VALUES ('employee', $1, $1, $2, 'Claim receipt', 'Submitted', $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [input.employeeId, `Receipt for claim ${code}`, stored.storageKey, safeFilename(file.originalname), file.mimetype, stored.size, stored.checksum, req.user!.id], db);
     const row = await one(
-      `INSERT INTO reimbursements (code, employee_id, claim_type, description, amount, claim_date, status)
-       VALUES ($1,$2,$3,$4,$5,$6,'Submitted') RETURNING id, code, status`,
-      [code, input.employeeId, input.claimType, input.description, input.amount, input.claimDate], db);
-    await audit(req, { action: 'create', module: 'finance', entityType: 'reimbursement', entityId: row!.id, description: `Recorded claim ${code} for ${emp.full_name} (${inr(input.amount)})` }, db);
+      `INSERT INTO reimbursements (code, employee_id, claim_type, description, amount, claim_date, status, receipt_document_id)
+       VALUES ($1,$2,$3,$4,$5,$6,'Submitted',$7) RETURNING id, code, status`,
+      [code, input.employeeId, input.claimType, input.description, input.amount, input.claimDate, doc!.id], db);
+    await audit(req, { action: 'create', module: 'finance', entityType: 'reimbursement', entityId: row!.id, description: `Recorded claim ${code} for ${emp.full_name} (${inr(input.amount)}) with its receipt` }, db);
     return row;
   });
+}
+
+/** The claim's receipt as a stream, for finance staff reviewing it. */
+export async function openReimbursementReceipt(req: Request, id: string) {
+  const d = await one<{ code: string; storage_key: string | null; original_name: string | null; mime_type: string | null; doc_id: string }>(
+    `SELECT r.code, d.storage_key, d.original_name, d.mime_type, d.id AS doc_id
+       FROM reimbursements r JOIN documents d ON d.id = r.receipt_document_id AND d.deleted_at IS NULL
+      WHERE r.id = $1`, [id]);
+  if (!d || !d.storage_key) throw notFound('This claim has no receipt on file', 'RECEIPT_NOT_FOUND');
+  const stream = await openStoredFile(d.storage_key);
+  if (!stream) throw notFound('The receipt file is no longer available', 'FILE_MISSING');
+  await audit(req, { action: 'view', module: 'finance', entityType: 'reimbursement', entityId: id, description: `Opened the receipt for claim ${d.code}` });
+  return { stream, name: safeFilename(d.original_name ?? `${d.code}-receipt`), mimeType: d.mime_type ?? 'application/octet-stream' };
 }
 
 export async function transitionReimbursement(req: Request, id: string, t: Transition, opts: { reason?: string; payrollRunId?: string } = {}) {
@@ -295,6 +319,15 @@ export async function decideAllowance(req: Request, input: { allowanceType: stri
   // An approver's own allowance is left for another approver to decide.
   const self = input.decision === 'Stopped' ? null : req.user!.employeeId ?? null;
   return tx(async (db) => {
+    if (input.decision === 'Approved') {
+      // A proposal that replaces an employee's current amount (Set salary) supersedes it on approval.
+      await query(
+        `UPDATE allowances old SET status = 'Stopped' FROM allowances nw JOIN employees e ON e.id = nw.employee_id
+          WHERE nw.allowance_type = $1 AND nw.status = 'Submitted' AND ($2::uuid IS NULL OR e.campus_id = $2)
+            AND nw.employee_id IS DISTINCT FROM $3::uuid
+            AND old.employee_id = nw.employee_id AND old.allowance_type = nw.allowance_type AND old.status = 'Approved'`,
+        [input.allowanceType, input.campusId ?? null, self], db);
+    }
     const r = await query(
       `UPDATE allowances a SET status = $1 FROM employees e
         WHERE e.id = a.employee_id AND a.allowance_type = $2 AND a.status = ANY($3) AND ($4::uuid IS NULL OR e.campus_id = $4)

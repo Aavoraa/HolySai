@@ -14,17 +14,23 @@ export interface RouteMeta {
   nested: boolean;
 }
 
+// One entry per route an item owns (its own and any `also` routes); `to` stays the item's own route.
 const ENTRIES = NAV.flatMap((g) =>
-  g.items.filter((i) => !i.dynamicHome).map((i) => ({ group: g.label ?? g.group, label: i.label, to: i.to.split('?')[0], icon: i.icon, hue: g.hue ?? 'brand' })),
+  g.items.filter((i) => !i.dynamicHome).flatMap((i) => {
+    const e = { group: g.label ?? g.group, label: i.label, to: i.to.split('?')[0], icon: i.icon, hue: g.hue ?? 'brand' };
+    return [e.to, ...(i.also ?? [])].map((prefix) => ({ ...e, prefix }));
+  }),
 );
+
+const strip = ({ prefix: _p, ...e }: (typeof ENTRIES)[number]) => e;
 
 /** The menu entry a path belongs to: an exact match first, then the longest parent route. */
 export function routeMeta(pathname: string): RouteMeta | null {
-  const exact = ENTRIES.find((e) => e.to === pathname);
-  if (exact) return { ...exact, nested: false };
+  const exact = ENTRIES.find((e) => e.prefix === pathname);
+  if (exact) return { ...strip(exact), nested: exact.prefix !== exact.to };
   let best: (typeof ENTRIES)[number] | undefined;
   for (const e of ENTRIES) {
-    if (pathname.startsWith(e.to + '/') && (!best || e.to.length > best.to.length)) best = e;
+    if (pathname.startsWith(e.prefix + '/') && (!best || e.prefix.length > best.prefix.length)) best = e;
   }
-  return best ? { ...best, nested: true } : null;
+  return best ? { ...strip(best), nested: true } : null;
 }

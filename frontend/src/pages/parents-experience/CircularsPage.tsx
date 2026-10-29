@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Banner, Button, Card, Chips, DataTable, Dl, ErrorState, Flow, Meter, Modal, Page, PageHead, Pagination,
-  SearchInput, SelectField, Skeleton, Status, TextArea, TextField, Toolbar, useConfirm, useToast,
+  SearchInput, SelectField, Skeleton, Status, TextArea, TextField, Toolbar, errorMessage, useConfirm, useToast,
 } from '@/components/ui';
-import { useApiMutation, useApiQuery, usePagedQuery } from '@/hooks/useApi';
+import { api } from '@/api/client';
+import { useApiMutation, useApiQuery, useInvalidate, usePagedQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
 import { fmt } from '@/lib/format';
 import { AudiencePicker, ackTone, fieldErrorsOf } from './shared';
+import { AttachmentList, AttachmentPicker } from './CircularAttachments';
 import type { AckSummary, Audience, Circular } from './types';
 import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
 
@@ -166,6 +168,7 @@ function CircularDetail({ id, onClose, onEdit }: { id: string | null; onClose: (
           {c.status === 'Withdrawn' && <Banner tone="neutral">This circular was withdrawn and is no longer shown to families.</Banner>}
           {c.status === 'Under Review' && !can('approvals.decide') && <Banner tone="neutral" icon="clock">Awaiting Super Admin approval — only the Super Admin can release or return it.</Banner>}
           <div className="card card--tint pe-circular-body"><p className="t-sm">{c.body}</p></div>
+          <AttachmentList items={c.attachments ?? []} base={`/circulars/${c.id}/attachments`} />
           {c.status === 'Released' && c.requiresAck && (
             <Meter label="Acknowledged" value={c.targetCount ? (c.ackCount / c.targetCount) * 100 : 0} right={`${fmt.n(c.ackCount)} of ${fmt.n(c.targetCount)}`} tone={ackTone(c.ackCount, c.targetCount)} lg
               hint={c.lastRemindedAt ? `${c.reminderCount} reminder${c.reminderCount === 1 ? '' : 's'} sent · last ${fmt.relative(c.lastRemindedAt)}` : 'No reminders sent yet'} />
@@ -194,10 +197,16 @@ function CircularForm({ open, circular, onClose }: { open: boolean; circular: Ci
   const [campusId, setCampusId] = useState('');
   const [channels, setChannels] = useState(CHANNEL_SETS[0].label);
   const [ack, setAck] = useState('Required');
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [removedFiles, setRemovedFiles] = useState<string[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const invalidate = useInvalidate();
   useEffect(() => {
     if (!open) return;
     setErrors({});
+    setPendingFiles([]);
+    setRemovedFiles([]);
     setTitle(circular?.title ?? '');
     setBody(circular?.body ?? '');
     setAudience(circular?.audienceFilter ?? { kind: 'all' });
@@ -210,7 +219,25 @@ function CircularForm({ open, circular, onClose }: { open: boolean; circular: Ci
   const create = useApiMutation<Record<string, unknown>, Circular>('post', '/circulars', { ...inv, success: false });
   const update = useApiMutation<Record<string, unknown>, Circular>('put', `/circulars/${circular?.id}`, { ...inv, success: false });
   const submit = useApiMutation<string>('post', (id) => `/circulars/${id}/submit`, { ...inv, body: () => ({}), success: 'Circular sent for approval' });
-  const pending = create.isPending || update.isPending || submit.isPending;
+  const pending = create.isPending || update.isPending || submit.isPending || attaching;
+
+  /** Applies the attachment changes to the saved circular; returns the files that failed. */
+  const syncAttachments = async (id: string) => {
+    const failed: string[] = [];
+    setAttaching(true);
+    try {
+      for (const a of removedFiles) await api.delete(`/circulars/${id}/attachments/${a}`).catch(() => failed.push('a removal'));
+      for (const f of pendingFiles) {
+        const form = new FormData();
+        form.append('file', f);
+        await api.upload(`/circulars/${id}/attachments`, form, 120_000).catch((e) => failed.push(`${f.name} (${errorMessage(e)})`));
+      }
+    } finally {
+      setAttaching(false);
+      if (removedFiles.length || pendingFiles.length) await invalidate('/circulars');
+    }
+    return failed;
+  };
 
   const save = async (andSubmit: boolean) => {
     const e: Record<string, string> = {};
@@ -226,7 +253,11 @@ function CircularForm({ open, circular, onClose }: { open: boolean; circular: Ci
     };
     try {
       const r = circular ? await update.mutateAsync(payload) : await create.mutateAsync(payload);
-      if (andSubmit && r.data.status === 'Draft') await submit.mutateAsync(r.data.id);
+      const failed = await syncAttachments(r.data.id);
+      if (failed.length) {
+        // The text is saved; hold back approval so nothing goes out without its files.
+        toast(`Saved as draft, but these could not be attached: ${failed.join(', ')}. Open the circular and try again.`, 'critical');
+      } else if (andSubmit && r.data.status === 'Draft') await submit.mutateAsync(r.data.id);
       else toast(circular ? 'Circular updated' : 'Circular saved as draft', 'success');
       onClose();
     } catch (err) {
@@ -248,6 +279,11 @@ function CircularForm({ open, circular, onClose }: { open: boolean; circular: Ci
         <TextField label="Title" required value={title} onChange={setTitle} error={errors.title} placeholder="For example: Term 3 examination schedule" maxLength={160} autoFocus />
         <TextArea label="Message" required rows={6} value={body} onChange={setBody} error={errors.body} maxLength={5000} hint={`${body.length}/5000`} />
         </div>
+      </div>
+      <div className="formsection">
+        <div className="formsection__title">Attachments</div>
+        <AttachmentPicker saved={circular?.attachments ?? []} removed={removedFiles} onRemoveSaved={(id) => setRemovedFiles((r) => [...r, id])}
+          pending={pendingFiles} onPending={setPendingFiles} error={errors.file} disabled={pending} />
       </div>
       <div className="formsection">
         <div className="formsection__title">Audience</div>

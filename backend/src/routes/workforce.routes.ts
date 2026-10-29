@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import { z } from 'zod';
 import { requireAny, requirePermission } from '../middleware/auth.js';
 import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
@@ -7,6 +8,9 @@ import * as wf from '../services/workforce.service.js';
 import * as roster from '../services/workforce-roster.service.js';
 import * as leave from '../services/workforce-leave.service.js';
 import * as payroll from '../services/workforce-payroll.service.js';
+import * as letters from '../services/workforce-letters.service.js';
+import { schoolToday } from '../services/academics.service.js';
+import { attendanceFor, getSalary, previewPay, salaryDashboard, salaryEmployees, setSalary } from '../services/workforce-salary.service.js';
 import * as me from '../services/workforce-self.service.js';
 
 /**
@@ -224,8 +228,77 @@ r.patch('/workforce/cpd/:id', MANAGE, idParam, validate(V.cpdUpdateSchema), asyn
 });
 
 // =============================================================================
+// HR letters — appointment (onboarding), relieving and experience letters
+// =============================================================================
+const isoDate = z.iso.date();
+const letterBody = z.object({
+  type: z.enum(['onboarding', 'relieving', 'experience']),
+  issuedOn: isoDate,
+  signatoryName: z.string().trim().min(2).max(120),
+  signatoryTitle: z.string().trim().min(2).max(80),
+  joiningDate: isoDate.optional(),
+  designation: z.string().trim().min(2).max(80).optional(),
+  department: z.string().trim().min(2).max(60).optional(),
+  monthlyGross: z.coerce.number().min(0).max(10_000_000).optional(),
+  probationMonths: z.coerce.number().int().min(0).max(24).optional(),
+  reportingTo: z.string().trim().max(120).optional(),
+  lastWorkingDay: isoDate.optional(),
+  resignationDate: isoDate.optional(),
+  duesCleared: z.boolean().optional(),
+  conduct: z.string().trim().max(400).optional(),
+  notes: z.string().trim().max(1000).optional(),
+});
+
+r.get('/workforce/letters', READ, validate(z.object({
+  campusId: z.uuid().optional(), type: z.enum(['onboarding', 'relieving', 'experience']).optional(), q: z.string().trim().max(80).optional(),
+}), 'query'), async (req: Request, res: Response) => ok(res, await letters.listLetters(v(req, 'query')), 'HR letters'));
+
+r.get('/workforce/letters/:id', READ, idParam, async (req: Request, res: Response) =>
+  ok(res, await letters.getLetter(v(req, 'params').id), 'HR letter'));
+
+r.get('/workforce/employees/:id/letters', READ, idParam, async (req: Request, res: Response) =>
+  ok(res, await letters.letterDefaults(v(req, 'params').id), 'Letters for this employee'));
+
+r.post('/workforce/employees/:id/letters', MANAGE, idParam, validate(letterBody), async (req: Request, res: Response) => {
+  const out = await letters.issueLetter(req, v(req, 'params').id, v(req));
+  return created(res, out, `${letters.LETTER_NAMES[v(req).type as letters.LetterType]} ${out.refNo} issued`);
+});
+
+// =============================================================================
 // Payroll — seven-stage run
 // =============================================================================
+// Salary dashboard: the pay bill by month, department and component (campus-scoped).
+r.get('/payroll/salary-dashboard', PAY_READ, validate(V.campusQuery, 'query'), async (req: Request, res: Response) =>
+  ok(res, await salaryDashboard(v(req, 'query').campusId), 'Salary dashboard'));
+
+// Set salary: an employee's basic pay and monthly allowances, with a payslip preview.
+const salaryBody = z.object({
+  basicSalary: z.coerce.number().min(0).max(10_000_000),
+  allowances: z.array(z.object({ type: z.string().trim().min(2).max(60), amount: z.coerce.number().min(0).max(10_000_000) })).max(20).default([]),
+});
+r.get('/payroll/salary/:id', PAY_READ, idParam, validate(z.object({ month: z.iso.date().optional() }), 'query'), async (req: Request, res: Response) =>
+  ok(res, await getSalary(v(req, 'params').id, v(req, 'query').month), 'Salary'));
+// With an employee and month, the preview deducts loss of pay from that month's attendance.
+r.post('/payroll/salary-preview', PAY_READ, validate(salaryBody.extend({ employeeId: z.uuid().optional(), month: z.iso.date().optional() })),
+  async (req: Request, res: Response) => {
+    const b = v(req);
+    const attendance = b.employeeId ? await attendanceFor(b.employeeId, b.month ?? schoolToday()) : undefined;
+    return ok(res, { ...previewPay(b.basicSalary, b.allowances, attendance), attendance: attendance ?? null }, 'Pay preview');
+  });
+r.put('/payroll/salary/:id', PAY_MANAGE, idParam, validate(salaryBody.extend({ effectiveMonth: z.iso.date() })), async (req: Request, res: Response) => {
+  const out = await setSalary(req, v(req, 'params').id, v(req));
+  const parts = [out.basicChanged && 'basic pay updated', out.applied.length && `${out.applied.length} allowance(s) applied`,
+    out.proposed.length && `${out.proposed.length} sent to the Super Admin for approval`, out.stopped.length && `${out.stopped.length} stopped`].filter(Boolean);
+  return ok(res, out, parts.length ? `Salary saved: ${parts.join(', ')}` : 'No changes to save');
+});
+
+// Each employee's pay for one month (latest by default), with the payslip to open.
+r.get('/payroll/salary-dashboard/employees', PAY_READ,
+  validate(V.campusQuery.extend({ month: z.iso.date().optional() }), 'query'), async (req: Request, res: Response) => {
+    const f = v(req, 'query');
+    return ok(res, await salaryEmployees(f.campusId, f.month), 'Employee salaries');
+  });
+
 r.get('/payroll/runs', PAY_READ, validate(V.runListQuery, 'query'), async (req: Request, res: Response) => {
   const f = v(req, 'query');
   const { rows, total } = await payroll.listRuns(f);

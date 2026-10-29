@@ -6,6 +6,7 @@ import { badRequest, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
 import { isGuardianOf, studentScope } from './access.service.js';
+import { safeFilename, verifyUploadedFile } from './documents.service.js';
 import type { AuthUser } from '../types.js';
 
 /**
@@ -247,9 +248,37 @@ export async function updateStudent(req: Request, id: string, input: Record<stri
       sets.push(`${col} = $${params.length}`);
       if (String(before[col] ?? '') !== String(v ?? '')) changed.push(k);
     }
-    if (!sets.length) throw badRequest('Nothing to update');
-    params.push(req.user!.id, id);
-    await query(`UPDATE students SET ${sets.join(', ')}, updated_by = $${params.length - 1} WHERE id = $${params.length}`, params, db);
+    if (!sets.length && input.transport === undefined) throw badRequest('Nothing to update');
+    if (sets.length) {
+      params.push(req.user!.id, id);
+      await query(`UPDATE students SET ${sets.join(', ')}, updated_by = $${params.length - 1} WHERE id = $${params.length}`, params, db);
+    }
+
+    // Transport: a route and pickup stop on the student's campus, or null for own transport.
+    if (input.transport !== undefined) {
+      const t = input.transport as { routeId: string; stopId?: string } | null;
+      const cur = await one<{ route_id: string; stop_id: string | null }>('SELECT route_id, stop_id FROM student_transport WHERE student_id = $1', [id], db);
+      if (t === null) {
+        if (cur) {
+          await query('DELETE FROM student_transport WHERE student_id = $1', [id], db);
+          changed.push('transport');
+        }
+      } else {
+        const route = await one<{ campus_id: string }>('SELECT campus_id FROM transport_routes WHERE id = $1', [t.routeId], db);
+        if (!route) throw badRequest('Bus route not found', 'ROUTE_NOT_FOUND');
+        if (route.campus_id !== (input.campusId ?? before.campus_id)) throw badRequest('That bus route belongs to another campus', 'ROUTE_CAMPUS_MISMATCH');
+        if (t.stopId && !(await one('SELECT 1 FROM route_stops WHERE id = $1 AND route_id = $2', [t.stopId, t.routeId], db))) {
+          throw badRequest('That pickup stop is not on the chosen route', 'STOP_NOT_ON_ROUTE');
+        }
+        if (!cur || cur.route_id !== t.routeId || cur.stop_id !== (t.stopId ?? null)) {
+          await query(
+            `INSERT INTO student_transport (student_id, route_id, stop_id) VALUES ($1, $2, $3)
+             ON CONFLICT (student_id) DO UPDATE SET route_id = EXCLUDED.route_id, stop_id = EXCLUDED.stop_id`,
+            [id, t.routeId, t.stopId ?? null], db);
+          changed.push('transport');
+        }
+      }
+    }
 
     if (input.sectionId && input.sectionId !== before.section_id) {
       const yearId = await currentYearId(db);
@@ -365,8 +394,10 @@ export async function getStudentProfile(user: AuthUser, id: string) {
     many(`SELECT act.name, act.category, sa.role, sa.since, sa.hours, sa.status
             FROM student_activities sa JOIN activities act ON act.id = sa.activity_id
            WHERE sa.student_id = $1 ORDER BY sa.since DESC`, [id]),
-    many(`SELECT id, title, achievement_type AS type, level, achieved_on AS date, is_verified AS verified
-            FROM achievements WHERE student_id = $1 ORDER BY achieved_on DESC`, [id]),
+    many(`SELECT a.id, a.title, a.achievement_type AS type, a.level, a.achieved_on AS date, a.is_verified AS verified,
+                 d.id AS "documentId", d.original_name AS "fileName", d.mime_type AS "fileType"
+            FROM achievements a LEFT JOIN documents d ON d.id = a.document_id AND d.deleted_at IS NULL
+           WHERE a.student_id = $1 ORDER BY a.achieved_on DESC`, [id]),
     many(`SELECT b.id, b.recorded_on AS date, b.record_type AS type, b.note, e.full_name AS "by"
             FROM behaviour_records b LEFT JOIN employees e ON e.id = b.recorded_by
            WHERE b.student_id = $1 ORDER BY b.recorded_on DESC LIMIT 20`, [id]),
@@ -392,7 +423,7 @@ export async function getStudentProfile(user: AuthUser, id: string) {
                 tr.delay_minutes AS "delayMinutes", tr.eta_text AS eta, v.bus_no AS "busNo", v.registration_no AS "registrationNo",
                 d.full_name AS driver, a.full_name AS attendant,
                 rs.name AS "stopName", rs.pickup_time AS "pickupTime", rs.drop_time AS "dropTime",
-                rs.latitude AS "stopLatitude", rs.longitude AS "stopLongitude", st.mode
+                rs.latitude AS "stopLatitude", rs.longitude AS "stopLongitude", st.mode, st.stop_id AS "stopId"
            FROM student_transport st
            JOIN transport_routes tr ON tr.id = st.route_id
            LEFT JOIN vehicles v ON v.id = tr.vehicle_id
@@ -532,15 +563,34 @@ export async function addBehaviour(req: Request, studentId: string, input: { rec
   return row;
 }
 
-export async function addAchievement(req: Request, studentId: string, input: { title: string; achievementType: string; level?: string; achievedOn: string }) {
-  // Staff-recorded achievements are verified by the recorder.
-  const row = await one(
-    `INSERT INTO achievements (student_id, title, achievement_type, level, achieved_on, is_verified, verified_by, verified_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, true, $6, now(), $6) RETURNING id`,
-    [studentId, input.title, input.achievementType, input.level ?? null, input.achievedOn, req.user!.id],
-  );
-  await audit(req, { action: 'create', module: 'students', description: `Recorded achievement "${input.title}"`, entityType: 'student', entityId: studentId });
-  return row;
+/**
+ * Records an achievement, optionally with a certificate or photo. The file becomes one of the
+ * student's documents (verified like any upload, by the Super Admin) and is linked to the achievement.
+ */
+export async function addAchievement(req: Request, studentId: string, input: { title: string; achievementType: string; level?: string; achievedOn: string },
+  file?: Express.Multer.File) {
+  return tx(async (db) => {
+    let documentId: string | null = null;
+    if (file) {
+      const stored = await verifyUploadedFile(file);
+      const doc = await one<{ id: string }>(
+        `INSERT INTO documents (owner_type, owner_id, student_id, name, category, status, storage_key, original_name,
+                                mime_type, size_bytes, checksum_sha256, uploaded_by)
+         VALUES ('student', $1, $1, $2, 'Achievement certificate', 'Submitted', $3, $4, $5, $6, $7, $8) RETURNING id`,
+        [studentId, input.title, stored.storageKey, safeFilename(file.originalname), file.mimetype, stored.size, stored.checksum, req.user!.id], db);
+      documentId = doc!.id;
+    }
+    // Staff-recorded achievements are verified by the recorder.
+    const row = await one(
+      `INSERT INTO achievements (student_id, title, achievement_type, level, achieved_on, is_verified, verified_by, verified_at, created_by, document_id)
+       VALUES ($1, $2, $3, $4, $5, true, $6, now(), $6, $7) RETURNING id, document_id AS "documentId"`,
+      [studentId, input.title, input.achievementType, input.level ?? null, input.achievedOn, req.user!.id, documentId], db);
+    await audit(req, {
+      action: 'create', module: 'students', description: `Recorded achievement "${input.title}"${file ? ' with a certificate' : ''}`,
+      entityType: 'student', entityId: studentId, metadata: documentId ? { documentId } : undefined,
+    }, db);
+    return row;
+  });
 }
 
 export async function addObservation(req: Request, studentId: string, text: string) {

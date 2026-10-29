@@ -12,7 +12,6 @@ interface PublicConfig {
   academicYear: string | null;
   settings: Record<string, unknown>;
   stats: { students: number; staff: number; campuses: number };
-  demoAccounts?: { email: string; fullName: string; title: string; role: string; roleName: string }[];
   environment: string;
 }
 
@@ -29,14 +28,7 @@ const MASCOT = `<svg width="58" height="58" viewBox="0 0 64 64" role="img" aria-
 <rect x="30.4" y="5" width="3.2" height="7" rx="1.6" fill="#B87008"/><circle cx="32" cy="4" r="3" fill="#E8B765"/>
 <circle cx="32" cy="46" r="2.2" fill="#4FD1E8" opacity=".8"/></svg>`;
 
-// The five wireframe role tiles, in order.
-const TILES: { role: string; label: string; icon: string }[] = [
-  { role: 'principal', label: 'Management', icon: 'user' },
-  { role: 'teacher', label: 'Teacher', icon: 'users' },
-  { role: 'parent', label: 'Parent', icon: 'heart' },
-  { role: 'office', label: 'Office', icon: 'building' },
-  { role: 'staff', label: 'Staff', icon: 'idCard' },
-];
+const CAMPUS_KEY = 'hs.loginCampus';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -47,27 +39,35 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
-  const [picked, setPicked] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [campusOpen, setCampusOpen] = useState(false);
+  const [campusCode, setCampusCode] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(CAMPUS_KEY);
+    } catch {
+      return null;
+    }
+  });
 
   const config = useQuery({ queryKey: ['public-config'], queryFn: () => api.get<PublicConfig>('/public/config'), staleTime: 5 * 60_000 });
-  const demo = config.data?.demoAccounts ?? [];
-  const pickedAccount = demo.find((d) => d.role === picked) ?? null;
+  const campuses = config.data?.campuses ?? [];
+  const campus = campuses.find((c) => c.code === campusCode) ?? campuses[0];
+
+  const chooseCampus = (code: string) => {
+    setCampusCode(code);
+    setCampusOpen(false);
+    try {
+      localStorage.setItem(CAMPUS_KEY, code);
+    } catch {
+      /* private mode: the choice simply isn't remembered */
+    }
+  };
 
   useEffect(() => {
     document.title = 'Sign in — Holy Sai Smart School 360';
   }, []);
-
-  const pick = (role: string, email?: string) => {
-    const acc = email ? demo.find((d) => d.email === email) : demo.find((d) => d.role === role);
-    setPicked(role);
-    if (acc) setIdentifier(acc.email);
-    setError(null);
-    setMoreOpen(false);
-  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -79,6 +79,15 @@ export default function LoginPage() {
     setError(null);
     try {
       const user = await login(identifier.trim(), password);
+      // Hand the chosen campus to the header context; users tied to one campus keep their own.
+      if (campus) {
+        try {
+          const ctx = JSON.parse(localStorage.getItem('hs.context') ?? '{}');
+          localStorage.setItem('hs.context', JSON.stringify({ ...ctx, campusCode: campus.code }));
+        } catch {
+          /* private mode: the header falls back to the user's own campus */
+        }
+      }
       toast(`Welcome, ${user.fullName}`, 'success', 'check');
       const from = (location.state as { from?: string } | null)?.from;
       navigate(from && from !== '/login' ? from : user.role.homeRoute, { replace: true });
@@ -166,9 +175,9 @@ export default function LoginPage() {
               <Lotus size={42} />
             </div>
             <BrandDivider />
-            <button type="button" className="ctxrow" onClick={() => setInfo('Campus and academic year are chosen after sign-in, from the header.')}>
+            <button type="button" className="ctxrow" aria-haspopup="dialog" onClick={() => setCampusOpen(true)}>
               <Icon name="building" size={17} />
-              <span className="ctxrow__text grow">Academic Year {config.data?.academicYear ?? '—'} &nbsp;|&nbsp; <b>Holy Sai International</b></span>
+              <span className="ctxrow__text grow">Academic Year {config.data?.academicYear ?? '—'} &nbsp;|&nbsp; <b>{campus?.name ?? 'Holy Sai International'}</b></span>
               <Icon name="chevronDown" size={15} />
             </button>
 
@@ -204,33 +213,7 @@ export default function LoginPage() {
               </Button>
             </div>
 
-            {demo.length > 0 && (
-              <>
-                <div className="orline mt-5">Or continue as</div>
-                <div className="roletiles mt-3">
-                  {TILES.filter((tile) => demo.some((d) => d.role === tile.role)).map((tile) => {
-                    const acc = demo.find((d) => d.role === tile.role)!;
-                    return (
-                      <button type="button" key={tile.role} className="roletile" data-role={tile.role} aria-pressed={picked === tile.role}
-                        title={`${acc.fullName} · ${acc.title}`} onClick={() => pick(tile.role)}>
-                        <span className="roletile__ico"><Icon name={tile.icon} size={16} /></span>
-                        <span className="roletile__label">{tile.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="t-micro t-muted t-center mt-3">
-                  {pickedAccount ? (
-                    <>Signing in as <strong>{pickedAccount.fullName}</strong> · {pickedAccount.title}</>
-                  ) : (
-                    <>Choose a demo account, then enter the demo password.</>
-                  )}
-                  {' · '}
-                  <button type="button" className="t-micro" style={{ color: 'var(--magenta)', fontWeight: 600 }} onClick={() => setMoreOpen(true)}>More accounts</button>
-                </p>
-                <p className="demo-hint">Development build: demo accounts use the password set in <code>SEED_DEMO_PASSWORD</code>.</p>
-              </>
-            )}
+            <p className="t-micro t-muted t-center mt-4">Your role is recognised from your sign-in; you go straight to your own workspace.</p>
           </form>
 
           <div className="aicard">
@@ -258,21 +241,27 @@ export default function LoginPage() {
         <p className="t-sm">{info}</p>
       </Modal>
 
-      <Modal open={moreOpen} onClose={() => setMoreOpen(false)} title="Demo accounts" sub="Sample accounts for every role. Development builds only." size="wide"
-        foot={<Button onClick={() => setMoreOpen(false)}>Close</Button>}>
+      <Modal open={campusOpen} onClose={() => setCampusOpen(false)} title="Choose your campus"
+        sub={`Academic year ${config.data?.academicYear ?? '—'}. Staff tied to one campus always open their own.`}
+        foot={<Button onClick={() => setCampusOpen(false)}>Close</Button>}>
         <div className="col g-2">
-          {demo.map((d) => (
-            <button key={d.email} className="optioncard" onClick={() => pick(d.role, d.email)}>
-              <span className="avatar">{fmt.initials(d.fullName)}</span>
-              <span className="col grow" style={{ minWidth: 0 }}>
-                <span className="t-sm t-bold">{d.fullName} <span className="badge badge--info" style={{ marginLeft: 6 }}>{d.roleName}</span></span>
-                <span className="t-xs t-muted t-clip">{d.title} · {d.email}</span>
-              </span>
-              <Icon name="chevronRight" size={16} />
-            </button>
-          ))}
+          {campuses.length === 0 && <p className="t-sm t-muted">Campuses are loading…</p>}
+          {campuses.map((c) => {
+            const on = c.code === campus?.code;
+            return (
+              <button type="button" key={c.code} className="optioncard" aria-pressed={on} onClick={() => chooseCampus(c.code)}>
+                <span className={`avatar ${on ? 'avatar--amber' : ''}`}><Icon name="building" size={18} /></span>
+                <span className="col grow">
+                  <span className="t-sm t-bold">{c.name}</span>
+                  <span className="t-xs t-muted">{c.place}</span>
+                </span>
+                {on ? <Icon name="check" size={16} /> : <Icon name="chevronRight" size={16} />}
+              </button>
+            );
+          })}
         </div>
       </Modal>
+
     </section>
   );
 }

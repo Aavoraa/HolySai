@@ -5,7 +5,8 @@ import { useApiQuery } from '@/hooks/useApi';
 import { useListParams } from '@/hooks/useListParams';
 import { useLookups } from '@/hooks/useLookups';
 import { Badge, Button, Card, DataTable, ErrorState, FilterSelect, Grid, Kpi, Meter, Page, PageHead, SearchInput, Toolbar } from '@/components/ui';
-import { StageBanner, SyllabusForm, type SyllabusRow } from './shared';
+import { GradeDocs, StageBanner, SyllabusForm, gradesLabel, type SyllabusRow } from './shared';
+import { CatalogueModal } from './CatalogueModal';
 
 /** Cambridge IGCSE syllabuses for Grades 9–10, with topic coverage and Core/Extended entries. */
 export default function SyllabusPage() {
@@ -15,6 +16,7 @@ export default function SyllabusPage() {
   const list = useListParams({ sort: 'code' }, ['subjectId', 'active']);
   const q = useApiQuery<SyllabusRow[]>('/syllabuses', { q: list.q || undefined, subjectId: list.filters.subjectId || undefined, active: list.filters.active || 'true' });
   const [adding, setAdding] = useState(false);
+  const [catalogue, setCatalogue] = useState(false);
   const rows = q.data;
 
   const k = useMemo(() => {
@@ -38,6 +40,7 @@ export default function SyllabusPage() {
         sub="Cambridge IGCSE syllabuses for Grades 9–10 — papers and weightings, topic coverage by section, and students’ Core or Extended entries."
         actions={<>
           <Button icon="award" to="/grading">Grading scheme</Button>
+          <Button icon="bookOpen" onClick={() => setCatalogue(true)}>Cambridge catalogue</Button>
           {can('grading.manage') && <Button variant="primary" icon="plus" onClick={() => setAdding(true)}>Add syllabus</Button>}
         </>}
       />
@@ -71,9 +74,15 @@ export default function SyllabusPage() {
                   key: 'title', label: 'Syllabus', sortable: false, render: (r) => (
                     <>
                       <span className="t-bold">{r.title}</span>
-                      <div className="t-micro t-muted">{r.subject} · {r.awardingBody}{r.examSeriesYears ? ` · exams ${r.examSeriesYears}` : ''}{r.isActive ? '' : ' · inactive'}</div>
+                      <div className="t-micro t-muted">{r.subject} · {gradesLabel(r.gradeLevels)}{r.isActive ? '' : ' · inactive'}</div>
                     </>
                   ),
+                },
+                {
+                  key: 'docs', label: 'Cambridge syllabus by grade', sortable: false, render: (r) => r.cambridge
+                    // Links open in a new tab; keep the click off the row.
+                    ? <div onClick={(e) => e.stopPropagation()}><GradeDocs compact byGrade={r.cambridge.byGrade} subjectPage={r.cambridge.subjectPage} /></div>
+                    : <span className="t-micro t-muted">School-assessed</span>,
                 },
                 { key: 'tiered', label: 'Tiers', sortable: false, render: (r) => r.tiered ? <Badge tone="info">Core / Extended</Badge> : <span className="t-sm t-muted">Untiered (A*–G)</span> },
                 { key: 'papers', label: 'Papers', className: 'num', sortable: false, render: (r) => <span className="t-num">{r.componentCount}</span> },
@@ -95,6 +104,7 @@ export default function SyllabusPage() {
         </Card>
       </div>
       {adding && <SyllabusForm onClose={() => setAdding(false)} onSaved={(id) => navigate(`/syllabus/${id}`)} />}
+      {catalogue && <CatalogueModal onClose={() => setCatalogue(false)} />}
     </Page>
   );
 }

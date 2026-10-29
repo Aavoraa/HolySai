@@ -4,7 +4,7 @@ import { api } from '@/api/client';
 import { useApiMutation, useApiQuery, useInvalidate } from '@/hooks/useApi';
 import {
   AiNotice, Badge, Banner, Button, Card, DataTable, ErrorState, Icon, IconButton, Modal, Page, PageHead, PageSkeleton,
-  SelectField, TextArea, TextField, useConfirm, useToast,
+  SelectField, TextArea, TextField, useToast,
 } from '@/components/ui';
 import { errorMessage } from '@/components/ui/states';
 import { cx, fmt } from '@/lib/format';
@@ -57,7 +57,7 @@ export default function SheetPage() {
 
   const [pageIdx, setPageIdx] = useState(0);
   const [openQ, setOpenQ] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<'transcript' | 'reassign' | 'order' | null>(null);
+  const [dialog, setDialog] = useState<'reassign' | 'order' | null>(null);
   const [starting, setStarting] = useState(false);
 
   useEffect(() => {
@@ -90,8 +90,13 @@ export default function SheetPage() {
       <PageHead title={s.student_full.name}
         crumbs={[{ label: 'Paper Correction', to: BASE }, { label: s.exam.name, to: `${BASE}/exams/${s.exam.id}` }, { label: s.student_full.name }]}
         sub={`Admission ${s.student_full.admission_no} · ${s.student_full.class_name}${s.student_full.section ? ` · Section ${s.student_full.section}` : ''} · Roll ${s.student_full.roll_no || '—'}`}
-        actions={<div className="pc-total"><span className="pc-total__n">{marks(s.totals.total)} / {marks(s.totals.maximum)}</span>
-          <span className="t-xs t-muted">{s.totals.approved ? 'all marks approved' : `${s.totals.marked}/${s.totals.questions} marked`}</span><EvStatus value={s.status} /></div>} />
+        actions={<div className="row g-4" style={{ alignItems: 'center' }}>
+          {ai?.reading_available
+            ? <Button variant="primary" icon={ext ? 'refresh' : 'sparkle'} disabled={busy} loading={starting} onClick={() => start('process', {}, 'Claude is reading the sheet…')}>{ext ? 'Refresh' : 'Read & mark with Claude'}</Button>
+            : <span className="t-xs t-warning">Reading unavailable: {ai?.reading_reason}</span>}
+          <div className="pc-total"><span className="pc-total__n">{marks(s.totals.total)} / {marks(s.totals.maximum)}</span>
+            <span className="t-xs t-muted">{s.totals.approved ? 'all marks approved' : `${s.totals.marked}/${s.totals.questions} marked`}</span><EvStatus value={s.status} /></div>
+        </div>} />
 
       <div className="pc-review">
         <PageViewer sheet={s} index={pageIdx} onIndex={setPageIdx} onOrder={() => setDialog('order')} />
@@ -118,31 +123,9 @@ export default function SheetPage() {
             )}
           </Card>
 
-          <Card icon="scan" title="Reading" tight>
-            {busy && <Banner tone="neutral" icon="clock">{s.job!.kind} in progress… {s.job!.progress}</Banner>}
-            {s.job?.status === 'failed' && <Banner tone="critical" icon="alert">Last job failed: {s.job.error}. You can retry.</Banner>}
-            {ext ? (
-              <div className="t-sm row g-2 wrap mt-2">
-                <span>Read by</span><Badge tone="navy" icon="sparkle">{ext.model || 'Claude'}</Badge><span>in {(ext.duration_ms / 1000).toFixed(1)} s</span>
-                {ext.redacted && <Badge>name area blanked before sending</Badge>}
-                <Button size="sm" variant="quiet" onClick={() => setDialog('transcript')}>Full transcription</Button>
-              </div>
-            ) : <p className="t-sm t-muted">Not read yet.</p>}
-            <p className="t-xs t-muted mt-2">Claude usage for this sheet: {s.cost.input_tokens + s.cost.output_tokens} tokens · about ${s.cost.cost_usd}</p>
-            {ext?.unassigned_text && <details className="mt-2 t-sm"><summary>Writing not under any question</summary><div className="pc-answer">{ext.unassigned_text}</div></details>}
-            {ext && ext.warnings.length > 0 && <ul className="pc-list pc-flags">{ext.warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
-            {s.extractions.length > 1 && (
-              <details className="mt-2"><summary className="t-sm">{s.extractions.length} readings</summary>
-                <Readings sheet={s} />
-              </details>
-            )}
-            <div className="row g-2 wrap mt-3">
-              {ai?.reading_available
-                ? <Button variant="primary" icon="sparkle" disabled={busy} loading={starting} onClick={() => start('process', {}, 'Claude is reading the sheet…')}>{ext ? 'Read again with Claude' : 'Read & mark with Claude'}</Button>
-                : <span className="t-xs t-warning">Reading unavailable: {ai?.reading_reason}</span>}
-              {ext && ai?.marking_available && <Button disabled={busy || starting} onClick={() => start('evaluate', { force: false }, 'Marking…')}>Mark unmarked answers</Button>}
-            </div>
-          </Card>
+          {/* Reading details are not shown; "Refresh" (read the sheet again) sits beside the mark in the header. */}
+          {busy && <Banner tone="neutral" icon="clock">{s.job!.kind} in progress… {s.job!.progress}</Banner>}
+          {!busy && s.job?.status === 'failed' && <Banner tone="critical" icon="alert">Reading failed: {s.job.error}. Use “Refresh” to retry.</Banner>}
 
           <AiNotice />
           {s.questions.map((row) => (
@@ -155,19 +138,6 @@ export default function SheetPage() {
         </div>
       </div>
 
-      {dialog === 'transcript' && ext && (
-        <Modal open onClose={() => setDialog(null)} title={`Full transcription (${ext.model || 'Claude'})`} size="wide">
-          <div className="col g-3">
-            {ext.pages.map((p) => (
-              <div key={p.page_no} className="pc-history">
-                <div className="row g-2 wrap"><span className="t-bold">Page {p.page_no}</span>{p.warnings.map((w) => <Badge key={w} tone="warning">{w}</Badge>)}
-                  {p.uncertain.length > 0 && <Badge tone="critical">{p.uncertain.length} uncertain</Badge>}</div>
-                <div className="pc-answer mt-2">{p.text || '(nothing read)'}</div>
-              </div>
-            ))}
-          </div>
-        </Modal>
-      )}
       {dialog === 'reassign' && <ReassignModal sheet={s} onClose={() => setDialog(null)} />}
       {dialog === 'order' && <PageOrderModal sheet={s} onClose={() => setDialog(null)} />}
     </Page>
@@ -212,28 +182,6 @@ function PageViewer({ sheet, index, onIndex, onOrder }: { sheet: Sheet; index: n
         {url ? <img src={url} alt={`Answer sheet page ${page.page_no}`} style={{ width: `${zoom * 100}%` }} /> : <div className="pc-viewer__loading"><Icon name="fileText" size={28} /></div>}
       </div>
     </div>
-  );
-}
-
-function Readings({ sheet }: { sheet: Sheet }) {
-  const confirm = useConfirm();
-  const activate = useApiMutation<string>('post', (eid) => `${EV}/submissions/${sheet.id}/extractions/${eid}/activate`, {
-    invalidate: ['/exam-correction'], success: 'Reading switched', body: () => ({}),
-  });
-  return (
-    <DataTable compact stack={false} rows={sheet.extractions} rowKey={(e) => e.id}
-      columns={[
-        { key: 'm', label: 'Model', render: (e) => <span className="t-xs">{e.model ?? ''}</span> },
-        { key: 's', label: 'Status', render: (e) => <EvStatus value={e.status} /> },
-        { key: 'w', label: 'When', render: (e) => <span className="t-xs">{fmt.dateTime(e.created_at)}</span> },
-        {
-          key: 'a', label: '', className: 'num', render: (e) => e.active ? <Badge tone="success">in use</Badge> : e.status === 'done'
-            ? <Button size="sm" onClick={async () => {
-              if (await confirm({ title: 'Use this reading?', body: 'Answers switch to this reading. Teacher corrections and approved marks are kept.', confirmLabel: 'Use this reading' })) activate.mutate(e.id);
-            }}>Use this</Button>
-            : <span className="t-xs t-critical">{e.error}</span>,
-        },
-      ]} />
   );
 }
 

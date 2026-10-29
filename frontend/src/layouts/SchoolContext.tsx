@@ -25,7 +25,8 @@ interface SchoolCtx {
 const Ctx = createContext<SchoolCtx | null>(null);
 const KEY = 'hs.context';
 
-function readStored(): { campusId?: string; scope?: 'campus' | 'group'; yearId?: string } {
+// campusCode is left here by the sign-in page; it becomes a campusId once the campuses load.
+function readStored(): { campusId?: string; campusCode?: string; scope?: 'campus' | 'group'; yearId?: string } {
   try {
     return JSON.parse(localStorage.getItem(KEY) ?? '{}');
   } catch {
@@ -45,6 +46,12 @@ export function SchoolContextProvider({ children }: { children: ReactNode }) {
       /* private mode: selection simply isn't remembered */
     }
   }, [state]);
+
+  useEffect(() => {
+    if (!state.campusCode || !lookups) return;
+    const picked = lookups.campuses.find((c) => c.code === state.campusCode);
+    setState(({ campusCode: _, ...s }) => (picked ? { ...s, campusId: picked.id, scope: 'campus' } : s));
+  }, [lookups, state.campusCode]);
 
   const value = useMemo<SchoolCtx>(() => {
     const campuses = lookups?.campuses ?? [];

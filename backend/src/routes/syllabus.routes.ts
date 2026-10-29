@@ -38,6 +38,13 @@ r.put('/grading/scale/boundaries', DEFINE, validate(V.boundariesUpdate),
 r.get('/syllabuses', READ, validate(V.syllabusesQuery, 'query'),
   async (req: Request, res: Response) => ok(res, await svc.listSyllabuses(req.user!, v(req, 'query')), 'Syllabuses'));
 
+// Cambridge IGCSE catalogue: every Cambridge syllabus with the document that applies to each grade.
+r.get('/syllabus-catalogue', READ, validate(V.catalogueQuery, 'query'),
+  async (req: Request, res: Response) => ok(res, await svc.listCatalogue(v(req, 'query')), 'Cambridge IGCSE catalogue'));
+
+r.post('/syllabus-catalogue/add', DEFINE, validate(V.catalogueAdd),
+  async (req: Request, res: Response) => created(res, await svc.addFromCatalogue(req, v(req)), 'Syllabus added from the Cambridge catalogue'));
+
 r.get('/syllabuses/:id', READ, id,
   async (req: Request, res: Response) => ok(res, await svc.getSyllabus(req.user!, params<{ id: string }>(req).id), 'Syllabus'));
 

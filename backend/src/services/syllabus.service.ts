@@ -15,9 +15,58 @@ import type { AuthUser } from '../types.js';
  * Teachers only see and update their own sections (404 outside scope).
  */
 
-/** Classes that follow IGCSE syllabuses. */
-const IGCSE_CLASS = `(c.grade_level IN (9, 10) OR c.stage ILIKE '%IGCSE%')`;
+/** Classes that follow IGCSE syllabuses (Grades 9–10, plus any grade a syllabus is mapped to, e.g. Grade 8). */
+const IGCSE_CLASS = `(c.grade_level IN (9, 10) OR c.stage ILIKE '%IGCSE%'
+  OR c.grade_level IN (SELECT unnest(grade_levels) FROM syllabuses WHERE is_active))`;
 const CURRENT_YEAR = '(SELECT id FROM academic_years WHERE is_current)';
+
+// =============================================================================
+// Cambridge syllabus documents by grade
+// =============================================================================
+interface CambridgeDoc { label: string; from: number; to: number; url: string }
+
+/**
+ * Calendar year of the Cambridge exams that end the current academic year
+ * (May/June after an academic year ending in spring). Grade 10 sits them then;
+ * each grade below sits them a year later per year to go.
+ */
+async function finalExamYear(db?: Queryable) {
+  const r = await one<{ y: number }>(`SELECT extract(year FROM ends_on)::int AS y FROM academic_years WHERE is_current`, [], db);
+  return r?.y ?? new Date().getFullYear();
+}
+
+/** The newest published syllabus document that covers `year`, if Cambridge has published one. */
+function documentFor(docs: CambridgeDoc[], year: number) {
+  return [...docs].sort((a, b) => b.from - a.from).find((d) => d.from <= year && year <= d.to) ?? null;
+}
+
+/**
+ * For each grade: the exam year and the syllabus document that applies to it.
+ * The catalogue lists only the latest syllabus and the one for 2026 exams, so a year
+ * between or beyond them can be missing — the subject page then has the right one.
+ */
+function documentsByGrade(docs: CambridgeDoc[], grades: number[], examYear: number) {
+  return [...grades].sort((a, b) => b - a).map((grade) => {
+    const year = examYear + (10 - grade);
+    const doc = documentFor(docs, year);
+    return { grade, examYear: year, document: doc, status: doc ? 'listed' as const : 'missing' as const };
+  });
+}
+
+/** Cambridge links for a school syllabus row joined to the catalogue (cat_* columns), or null. */
+function cambridgeInfo(r: { gradeLevels: number[]; catDocuments?: CambridgeDoc[] | null; catPage?: string | null; catSubject?: string | null; catGrading?: string | null }, examYear: number) {
+  if (!r.catDocuments) return null;
+  return {
+    subject: r.catSubject, grading: r.catGrading, subjectPage: r.catPage, documents: r.catDocuments,
+    byGrade: documentsByGrade(r.catDocuments, r.gradeLevels, examYear),
+  };
+}
+const CAT_COLS = `cat.documents AS "catDocuments", cat.subject_page AS "catPage", cat.subject AS "catSubject", cat.grading AS "catGrading"`;
+const CAT_JOIN = 'LEFT JOIN cambridge_igcse_catalogue cat ON cat.code = sy.syllabus_code';
+const withCambridge = <T extends { gradeLevels: number[]; catDocuments?: CambridgeDoc[] | null }>(r: T, examYear: number) => {
+  const { catDocuments: _d, catPage: _p, catSubject: _s, catGrading: _g, ...rest } = r as T & Record<string, unknown>;
+  return { ...rest, cambridge: cambridgeInfo(r as never, examYear) };
+};
 
 /** Where builder for the current-year IGCSE sections the user may see (aliases sec, c). */
 function igcseSections(user: AuthUser) {
@@ -45,19 +94,18 @@ export async function listSyllabuses(user: AuthUser, f: { stage?: string; subjec
     `WITH secs AS (SELECT sec.id, c.grade_level FROM sections sec JOIN classes c ON c.id = sec.class_id ${w.sql}),
           pupils AS (SELECT s.id FROM students s WHERE s.deleted_at IS NULL AND s.status = 'active' AND s.section_id IN (SELECT id FROM secs))
      SELECT sy.id, sy.syllabus_code AS "syllabusCode", sy.title, sy.stage, sy.awarding_body AS "awardingBody",
-            sy.exam_series_years AS "examSeriesYears", sy.tiered, sy.grading, sy.is_active AS "isActive",
-            sub.id AS "subjectId", sub.code AS "subjectCode", sub.name AS subject,
+            sy.exam_series_years AS "examSeriesYears", sy.tiered, sy.grading, sy.is_active AS "isActive", sy.grade_levels AS "gradeLevels",
+            sub.id AS "subjectId", sub.code AS "subjectCode", sub.name AS subject, ${CAT_COLS},
             (SELECT count(*) FROM syllabus_topics t WHERE t.syllabus_id = sy.id)::int AS topics,
             (SELECT count(*) FROM secs)::int AS "allSections",
-            -- Sections in the grade levels that track this syllabus (all IGCSE sections until tracking starts).
-            COALESCE(NULLIF((SELECT count(*) FROM secs WHERE secs.grade_level IN (
-                SELECT c2.grade_level FROM syllabus_topic_coverage cv JOIN syllabus_topics t ON t.id = cv.topic_id
-                  JOIN sections s2 ON s2.id = cv.section_id JOIN classes c2 ON c2.id = s2.class_id WHERE t.syllabus_id = sy.id)), 0),
-              (SELECT count(*) FROM secs))::int AS sections,
+            -- Sections in the grades that take this syllabus (e.g. Physics in Grade 10 only).
+            (SELECT count(*) FROM secs WHERE secs.grade_level = ANY (sy.grade_levels))::int AS sections,
             (SELECT count(*) FROM syllabus_topic_coverage cv JOIN syllabus_topics t ON t.id = cv.topic_id
-              WHERE t.syllabus_id = sy.id AND cv.status = 'Covered' AND cv.section_id IN (SELECT id FROM secs))::int AS covered,
+              WHERE t.syllabus_id = sy.id AND cv.status = 'Covered'
+                AND cv.section_id IN (SELECT id FROM secs WHERE secs.grade_level = ANY (sy.grade_levels)))::int AS covered,
             (SELECT count(*) FROM syllabus_topic_coverage cv JOIN syllabus_topics t ON t.id = cv.topic_id
-              WHERE t.syllabus_id = sy.id AND cv.status = 'In progress' AND cv.section_id IN (SELECT id FROM secs))::int AS "inProgress",
+              WHERE t.syllabus_id = sy.id AND cv.status = 'In progress'
+                AND cv.section_id IN (SELECT id FROM secs WHERE secs.grade_level = ANY (sy.grade_levels)))::int AS "inProgress",
             (SELECT count(*) FROM student_syllabus_entries e WHERE e.syllabus_id = sy.id AND e.student_id IN (SELECT id FROM pupils))::int AS entries,
             (SELECT count(*) FROM student_syllabus_entries e WHERE e.syllabus_id = sy.id AND e.tier = 'Core' AND e.student_id IN (SELECT id FROM pupils))::int AS "coreEntries",
             (SELECT count(*) FROM pupils)::int AS students,
@@ -65,14 +113,17 @@ export async function listSyllabuses(user: AuthUser, f: { stage?: string; subjec
                                                         'maxMarks', sc.max_marks::float, 'weightingPercent', sc.weighting_percent::float)
                               ORDER BY sc.sort_order, sc.paper_no)
                         FROM syllabus_components sc WHERE sc.syllabus_id = sy.id), '[]') AS components
-       FROM syllabuses sy JOIN subjects sub ON sub.id = sy.subject_id
+       FROM syllabuses sy JOIN subjects sub ON sub.id = sy.subject_id ${CAT_JOIN}
       ${conds.length ? `WHERE ${conds.join(' AND ')}` : ''}
-      ORDER BY sy.syllabus_code IS NULL, sub.name, sy.syllabus_code`,
+      -- Newest first, so a syllabus just added (e.g. from the Cambridge catalogue) leads the list;
+      -- syllabuses set up together keep subject order.
+      ORDER BY sy.created_at DESC, sy.syllabus_code IS NULL, sub.name, sy.syllabus_code`,
     w.params,
   );
+  const examYear = await finalExamYear();
   return rows.map((r) => {
     const slots = r.topics * r.sections;
-    return { ...r, coveragePct: slots ? Math.round((100 * r.covered) / slots) : null, componentCount: r.components.length };
+    return { ...withCambridge(r, examYear), coveragePct: slots ? Math.round((100 * r.covered) / slots) : null, componentCount: r.components.length };
   });
 }
 
@@ -80,12 +131,13 @@ async function syllabusRow(id: string, db?: Queryable) {
   const s = await one(
     `SELECT sy.id, sy.syllabus_code AS "syllabusCode", sy.title, sy.stage, sy.awarding_body AS "awardingBody",
             sy.exam_series_years AS "examSeriesYears", sy.tiered, sy.grading, sy.notes, sy.is_active AS "isActive",
-            sub.id AS "subjectId", sub.code AS "subjectCode", sub.name AS subject, sy.updated_at AS "updatedAt"
-       FROM syllabuses sy JOIN subjects sub ON sub.id = sy.subject_id WHERE sy.id = $1`,
+            sy.grade_levels AS "gradeLevels", sub.id AS "subjectId", sub.code AS "subjectCode", sub.name AS subject, sy.updated_at AS "updatedAt",
+            ${CAT_COLS}
+       FROM syllabuses sy JOIN subjects sub ON sub.id = sy.subject_id ${CAT_JOIN} WHERE sy.id = $1`,
     [id], db,
   );
   if (!s) throw notFound('Syllabus not found', 'SYLLABUS_NOT_FOUND');
-  return s;
+  return withCambridge(s, await finalExamYear(db));
 }
 
 export async function getSyllabus(user: AuthUser, id: string) {
@@ -146,18 +198,19 @@ export async function getSyllabus(user: AuthUser, id: string) {
     const inProgress = coverage.filter((c) => c.sectionId === s.id && c.status === 'In progress').length;
     return { ...s, covered, inProgress, pct: topics.length ? Math.round((100 * covered) / topics.length) : null };
   });
-  // Coverage is measured over the grade levels that track this syllabus (e.g. Physics in Grade 10 only).
-  const trackedGrades = new Set(sectionSummary.filter((x) => x.covered || x.inProgress).map((x) => x.gradeLevel));
-  const relevant = trackedGrades.size ? sectionSummary.filter((x) => trackedGrades.has(x.gradeLevel)) : sectionSummary;
+  // Coverage is measured over the grades that take this syllabus (e.g. Physics in Grade 10 only).
+  const grades = new Set(syllabus.gradeLevels as number[]);
+  const relevant = sectionSummary.filter((x) => grades.has(x.gradeLevel));
+  const relevantIds = new Set(relevant.map((x) => x.id));
   const slots = topics.length * relevant.length;
-  const covered = coverage.filter((c) => c.status === 'Covered').length;
+  const covered = coverage.filter((c) => c.status === 'Covered' && relevantIds.has(c.sectionId)).length;
   const weight = components.reduce((a, c) => a + (c.weightingPercent ?? 0), 0);
   return {
     ...syllabus,
     components,
     topics: topics.map((t) => ({ ...t, coverage: byTopic.get(t.id) ?? {} })),
     sections: sectionSummary,
-    coverage: { slots, covered, inProgress: coverage.filter((c) => c.status === 'In progress').length, pct: slots ? Math.round((100 * covered) / slots) : null },
+    coverage: { slots, covered, inProgress: coverage.filter((c) => c.status === 'In progress' && relevantIds.has(c.sectionId)).length, pct: slots ? Math.round((100 * covered) / slots) : null },
     entries: entrySummary,
     componentWeightTotal: Math.round(weight * 10) / 10,
   };
@@ -166,6 +219,7 @@ export async function getSyllabus(user: AuthUser, id: string) {
 const SYL_COLS: Record<string, string> = {
   subjectId: 'subject_id', stage: 'stage', awardingBody: 'awarding_body', syllabusCode: 'syllabus_code', title: 'title',
   examSeriesYears: 'exam_series_years', tiered: 'tiered', grading: 'grading', notes: 'notes', isActive: 'is_active',
+  gradeLevels: 'grade_levels',
 };
 
 async function assertSubject(subjectId: string, db: Queryable) {
@@ -190,6 +244,48 @@ export async function createSyllabus(req: Request, input: Record<string, unknown
     if (pg23505(e)) throw conflict(`A syllabus with code ${input.syllabusCode} already exists`, 'SYLLABUS_CODE_TAKEN');
     throw e;
   }
+}
+
+// =============================================================================
+// Cambridge IGCSE catalogue (every Cambridge syllabus, for adding to the school)
+// =============================================================================
+export async function listCatalogue(f: { q?: string; grading?: 'A*-G' | '9-1' }) {
+  const w = new Where();
+  if (f.q) w.add('(cat.subject ILIKE ? OR cat.code ILIKE ?)', likeTerm(f.q), likeTerm(f.q));
+  if (f.grading) w.add('cat.grading = ?', f.grading);
+  const rows = await many<{ code: string; subject: string; grading: string; documents: CambridgeDoc[]; subjectPage: string | null; school: unknown }>(
+    `SELECT cat.code, cat.subject, cat.grading, cat.documents, cat.subject_page AS "subjectPage",
+            (SELECT json_build_object('id', sy.id, 'title', sy.title, 'gradeLevels', sy.grade_levels, 'isActive', sy.is_active)
+               FROM syllabuses sy WHERE sy.syllabus_code = cat.code) AS school
+       FROM cambridge_igcse_catalogue cat ${w.sql}
+      ORDER BY cat.subject, cat.code`,
+    w.params,
+  );
+  const examYear = await finalExamYear();
+  return {
+    // Grade 10 sits the exams at the end of this academic year; Grade 9 the year after.
+    examYears: { 10: examYear, 9: examYear + 1 },
+    rows: rows.map((r) => ({ ...r, byGrade: documentsByGrade(r.documents, [9, 10], examYear) })),
+  };
+}
+
+/** Adds a catalogue syllabus to the school, mapped to a subject and the grades that take it. */
+export async function addFromCatalogue(req: Request, b: { code: string; subjectId: string; gradeLevels: number[]; tiered: boolean }) {
+  const cat = await one<{ code: string; subject: string; grading: string; documents: CambridgeDoc[] }>(
+    'SELECT code, subject, grading, documents FROM cambridge_igcse_catalogue WHERE code = $1', [b.code]);
+  if (!cat) throw notFound('That code is not in the Cambridge IGCSE catalogue', 'CATALOGUE_CODE_NOT_FOUND');
+  if (cat.grading !== 'A*-G') {
+    throw conflict('9–1 graded syllabuses cannot be added yet: the school grade scale is A*–G. Choose the A*–G version of this subject.', 'GRADING_NOT_SUPPORTED');
+  }
+  const examYear = await finalExamYear();
+  // Exam series shown on the syllabus: the document for the soonest exam among the chosen grades.
+  const soonest = documentsByGrade(cat.documents, b.gradeLevels, examYear).find((g) => g.document)?.document;
+  return createSyllabus(req, {
+    subjectId: b.subjectId, syllabusCode: cat.code, title: `Cambridge IGCSE ${cat.subject.replace(/ - /g, ' – ')}`,
+    examSeriesYears: soonest ? (soonest.from === soonest.to ? String(soonest.from) : `${soonest.from}-${soonest.to}`) : null,
+    tiered: b.tiered, grading: 'A*-G', gradeLevels: b.gradeLevels,
+    notes: 'Added from the Cambridge IGCSE catalogue. Add its papers and topics from the syllabus document for each grade.',
+  });
 }
 
 export async function updateSyllabus(req: Request, id: string, input: Record<string, unknown>) {
