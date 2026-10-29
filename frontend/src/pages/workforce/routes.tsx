@@ -14,6 +14,9 @@ const OvertimePage = page(() => import('./OvertimePage'));
 const WorkloadPage = page(() => import('./WorkloadPage'));
 const CpdPage = page(() => import('./CpdPage'));
 const PayrollPage = page(() => import('./PayrollPage'));
+const SalaryDashboardPage = page(() => import('./SalaryDashboardPage'));
+const HrLettersPage = page(() => import('./letters').then((m) => ({ default: m.HrLettersPage })));
+const LetterPrintPage = page(() => import('./letters').then((m) => ({ default: m.LetterPrintPage })));
 const PayslipsPage = page(() => import('./PayslipsPage'));
 const PayslipPrintPage = page(() => import('./PayslipPrintPage'));
 const StaffSelfPage = page(() => import('./StaffSelfPage'));
@@ -28,6 +31,9 @@ export const routes: AppRoute[] = [
   { path: '/overtime', perm: ['hr.read'], element: <OvertimePage /> },
   { path: '/workload', perm: ['hr.read'], element: <WorkloadPage /> },
   { path: '/cpd', perm: ['hr.read'], element: <CpdPage /> },
+  { path: '/salary-dashboard', perm: ['payroll.read'], element: <SalaryDashboardPage /> },
+  { path: '/hr-letters', perm: ['hr.read'], element: <HrLettersPage /> },
+  { path: '/hr-letters/:id', perm: ['hr.read'], element: <LetterPrintPage /> },
   { path: '/payroll', perm: ['payroll.read'], element: <PayrollPage /> },
   { path: '/payslips', perm: ['payroll.read'], element: <PayslipsPage /> },
   { path: '/payslips/:id', perm: ['payroll.read'], element: <PayslipPrintPage /> },

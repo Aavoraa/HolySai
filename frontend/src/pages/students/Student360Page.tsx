@@ -2,18 +2,18 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
 import { api } from '@/api/client';
-import { useApiMutation, useApiQuery, useInvalidate, usePagedQuery } from '@/hooks/useApi';
+import { useApiMutation, useApiQuery, useInvalidate } from '@/hooks/useApi';
 import {
   AiNotice, Avatar, Badge, Banner, Button, Card, Chart, charts, DataTable, Dl, Empty, ErrorState, Grid, Icon, Kpi, Legend, Meter,
-  Modal, Page, PageSkeleton, Ring, Risk, SearchInput, SelectField, Status, Stepper, Tabs, TextArea, TextField, Timeline, StudentLink,
-  useToast,
+  Modal, Page, PageSkeleton, Ring, SelectField, Status, Stepper, Tabs, TextArea, TextField, Timeline,
+  AttachField, errorMessage, useToast,
 } from '@/components/ui';
 import { TrackingPanel } from '@/components/tracking/TrackingPanel';
 import { fmt, todayKey } from '@/lib/format';
 import { gradeFor, gradeTone, useGradeScale } from '@/lib/grades';
-import type { StudentRow } from '@/api/types';
 import { StudentFormModal } from './StudentFormModal';
 import { AwaitingSuperAdmin } from '../planning/AwaitingSuperAdmin';
+import { viewFile } from '../admissions/AdmissionForm';
 import { TrendCell, TODAY_LABEL, toneForToday } from './StudentsPage';
 
 export interface Profile {
@@ -39,7 +39,10 @@ export interface Profile {
   skills: { name: string; value: number; confidence: string | null; evidence: string[] }[];
   interests: string[];
   activities: { name: string; category: string; role: string; since: string; hours: number; status: string }[];
-  achievements: { id: string; title: string; type: string; level: string | null; date: string; verified: boolean }[];
+  achievements: {
+    id: string; title: string; type: string; level: string | null; date: string; verified: boolean;
+    documentId?: string | null; fileName?: string | null; fileType?: string | null;
+  }[];
   behaviour: { id: string; date: string; type: string; note: string; by: string | null }[];
   observations?: { id: string; date: string; text: string; by: string; role: string }[];
   interventions?: { id: string; code: string; signal: string; signalType: string; stage: number; opened: string; action: string | null; next: string | null; decision: string | null; closedAt: string | null; owner: string | null }[];
@@ -48,6 +51,7 @@ export interface Profile {
   transport: {
     routeId: string; routeCode: string; routeName: string; area: string; runStatus: string; delayMinutes: number; eta: string | null; busNo: string | null;
     registrationNo: string | null; driver: string | null; attendant: string | null; stopName: string | null; pickupTime: string | null; dropTime: string | null;
+    stopId?: string | null;
   } | null;
   timeline: { date: string; title: string; body: string | null; category: string; tone: string }[];
   talent: { strengths: { name: string; score: number; confidence: string | null; evidence: string[] }[] };
@@ -65,10 +69,10 @@ export interface Profile {
 const EW_STAGES = ['Signal', 'Teacher Review', 'Intervention', 'Action', 'Follow-up', 'Closed'];
 type Tab = 'overview' | 'academics' | 'attendance' | 'skills' | 'activities' | 'behaviour' | 'wellbeing' | 'achievements' | 'portfolio' | 'interventions' | 'documents' | 'tracking';
 
+/** One student's 360 profile. Students are chosen from the register (/students). */
 export default function Student360Page() {
   const { id } = useParams();
-  if (!id) return <StudentPicker />;
-  return <Student360 id={id} />;
+  return <Student360 id={id!} />;
 }
 
 export function Student360({ id }: { id: string }) {
@@ -148,7 +152,8 @@ export function Student360({ id }: { id: string }) {
         <dl className="profilehead__stats">
           <div>
             <dt>Attendance</dt>
-            <dd className={s.attendance != null && s.attendance < 85 ? 't-critical' : undefined}>{s.attendance != null ? `${s.attendance}%` : '—'}</dd>
+            {/* School rule: 80% or more is green, below 80% is red. */}
+            <dd className={s.attendance == null ? undefined : s.attendance >= 80 ? 't-success' : 't-critical'}>{s.attendance != null ? `${s.attendance}%` : '—'}</dd>
             <span>this academic year</span>
           </div>
           <div>
@@ -202,6 +207,7 @@ export function Student360({ id }: { id: string }) {
             firstName: s.firstName, lastName: s.lastName, dateOfBirth: s.dateOfBirth, gender: s.gender, bloodGroup: s.bloodGroup ?? '',
             campusId: s.campusId, sectionId: s.sectionId ?? '', classId: undefined, house: s.house ?? '', address: s.address ?? '',
             city: s.city ?? '', pincode: s.pincode ?? '', admittedOn: s.admittedOn ?? '', medicalNotes: d.wellbeing.medicalNotes ?? '',
+            routeId: d.transport?.routeId ?? '', stopId: d.transport?.stopId ?? '',
           }}
           onClose={() => setEditing(false)}
           onSaved={() => { setEditing(false); q.refetch(); }}
@@ -488,17 +494,21 @@ function AttendanceTab({ d }: { d: Profile }) {
  * strongest skill and the development area. Used on the Student 360 overview and
  * on the student's own home screen.
  */
-export function SkillWebCard({ d, onOpen, title = 'Skill web' }: { d: Profile; onOpen?: () => void; title?: string }) {
-  // A fixed axis order, so webs look alike from one student to the next
+/** The skill radar. A fixed (alphabetical) axis order, so the web has the same shape on every card and from one student to the next. */
+function skillWeb(d: Profile, size: number) {
   const skills = [...d.skills].sort((a, b) => a.name.localeCompare(b.name));
+  return charts.radar({ size, axes: skills.map((k) => k.name), series: [{ name: 'Current', values: skills.map((k) => k.value), color: 'var(--teal)' }] });
+}
+
+export function SkillWebCard({ d, onOpen, title = 'Skill web' }: { d: Profile; onOpen?: () => void; title?: string }) {
   const ranked = [...d.skills].sort((a, b) => b.value - a.value);
   const top = ranked[0], low = ranked[ranked.length - 1];
   return (
     <Card icon="activity" title={title} sub="Built from assessments, activities and teacher observation"
       actions={onOpen && <Button size="sm" variant="quiet" iconRight="arrowRight" onClick={onOpen}>Details</Button>}>
-      {skills.length >= 3 ? (
+      {d.skills.length >= 3 ? (
         <div className="col g-3 center">
-          <Chart svg={charts.radar({ size: 240, axes: skills.map((k) => k.name), series: [{ name: 'Current', values: skills.map((k) => k.value), color: 'var(--teal)' }] })} />
+          <Chart svg={skillWeb(d, 240)} />
           <div className="row g-2 wrap center">
             {top && <Badge tone="success" icon="trending">Strongest: {top.name} {top.value}</Badge>}
             {low && low.name !== top?.name && <Badge tone="warning">Develop: {low.name} {low.value}</Badge>}
@@ -516,7 +526,7 @@ function SkillsTab({ d }: { d: Profile }) {
         {d.skills.length >= 3 ? (
           <div className="row g-5 wrap center">
             <div className="none">
-              <Chart svg={charts.radar({ size: 262, axes: d.skills.map((k) => k.name), series: [{ name: 'Current', values: d.skills.map((k) => k.value), color: 'var(--teal)' }] })} />
+              <Chart svg={skillWeb(d, 262)} />
             </div>
             <div className="grow col g-4" style={{ minWidth: 250 }}>
               {d.skills.map((k) => <Meter key={k.name} label={k.name} value={k.value} right={`${k.value}/100`} tone={k.value >= 80 ? 'teal' : k.value >= 70 ? 'info' : 'amber'} />)}
@@ -633,15 +643,40 @@ function WellbeingTab({ d }: { d: Profile }) {
 }
 
 function AchievementsTab({ d, studentId, canWrite }: { d: Profile; studentId: string; canWrite: boolean }) {
+  const toast = useToast();
+  const invalidate = useInvalidate();
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ title: '', achievementType: 'Competition', level: 'School', achievedOn: todayKey() });
-  const save = useApiMutation<typeof form>('post', `/students/${studentId}/achievements`, {
-    invalidate: [`/students/${studentId}`], success: 'Achievement recorded and verified', onSuccess: () => { setAdding(false); setForm({ ...form, title: '' }); },
-  });
-  const submit = (e: FormEvent) => {
+  // Optional certificate or photo, sent with the achievement as multipart.
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const close = () => { setAdding(false); setFile(null); setFileError(undefined); };
+  const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (form.title.trim().length >= 3) save.mutate({ ...form, title: form.title.trim() });
+    if (form.title.trim().length < 3) return;
+    const body = { ...form, title: form.title.trim() };
+    setSaving(true);
+    try {
+      if (file) {
+        const fd = new FormData();
+        for (const [k, v] of Object.entries(body)) fd.append(k, v);
+        fd.append('file', file);
+        await api.upload(`/students/${studentId}/achievements`, fd, 120_000);
+      } else {
+        await api.post(`/students/${studentId}/achievements`, body);
+      }
+      toast(file ? 'Achievement recorded with its certificate' : 'Achievement recorded and verified', 'success');
+      await invalidate(`/students/${studentId}`);
+      setForm({ ...form, title: '' });
+      close();
+    } catch (err) {
+      toast(errorMessage(err), 'critical');
+    } finally {
+      setSaving(false);
+    }
   };
+  const openFile = (docId: string) => viewFile(`/documents/${docId}/download`, (err) => toast(errorMessage(err), 'critical'));
   return (
     <Card title="Achievements" sub="Verified records that feed the portfolio and talent view"
       actions={canWrite ? <Button size="sm" icon="plus" onClick={() => setAdding(true)}>Add achievement</Button> : undefined}>
@@ -654,20 +689,31 @@ function AchievementsTab({ d, studentId, canWrite }: { d: Profile; studentId: st
                 <div className="grow">
                   <div className="t-sm t-bold">{a.title}</div>
                   <div className="t-micro t-muted mt-1">{fmt.date(a.date)} · {a.type}{a.level ? ` · ${a.level}` : ''}</div>
-                  <div className="mt-2"><Badge tone={a.verified ? 'success' : 'neutral'} icon={a.verified ? 'check' : undefined}>{a.verified ? 'Verified' : 'Unverified'}</Badge></div>
+                  <div className="row g-2 wrap mt-2" style={{ alignItems: 'center' }}>
+                    <Badge tone={a.verified ? 'success' : 'neutral'} icon={a.verified ? 'check' : undefined}>{a.verified ? 'Verified' : 'Unverified'}</Badge>
+                    {a.documentId && (
+                      <Button size="sm" variant="quiet" icon={a.fileType?.startsWith('image/') ? 'camera' : 'fileText'} onClick={() => openFile(a.documentId!)}
+                        title={a.fileName ?? undefined}>{a.fileType?.startsWith('image/') ? 'View photo' : 'View certificate'}</Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : <Empty icon="award" title="No achievements recorded yet" />}
-      <Modal open={adding} onClose={() => setAdding(false)} title="Add achievement" busy={save.isPending}
-        foot={<><Button onClick={() => setAdding(false)}>Cancel</Button><Button variant="primary" type="submit" form="ach-form" loading={save.isPending} disabled={form.title.trim().length < 3}>Save</Button></>}>
+      <Modal open={adding} onClose={close} title="Add achievement" busy={saving}
+        foot={<><Button onClick={close} disabled={saving}>Cancel</Button><Button variant="primary" type="submit" form="ach-form" loading={saving} disabled={form.title.trim().length < 3}>Save</Button></>}>
         <form id="ach-form" className="form-grid" onSubmit={submit}>
           <TextField className="span-2" label="Title" required value={form.title} onChange={(v) => setForm({ ...form, title: v })} maxLength={200} autoFocus />
           <SelectField label="Type" value={form.achievementType} onChange={(v) => setForm({ ...form, achievementType: v })} options={['Competition', 'Academic', 'Co-curricular', 'Attendance', 'Sports', 'Service']} />
           <SelectField label="Level" value={form.level} onChange={(v) => setForm({ ...form, level: v })} options={['School', 'District', 'State', 'National', 'International']} />
           <TextField label="Date" type="date" required value={form.achievedOn} max={todayKey()} onChange={(v) => setForm({ ...form, achievedOn: v })} />
+          <div className="span-2">
+            <span className="label">Certificate or photo <span className="t-muted t-xs">(optional)</span></span>
+            <AttachField file={file} onFile={(f, err) => { setFile(f); setFileError(err); }} error={fileError} disabled={saving}
+              label="Attach a certificate or photo" inputLabel="Certificate or photo file" />
+          </div>
         </form>
       </Modal>
     </Card>
@@ -788,7 +834,11 @@ function DocumentsTab({ d, studentId }: { d: Profile; studentId: string }) {
           {
             key: 'actions', label: '', className: 'num', render: (r) => (
               <div className="row g-2" style={{ justifyContent: 'flex-end' }}>
-                {r.hasFile && <Button size="sm" icon="download" onClick={() => api.download(`/documents/${r.id}/download`, r.name).catch((e) => toast(e.message, 'critical'))}>Download</Button>}
+                {/* View is always shown; without a file it is disabled so it is clear nothing has been uploaded yet. */}
+                <Button size="sm" icon="eye" disabled={!r.hasFile} title={r.hasFile ? 'Open the file in a new tab' : 'No file has been uploaded for this document yet'}
+                  onClick={() => viewFile(`/documents/${r.id}/download`, (e) => toast(errorMessage(e), 'critical'))}>View</Button>
+                {!r.hasFile && <span className="t-micro t-muted">No file uploaded yet</span>}
+                {r.hasFile && <Button size="sm" variant="quiet" icon="download" onClick={() => api.download(`/documents/${r.id}/download`, r.name).catch((e) => toast(e.message, 'critical'))}>Download</Button>}
                 {!r.hasFile && canUpload && <Button size="sm" icon="upload" onClick={() => setUploadFor({ id: r.id, name: r.name })}>Upload</Button>}
                 {r.status === 'Submitted' && can('documents.manage') && !can('approvals.decide') && <AwaitingSuperAdmin short />}
                 {r.status === 'Submitted' && can('approvals.decide') && (
@@ -814,42 +864,5 @@ function DocumentsTab({ d, studentId }: { d: Profile; studentId: string }) {
         </div>
       </Modal>
     </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-function StudentPicker() {
-  const navigate = useNavigate();
-  const [q, setQ] = useState('');
-  const list = usePagedQuery<StudentRow>('/students', { q: q || undefined, pageSize: 12, sort: 'risk' });
-  return (
-    <Page>
-      <div className="pagehead">
-        <div className="grow">
-          <h1 className="pagehead__title">Student 360</h1>
-          <p className="pagehead__sub">Choose a student to open their complete development record.</p>
-        </div>
-      </div>
-      <Card>
-        <SearchInput value={q} onSearch={setQ} placeholder="Search by name or admission number" maxWidth={480} />
-        <div className="mt-4">
-          {list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : (
-            <DataTable
-              rows={list.data?.rows}
-              loading={list.isLoading}
-              rowKey={(r) => r.id}
-              onRowClick={(r) => navigate(`/student-360/${r.id}`)}
-              emptyText="No students match that search."
-              columns={[
-                { key: 'name', label: 'Student', render: (r) => <StudentLink id={r.id} name={r.fullName} meta={`${r.grade}${r.section} · ${r.admissionNo}`} /> },
-                { key: 'risk', label: 'Risk', render: (r) => <Risk value={r.risk} /> },
-                { key: 'attendance', label: 'Attendance', render: (r) => (r.attendance != null ? `${r.attendance}%` : '—') },
-                { key: 'go', label: '', className: 'num', render: () => <Icon name="chevronRight" size={15} /> },
-              ]}
-            />
-          )}
-        </div>
-      </Card>
-    </Page>
   );
 }

@@ -13,8 +13,52 @@ export interface SyllabusRow {
   id: string; syllabusCode: string | null; title: string; stage: string; awardingBody: string; examSeriesYears: string | null;
   tiered: boolean; grading: string; isActive: boolean; subjectId: string; subjectCode: string; subject: string;
   topics: number; sections: number; covered: number; inProgress: number; entries: number; coreEntries: number; students: number;
-  coveragePct: number | null; componentCount: number;
+  coveragePct: number | null; componentCount: number; gradeLevels: number[]; cambridge: CambridgeInfo | null;
   components: { id: string; paperNo: string; name: string; tier: ComponentTier; maxMarks: number | null; weightingPercent: number | null }[];
+}
+
+/** A published Cambridge syllabus document and the exam years it covers. */
+export interface CambridgeDoc { label: string; from: number; to: number; url: string }
+/** The document that applies to one grade, from the year that grade sits its exams. */
+export interface GradeDoc { grade: number; examYear: number; document: CambridgeDoc | null; status: 'listed' | 'missing' }
+export interface CambridgeInfo { subject: string; grading: string; subjectPage: string | null; documents: CambridgeDoc[]; byGrade: GradeDoc[] }
+
+export const IGCSE_GRADES = [8, 9, 10];
+export const gradesLabel = (g: number[]) => {
+  const s = [...g].sort((a, b) => a - b);
+  if (!s.length) return '—';
+  return s.length === 1 ? `Grade ${s[0]}` : `Grades ${s.slice(0, -1).join(', ')} & ${s[s.length - 1]}`;
+};
+
+/** Per grade: "Grade 10 · exams 2027 — 2025–2027 Syllabus (PDF)", or a pointer to the subject page when the list has none. */
+export function GradeDocs({ byGrade, subjectPage, compact }: { byGrade: GradeDoc[]; subjectPage?: string | null; compact?: boolean }) {
+  return (
+    <div className={compact ? 'col g-1' : 'col g-2'}>
+      {byGrade.map((g) => (
+        <div key={g.grade} className={compact ? 't-micro' : 't-sm'}>
+          <span className="t-bold">Grade {g.grade}</span> <span className="t-muted">· exams {g.examYear} —</span>{' '}
+          {g.document
+            ? <a href={g.document.url} target="_blank" rel="noopener noreferrer">{g.document.label} (PDF)</a>
+            : <span className="t-warning">not in the Cambridge list{subjectPage ? <> — see the <a href={subjectPage} target="_blank" rel="noopener noreferrer">subject page</a></> : ''}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Checkboxes for the grades that take a syllabus. */
+export function GradePicker({ value, onChange, error }: { value: number[]; onChange: (g: number[]) => void; error?: string }) {
+  const toggle = (g: number, on: boolean) => onChange(on ? [...value, g].sort((a, b) => a - b) : value.filter((x) => x !== g));
+  return (
+    <div className="field">
+      <span className="label">Taught in <span className="t-critical">*</span></span>
+      <div className="row g-4 wrap">
+        {IGCSE_GRADES.map((g) => <Checkbox key={g} checked={value.includes(g)} onChange={(on) => toggle(g, on)} label={`Grade ${g}`} />)}
+      </div>
+      <span className="t-micro t-muted">IGCSE is a two-year course, usually Grades 9 and 10. Grade 10 sits the exams at the end of this year.</span>
+      {error && <span className="field__error" role="alert">{error}</span>}
+    </div>
+  );
 }
 
 export interface SyllabusComponent {
@@ -82,7 +126,7 @@ export function SyllabusForm({ initial, onClose, onSaved }: { initial?: Syllabus
   const [f, setF] = useState({
     subjectId: initial?.subjectId ?? '', syllabusCode: initial?.syllabusCode ?? '', title: initial?.title ?? '', stage: initial?.stage ?? 'IGCSE',
     awardingBody: initial?.awardingBody ?? 'Cambridge International', examSeriesYears: initial?.examSeriesYears ?? '', tiered: initial?.tiered ?? false,
-    notes: initial?.notes ?? '', isActive: initial?.isActive ?? true,
+    notes: initial?.notes ?? '', isActive: initial?.isActive ?? true, gradeLevels: initial?.gradeLevels ?? [9, 10],
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const set = <K extends keyof typeof f>(k: K) => (v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: '' })); };
@@ -96,12 +140,13 @@ export function SyllabusForm({ initial, onClose, onSaved }: { initial?: Syllabus
     if (!f.subjectId) e.subjectId = 'Choose a subject';
     if (f.title.trim().length < 3) e.title = 'Enter the syllabus title';
     if (f.syllabusCode.trim() && !/^[0-9A-Z]{3,6}$/.test(f.syllabusCode.trim())) e.syllabusCode = 'Use the 4-digit Cambridge code, e.g. 0580';
+    if (!f.gradeLevels.length) e.gradeLevels = 'Choose at least one grade';
     setErrors(e);
     if (Object.keys(e).length) return;
     save.mutate({
       subjectId: f.subjectId, syllabusCode: f.syllabusCode.trim() || null, title: f.title.trim(), stage: f.stage.trim() || 'IGCSE',
       awardingBody: f.awardingBody.trim() || 'Cambridge International', examSeriesYears: f.examSeriesYears.trim() || null,
-      tiered: f.tiered, notes: f.notes.trim() || null, isActive: f.isActive,
+      tiered: f.tiered, notes: f.notes.trim() || null, isActive: f.isActive, gradeLevels: f.gradeLevels,
     });
   };
   return (
@@ -118,6 +163,7 @@ export function SyllabusForm({ initial, onClose, onSaved }: { initial?: Syllabus
         <TextField label="Stage" value={f.stage} onChange={set('stage')} maxLength={40} />
         <TextField label="Awarding body" value={f.awardingBody} onChange={set('awardingBody')} maxLength={80} />
       </div>
+      <div className="mt-3"><GradePicker value={f.gradeLevels} onChange={set('gradeLevels')} error={errors.gradeLevels} /></div>
       <div className="row g-4 mt-3 wrap">
         <Checkbox checked={f.tiered} onChange={set('tiered')} label="Tiered — students are entered for Core (C–G) or Extended (A*–E)" />
         <Checkbox checked={f.isActive} onChange={set('isActive')} label="Active" />

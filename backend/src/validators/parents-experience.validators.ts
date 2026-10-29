@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { paginationSchema } from '../utils/pagination.js';
 
 export const idParam = z.object({ id: z.uuid() });
+export const attachmentParam = z.object({ id: z.uuid(), attachmentId: z.uuid() });
 export const threadParam = z.object({ threadId: z.uuid() });
 export const sessionParam = z.object({ sessionId: z.uuid() });
 const studentRef = z.string().trim().min(1).max(64);

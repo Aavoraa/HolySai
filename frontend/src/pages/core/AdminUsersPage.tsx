@@ -36,6 +36,7 @@ function Users() {
   const q = usePagedQuery<UserRow>('/users', { page: list.page, pageSize: list.pageSize, q: list.q || undefined, role: list.filters.role || undefined });
   const roles = lookups?.roles ?? [];
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState<UserRow | null>(null);
   const [tried, setTried] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const patch = useApiMutation<{ id: string; body: Record<string, unknown> }>('patch', (v) => `/users/${v.id}`, { invalidate: ['/users'], body: (v) => v.body, success: 'User updated' });
@@ -94,6 +95,7 @@ function Users() {
               { key: 'last', label: 'Last sign-in', render: (r) => (r.lastLoginAt ? fmt.dateTime(r.lastLoginAt) : <span className="t-faint">Never</span>) },
               { key: 'actions', label: '', className: 'num', render: (r) => r.id === user?.id ? <Badge>You</Badge> : (
                 <div className="row g-2 end wrap">
+                  <Button size="sm" icon="edit" onClick={() => setEditing(r)}>Edit</Button>
                   {isLocked(r) && <Button size="sm" icon="lock" onClick={() => patch.mutate({ id: r.id, body: { unlock: true } })}>Unlock</Button>}
                   <Button size="sm" variant={r.status === 'active' ? 'danger' : 'teal'} onClick={async () => {
                     const next = r.status === 'active' ? 'suspended' : 'active';
@@ -134,7 +136,76 @@ function Users() {
           </div>
         </form>
       </Modal>
+      {editing && <EditUserModal user={editing} onClose={() => setEditing(null)} />}
     </>
+  );
+}
+
+const strongPassword = (p: string) => p.length >= 10 && /[a-z]/.test(p) && /[A-Z]/.test(p) && /[0-9]/.test(p);
+
+/** Edit name, title and mobile, and optionally set a new password (the user is signed out everywhere). */
+function EditUserModal({ user: u, onClose }: { user: UserRow; onClose: () => void }) {
+  const confirm = useConfirm();
+  const [f, setF] = useState({ fullName: u.fullName, title: u.title ?? '', phone: u.phone ?? '', password: '', confirm: '' });
+  const [show, setShow] = useState(false);
+  const [tried, setTried] = useState(false);
+  const save = useApiMutation<Record<string, unknown>>('patch', `/users/${u.id}`, {
+    invalidate: ['/users'], error: false, success: (r) => r.message, onSuccess: onClose,
+  });
+  const errors = {
+    fullName: f.fullName.trim().length >= 2 ? undefined : 'Enter the full name (at least 2 characters)',
+    phone: !f.phone.trim() || /^\+?[0-9 ]{8,16}$/.test(f.phone.trim()) ? undefined : 'Enter a valid mobile number',
+    password: !f.password || strongPassword(f.password) ? undefined : 'At least 10 characters with upper case, lower case and a number',
+    confirm: f.password && f.confirm !== f.password ? 'The two passwords do not match' : undefined,
+  };
+  const valid = !Object.values(errors).some(Boolean);
+  const submit = async () => {
+    setTried(true);
+    if (!valid) return;
+    if (f.password && !(await confirm({
+      title: 'Change this password?',
+      body: `${u.fullName} will be signed out on every device and must sign in with the new password. Share it with them securely.`,
+      confirmLabel: 'Change password', icon: 'lock',
+    }))) return;
+    const body: Record<string, unknown> = {};
+    if (f.fullName.trim() !== u.fullName) body.fullName = f.fullName.trim();
+    if (f.title.trim() !== (u.title ?? '')) body.title = f.title.trim();
+    if (f.phone.trim() !== (u.phone ?? '')) body.phone = f.phone.trim() || null;
+    if (f.password) body.password = f.password;
+    if (!Object.keys(body).length) return onClose();
+    save.mutate(body);
+  };
+  const err = (k: keyof typeof errors) => (tried || (k !== 'fullName' && f[k])) ? errors[k] : undefined;
+  return (
+    <Modal open onClose={onClose} title={`Edit ${u.fullName}`} sub={`${u.email} · ${u.roleName}`} busy={save.isPending}
+      foot={<><Button onClick={onClose} disabled={save.isPending}>Cancel</Button><Button variant="primary" icon="check" loading={save.isPending} onClick={submit}>Save changes</Button></>}>
+      <form onSubmit={(e) => { e.preventDefault(); submit(); }} noValidate>
+        {save.error && <div className="mb-4"><InlineError error={save.error} /></div>}
+        <div className="formsection">
+          <div className="formsection__title">Person</div>
+          <div className="form-grid">
+            <TextField label="Full name" required value={f.fullName} onChange={(v) => setF({ ...f, fullName: v })} error={err('fullName')} maxLength={120} autoFocus />
+            <TextField label="Title" value={f.title} onChange={(v) => setF({ ...f, title: v })} maxLength={80} hint="e.g. Class Teacher, Accountant" />
+            <TextField label="Email" value={u.email} onChange={() => undefined} disabled hint="The sign-in email cannot be changed here." />
+            <TextField label="Mobile" type="tel" value={f.phone} onChange={(v) => setF({ ...f, phone: v })} error={err('phone')} />
+          </div>
+        </div>
+        <div className="formsection">
+          <div className="formsection__title">Change password</div>
+          <div className="form-grid">
+            <TextField label="New password" type={show ? 'text' : 'password'} autoComplete="new-password" value={f.password}
+              onChange={(v) => setF({ ...f, password: v })} error={err('password')}
+              hint="Leave empty to keep the current password. At least 10 characters with upper case, lower case and a number." />
+            <TextField label="Confirm new password" type={show ? 'text' : 'password'} autoComplete="new-password" value={f.confirm}
+              onChange={(v) => setF({ ...f, confirm: v })} error={err('confirm')} disabled={!f.password} />
+            <div className="span-2">
+              <Checkbox checked={show} onChange={setShow} label="Show passwords" />
+            </div>
+          </div>
+          {f.password && <Banner tone="warning" icon="lock">Saving signs {u.fullName} out on every device; they then sign in with the new password.</Banner>}
+        </div>
+      </form>
+    </Modal>
   );
 }
 

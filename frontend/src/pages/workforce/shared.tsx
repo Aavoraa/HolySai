@@ -15,6 +15,7 @@ import {
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import type { EmployeeDetail, EmployeeProfile, LeaveBalance, LeaveType, Payslip, Shift } from './types';
+import { LettersModal } from './letters';
 
 export { ListCount, TotalsBar } from '../finance/shared';
 
@@ -61,6 +62,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
   const q = useApiQuery<EmployeeProfile>(`/workforce/employees/${id}`);
   const [tab, setTab] = useState<'leave' | 'overtime' | 'cpd' | 'roster' | 'pay'>('leave');
   const [editing, setEditing] = useState(false);
+  const [letters, setLetters] = useState(false);
   const archive = useApiMutation<void>('delete', `/workforce/employees/${id}`, {
     invalidate: ['/workforce'], success: 'Employee archived', onSuccess: onClose,
   });
@@ -68,6 +70,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
   const e = d?.employee;
 
   if (editing && e) return <EmployeeFormModal employee={e} onClose={() => setEditing(false)} />;
+  if (letters && e) return <LettersModal employeeId={e.id} onClose={() => setLetters(false)} />;
 
   return (
     <Modal
@@ -84,6 +87,7 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
               if (await confirm({ title: `Archive ${e.fullName}?`, body: 'The employee is marked as exited, removed from future rosters and hidden from lists. Payroll history is kept.', confirmLabel: 'Archive employee', danger: true })) archive.mutate();
             }}>Archive</Button>
           )}
+          {can('hr.read') && e && <Button icon="fileText" onClick={() => setLetters(true)}>Letters</Button>}
           {can('payroll.read') && !!d?.payslips.length && (
             <Button icon="receipt" onClick={() => navigate(`/payslips/${d.payslips[0].id}`)}>View payslip</Button>
           )}

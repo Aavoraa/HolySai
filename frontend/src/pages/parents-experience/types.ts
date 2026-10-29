@@ -111,7 +111,10 @@ export interface Circular {
   requiresAck: boolean; status: CircularStatus; channels: string[]; publishedAt: string | null; createdAt: string;
   submittedAt: string | null; lastRemindedAt: string | null; reminderCount: number; targetCount: number; ackCount: number;
   createdBy: string | null; submittedBy: string | null; releasedBy: string | null;
+  attachments: CircularAttachment[];
 }
+
+export interface CircularAttachment { id: string; name: string; mimeType: string; sizeBytes: number; uploadedAt: string }
 
 export interface AckSummary {
   circulars: number; targeted: number; acknowledged: number; outstanding: number; rate: number | null;

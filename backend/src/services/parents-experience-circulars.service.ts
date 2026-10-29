@@ -3,12 +3,14 @@
  * acknowledgement tracking and reminders, and the school events calendar.
  */
 import type { Request } from 'express';
+import type { Readable } from 'node:stream';
 import type { AuthUser } from '../types.js';
-import { many, one, query, tx } from '../config/db.js';
+import { many, one, query, tx, type Queryable } from '../config/db.js';
 import { Where } from '../utils/sql.js';
 import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagination.js';
-import { conflict, notFound } from '../utils/errors.js';
+import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { audit } from './audit.service.js';
+import { openStoredFile, safeFilename, verifyUploadedFile } from './documents.service.js';
 import { schoolToday } from './academics.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
 import type { Audience } from '../validators/parents-experience.validators.js';
@@ -27,12 +29,19 @@ const CIRC_SORTS: Record<string, string> = {
   ack: `(SELECT count(*) FROM circular_acknowledgements a WHERE a.circular_id = c.id)::numeric / NULLIF(c.target_count, 0)`,
 };
 
+/** Live attachments of circular `c`, oldest first, as a JSON array. */
+const ATTACHMENTS_JSON = `
+  COALESCE((SELECT json_agg(json_build_object('id', f.id, 'name', f.original_name, 'mimeType', f.mime_type,
+                                              'sizeBytes', f.size_bytes, 'uploadedAt', f.created_at) ORDER BY f.created_at)
+              FROM circular_attachments f WHERE f.circular_id = c.id AND f.deleted_at IS NULL), '[]') AS attachments`;
+
 const CIRC_SELECT = (extra = '') => `
   SELECT${extra} c.id, c.title, c.body, c.audience, c.audience_filter AS "audienceFilter", c.campus_id AS "campusId", cp.short_name AS campus,
          c.requires_ack AS "requiresAck", c.status, c.channels, c.published_at AS "publishedAt", c.created_at AS "createdAt",
          c.submitted_at AS "submittedAt", c.last_reminded_at AS "lastRemindedAt", c.reminder_count AS "reminderCount",
          c.target_count AS "targetCount",
          (SELECT count(*)::int FROM circular_acknowledgements a WHERE a.circular_id = c.id) AS "ackCount",
+         ${ATTACHMENTS_JSON},
          cu.full_name AS "createdBy", su.full_name AS "submittedBy", ru.full_name AS "releasedBy"
     FROM circulars c
     LEFT JOIN campuses cp ON cp.id = c.campus_id
@@ -148,6 +157,72 @@ export async function updateCircular(req: Request, id: string, b: Partial<Circul
   return getCircular(id);
 }
 
+// ---- Attachments --------------------------------------------------------------
+export const MAX_CIRCULAR_ATTACHMENTS = 5;
+
+/** Locks the circular and checks its attachments may still change (Draft / Under Review, like its text). */
+async function lockEditable(id: string, db: Queryable) {
+  const c = await one<{ title: string; status: string }>('SELECT title, status FROM circulars WHERE id = $1 FOR UPDATE', [id], db);
+  if (!c) throw notFound('Circular not found', 'CIRCULAR_NOT_FOUND');
+  if (!['Draft', 'Under Review'].includes(c.status)) throw conflict('Attachments of a released circular cannot change. Withdraw it and issue a new one.', 'CIRCULAR_LOCKED');
+  return c;
+}
+
+export async function addAttachment(req: Request, id: string, file: Express.Multer.File | undefined) {
+  if (!file) throw badRequest('Attach the file in the "file" field', 'FILE_REQUIRED', [{ field: 'file', message: 'Choose a PDF or image' }]);
+  return tx(async (db) => {
+    const c = await lockEditable(id, db);
+    const n = await one<{ n: number }>('SELECT count(*)::int AS n FROM circular_attachments WHERE circular_id = $1 AND deleted_at IS NULL', [id], db);
+    if ((n?.n ?? 0) >= MAX_CIRCULAR_ATTACHMENTS) throw conflict(`A circular can carry at most ${MAX_CIRCULAR_ATTACHMENTS} attachments`, 'TOO_MANY_ATTACHMENTS');
+    const stored = await verifyUploadedFile(file);
+    const name = safeFilename(file.originalname);
+    const row = await one<{ id: string }>(
+      `INSERT INTO circular_attachments (circular_id, storage_key, original_name, mime_type, size_bytes, checksum_sha256, uploaded_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+      [id, stored.storageKey, name, file.mimetype, stored.size, stored.checksum, req.user!.id], db);
+    await audit(req, {
+      action: 'update', module: 'communication', entityType: 'circular', entityId: id,
+      description: `Attached "${name}" to circular "${c.title}"`, metadata: { attachmentId: row!.id, size: stored.size },
+    }, db);
+    return { id: row!.id, name, mimeType: file.mimetype, sizeBytes: stored.size };
+  });
+}
+
+export async function removeAttachment(req: Request, id: string, attachmentId: string) {
+  return tx(async (db) => {
+    const c = await lockEditable(id, db);
+    const f = await one<{ original_name: string }>(
+      `UPDATE circular_attachments SET deleted_at = now() WHERE id = $1 AND circular_id = $2 AND deleted_at IS NULL RETURNING original_name`,
+      [attachmentId, id], db);
+    if (!f) throw notFound('Attachment not found', 'ATTACHMENT_NOT_FOUND');
+    await audit(req, {
+      action: 'update', module: 'communication', entityType: 'circular', entityId: id,
+      description: `Removed "${f.original_name}" from circular "${c.title}"`, metadata: { attachmentId },
+    }, db);
+    return { id: attachmentId };
+  });
+}
+
+/**
+ * Opens an attachment for download. Staff (circular readers) may open any circular's files;
+ * a parent passes `parentId` and sees only released circulars addressed to them.
+ */
+export async function openAttachment(req: Request, id: string, attachmentId: string, parentId?: string): Promise<{ stream: Readable; name: string; mimeType: string }> {
+  const familyOnly = parentId
+    ? `AND c.status = 'Released' AND ${audienceParentSql('c.audience_filter', 'c.campus_id', '$3::uuid')}`
+    : '';
+  const f = await one<{ id: string; storage_key: string; original_name: string; mime_type: string; title: string }>(
+    `SELECT f.id, f.storage_key, f.original_name, f.mime_type, c.title
+       FROM circular_attachments f JOIN circulars c ON c.id = f.circular_id
+      WHERE f.id = $1 AND f.circular_id = $2 AND f.deleted_at IS NULL ${familyOnly}`,
+    parentId ? [attachmentId, id, parentId] : [attachmentId, id]);
+  if (!f) throw notFound('Attachment not found', 'ATTACHMENT_NOT_FOUND');
+  const stream = await openStoredFile(f.storage_key);
+  if (!stream) throw notFound('File is no longer available', 'FILE_MISSING');
+  await audit(req, { action: 'view', module: 'communication', entityType: 'circular', entityId: id, description: `Downloaded "${f.original_name}" from circular "${f.title}"`, metadata: { attachmentId } });
+  return { stream, name: safeFilename(f.original_name), mimeType: f.mime_type };
+}
+
 export async function submitCircular(req: Request, id: string) {
   const c = await getCircular(id);
   if (c.status !== 'Draft') throw conflict(`Only drafts can be sent for approval (this circular is ${c.status})`, 'INVALID_TRANSITION');
@@ -251,7 +326,8 @@ export async function familyCirculars(user: AuthUser) {
   const parentId = selfParentId(user);
   return many(
     `SELECT c.id, c.title, c.body, c.audience, c.published_at AS "publishedAt", c.requires_ack AS "requiresAck",
-            (a.parent_id IS NOT NULL) AS acknowledged, a.acknowledged_at AS "acknowledgedAt"
+            (a.parent_id IS NOT NULL) AS acknowledged, a.acknowledged_at AS "acknowledgedAt",
+            ${ATTACHMENTS_JSON}
        FROM circulars c
        LEFT JOIN circular_acknowledgements a ON a.circular_id = c.id AND a.parent_id = $1
       WHERE c.status = 'Released' AND ${audienceParentSql('c.audience_filter', 'c.campus_id', '$1::uuid')}

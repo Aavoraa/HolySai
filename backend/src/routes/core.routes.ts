@@ -299,11 +299,17 @@ r.post('/users', requirePermission('users.manage'),
   });
 
 r.patch('/users/:id', requirePermission('users.manage'), validate(uuidParam, 'params'),
-  validate(z.object({ roleKey: z.string().max(40).optional(), status: z.enum(['active', 'suspended']).optional(), title: z.string().max(80).optional(), unlock: z.boolean().optional() })),
+  validate(z.object({
+    roleKey: z.string().max(40).optional(), status: z.enum(['active', 'suspended']).optional(), title: z.string().max(80).optional(), unlock: z.boolean().optional(),
+    fullName: z.string().trim().min(2).max(120).optional(), phone: z.string().regex(/^\+?[0-9 ]{8,16}$/).nullable().optional(),
+    // Admin reset: sets a new password for the user (they are signed out everywhere).
+    password: passwordRule.optional(),
+  })),
   async (req: Request, res: Response) => {
     const id = v(req, 'params').id;
     const b = v(req);
     if (id === req.user!.id && (b.roleKey || b.status === 'suspended')) throw badRequest('You cannot change your own role or suspend yourself', 'SELF_CHANGE');
+    if (id === req.user!.id && b.password) throw badRequest('Change your own password from My account, which asks for the current one', 'SELF_PASSWORD');
     if (req.user!.roleKey !== 'super_admin') {
       const target = await one<{ key: string }>('SELECT r.key FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1', [id]);
       if (target?.key === 'super_admin') throw forbidden('Only a Super Admin can change a Super Admin account');
@@ -314,16 +320,30 @@ r.patch('/users/:id', requirePermission('users.manage'), validate(uuidParam, 'pa
       roleId = (await one<{ id: string }>('SELECT id FROM roles WHERE key = $1', [b.roleKey]))?.id ?? null;
       if (!roleId) throw badRequest('Unknown role', 'UNKNOWN_ROLE');
     }
-    const x = await query(
-      `UPDATE users SET role_id = COALESCE($2, role_id), status = COALESCE($3, status), title = COALESCE($4, title),
-              failed_login_count = CASE WHEN $5 THEN 0 ELSE failed_login_count END,
-              locked_until = CASE WHEN $5 THEN NULL ELSE locked_until END
-        WHERE id = $1 AND deleted_at IS NULL`,
-      [id, roleId, b.status ?? null, b.title ?? null, !!b.unlock]);
+    const hash = b.password ? await hashPassword(b.password) : null;
+    let x;
+    try {
+      // A password reset also clears any lockout and ends every session (password_changed_at).
+      x = await query(
+        `UPDATE users SET role_id = COALESCE($2, role_id), status = COALESCE($3, status), title = COALESCE($4, title),
+                full_name = COALESCE($6, full_name), phone = CASE WHEN $7 THEN $8 ELSE phone END,
+                password_hash = COALESCE($9, password_hash),
+                password_changed_at = CASE WHEN $9::text IS NULL THEN password_changed_at ELSE now() END,
+                failed_login_count = CASE WHEN $5 OR $9::text IS NOT NULL THEN 0 ELSE failed_login_count END,
+                locked_until = CASE WHEN $5 OR $9::text IS NOT NULL THEN NULL ELSE locked_until END
+          WHERE id = $1 AND deleted_at IS NULL`,
+        [id, roleId, b.status ?? null, b.title ?? null, !!b.unlock, b.fullName ?? null, b.phone !== undefined, b.phone ?? null, hash]);
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') throw badRequest('Another account already uses that phone number', 'PHONE_TAKEN', [{ field: 'phone', message: 'Already used by another account' }]);
+      throw e;
+    }
     if (!x.rowCount) throw notFound('User not found');
-    if (b.status === 'suspended' || b.roleKey) await revokeAllForUser(id);
-    await audit(req, { action: 'update', module: 'users', description: `Updated user (${Object.keys(b).join(', ')})`, entityType: 'user', entityId: id, metadata: b });
-    return ok(res, null, 'User updated');
+    if (b.status === 'suspended' || b.roleKey || hash) await revokeAllForUser(id);
+    // Never log the password itself.
+    const { password: _pw, ...logged } = b;
+    const fields = Object.keys(logged).concat(hash ? ['password reset'] : []);
+    await audit(req, { action: 'update', module: 'users', description: `Updated user (${fields.join(', ')})`, entityType: 'user', entityId: id, metadata: { ...logged, passwordReset: !!hash } });
+    return ok(res, null, hash ? 'Password changed — the user is signed out everywhere' : 'User updated');
   });
 
 r.get('/roles', requireAny('users.manage', 'settings.manage'), async (_req: Request, res: Response) => {

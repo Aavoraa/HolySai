@@ -17,6 +17,8 @@ export interface NavItem {
   roles?: string[];
   /** Never show to these role keys, even when they hold the permission. */
   hideRoles?: string[];
+  /** Other routes this item owns (and their sub-pages), e.g. detail pages under a different path. */
+  also?: string[];
 }
 
 export interface NavGroup {
@@ -61,9 +63,9 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    section: 'Student Management', group: 'Student Management', hue: 'brand', label: 'Students', quick: [{ to: '/student-360' }, { to: '/attendance' }], icon: 'users', items: [
-      { label: 'Students', icon: 'users', to: '/students', perm: STAFF_STUDENTS },
-      { label: 'Student 360', icon: 'user', to: '/student-360', perm: STAFF_STUDENTS },
+    section: 'Student Management', group: 'Student Management', hue: 'brand', label: 'Students', quick: [{ to: '/students' }, { to: '/attendance' }], icon: 'users', items: [
+      // The student register; each row opens that student's 360 profile (/student-360/:id).
+      { label: 'Student 360', icon: 'users', to: '/students', also: ['/student-360'], perm: STAFF_STUDENTS },
       { label: 'Student Tracking', icon: 'mapPin', to: '/student-tracking', perm: STAFF_TRACK },
       { label: 'Attendance', icon: 'checkSquare', to: '/attendance', perm: ['attendance.read'] },
       { label: 'Academic Performance', icon: 'trending', to: '/academic-performance', perm: STAFF_STUDENTS },
@@ -158,7 +160,7 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    section: 'HR & Workforce', group: 'Workforce', hue: 'amber', label: 'Staff', quick: [{ to: '/staff-attendance', label: 'Attendance' }, { to: '/leave' }, { to: '/payroll' }], icon: 'users', items: [
+    section: 'HR & Workforce', group: 'Workforce', hue: 'amber', label: 'Staff', quick: [{ to: '/staff-attendance', label: 'Attendance' }, { to: '/leave' }, { to: '/payroll' }, { to: '/salary-dashboard' }], icon: 'users', items: [
       { label: 'Employee Directory', icon: 'users', to: '/workforce', perm: ['hr.read'] },
       { label: 'Teaching Staff', icon: 'graduation', to: '/teaching-staff', perm: ['hr.read'] },
       { label: 'Non-Teaching Staff', icon: 'tool', to: '/non-teaching-staff', perm: ['hr.read'] },
@@ -169,6 +171,8 @@ export const NAV: NavGroup[] = [
       { label: 'Allowances', icon: 'plus', to: '/staff-allowances', perm: ['hr.read', 'finance.read'] },
       { label: 'Workload', icon: 'barChart', to: '/workload', perm: ['hr.read'] },
       { label: 'CPD', icon: 'award', to: '/cpd', perm: ['hr.read'] },
+      { label: 'HR Letters', icon: 'fileText', to: '/hr-letters', perm: ['hr.read'] },
+      { label: 'Salary Dashboard', icon: 'pieChart', to: '/salary-dashboard', perm: ['payroll.read'] },
       { label: 'Payroll', icon: 'wallet', to: '/payroll', perm: ['payroll.read'], tone: 'amber' },
       { label: 'Payslips', icon: 'receipt', to: '/payslips', perm: ['payroll.read'] },
     ],

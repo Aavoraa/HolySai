@@ -240,10 +240,12 @@ export async function seed(db: Db, ctx: SeedContext) {
   const syl: Record<string, { id: string; tiered: boolean; topics: { id: string; tier: Tier }[]; comps: Record<string, string> }> = {};
   for (const d of DEFS) {
     if (!subjects[d.subject]) continue;
+    // Grades that teach it (BY_GRADE); offered-but-untimetabled syllabuses keep both IGCSE years.
+    const grades = [9, 10].filter((g) => BY_GRADE[g]?.includes(d.key));
     const r = await db.query(
-      `INSERT INTO syllabuses (subject_id, stage, awarding_body, syllabus_code, title, exam_series_years, tiered, grading, notes, is_active, created_by)
-       VALUES ($1,'IGCSE',$2,$3,$4,$5,$6,'A*-G',$7,true,$8) RETURNING id`,
-      [subjects[d.subject], d.body ?? 'Cambridge International', d.code, d.title, d.series, d.tiered, d.notes, admin],
+      `INSERT INTO syllabuses (subject_id, stage, awarding_body, syllabus_code, title, exam_series_years, tiered, grading, notes, is_active, created_by, grade_levels)
+       VALUES ($1,'IGCSE',$2,$3,$4,$5,$6,'A*-G',$7,true,$8,$9) RETURNING id`,
+      [subjects[d.subject], d.body ?? 'Cambridge International', d.code, d.title, d.series, d.tiered, d.notes, admin, grades.length ? grades : [9, 10]],
     );
     const id = r.rows[0].id as string;
     const comps = await bulkInsert(db, 'syllabus_components',

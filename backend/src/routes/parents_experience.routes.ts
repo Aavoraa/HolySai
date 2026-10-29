@@ -8,7 +8,8 @@ import * as val from '../validators/parents-experience.validators.js';
 import * as comms from '../services/parents-experience-comms.service.js';
 import * as circ from '../services/parents-experience-circulars.service.js';
 import * as ptm from '../services/parents-experience-ptm.service.js';
-import { audienceLabel, countAudience, normalizeAudience } from '../services/parents-experience.service.js';
+import { audienceLabel, countAudience, normalizeAudience, selfParentId } from '../services/parents-experience.service.js';
+import { upload } from '../services/documents.service.js';
 
 /**
  * Parent experience: engagement directory, unified communication history,
@@ -22,6 +23,18 @@ const READ = requirePermission('communication.read');
 const SEND = requirePermission('communication.send');
 const FAMILY = requirePermission('parent_portal.use');
 const campusQuery = z.object({ campusId: z.uuid().optional() });
+
+/** Streams a stored circular attachment. A read error mid-transfer ends this response only. */
+function sendAttachment(req: Request, res: Response, f: Awaited<ReturnType<typeof circ.openAttachment>>) {
+  res.setHeader('Content-Type', f.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  f.stream.on('error', (err) => {
+    req.log?.error({ err }, 'circular attachment download failed');
+    res.destroy(err);
+  });
+  f.stream.pipe(res);
+}
 
 // =============================================================================
 // Parent directory (engagement view; profile/create/update live under /parents)
@@ -135,6 +148,20 @@ r.post('/circulars', SEND, validate(val.circularBody), async (req: Request, res:
 r.get('/circulars/:id', CIRC_READ, validate(val.idParam, 'params'), async (req: Request, res: Response) =>
   ok(res, await circ.getCircular(v(req, 'params').id), 'Circular retrieved'));
 
+// Attachments: added and removed while the circular is Draft or Under Review; read like the circular itself.
+r.post('/circulars/:id/attachments', SEND, validate(val.idParam, 'params'), upload.single('file'), async (req: Request, res: Response) =>
+  created(res, await circ.addAttachment(req, v(req, 'params').id, req.file), 'File attached'));
+
+r.delete('/circulars/:id/attachments/:attachmentId', SEND, validate(val.attachmentParam, 'params'), async (req: Request, res: Response) => {
+  const p = v(req, 'params');
+  return ok(res, await circ.removeAttachment(req, p.id, p.attachmentId), 'Attachment removed');
+});
+
+r.get('/circulars/:id/attachments/:attachmentId/download', CIRC_READ, validate(val.attachmentParam, 'params'), async (req: Request, res: Response) => {
+  const p = v(req, 'params');
+  sendAttachment(req, res, await circ.openAttachment(req, p.id, p.attachmentId));
+});
+
 r.put('/circulars/:id', SEND, validate(val.idParam, 'params'), validate(val.circularPatch), async (req: Request, res: Response) =>
   ok(res, await circ.updateCircular(req, v(req, 'params').id, v(req)), 'Circular updated'));
 
@@ -202,6 +229,11 @@ r.post('/events/:id/notify', SEND, validate(val.idParam, 'params'), async (req: 
 // =============================================================================
 r.get('/family/circulars', FAMILY, async (req: Request, res: Response) =>
   ok(res, await circ.familyCirculars(req.user!), 'Circulars retrieved'));
+
+r.get('/family/circulars/:id/attachments/:attachmentId/download', FAMILY, validate(val.attachmentParam, 'params'), async (req: Request, res: Response) => {
+  const p = v(req, 'params');
+  sendAttachment(req, res, await circ.openAttachment(req, p.id, p.attachmentId, selfParentId(req.user!)));
+});
 
 r.post('/family/circulars/:id/acknowledge', FAMILY, validate(val.idParam, 'params'), async (req: Request, res: Response) =>
   ok(res, await circ.acknowledgeCircular(req, v(req, 'params').id), 'Thank you — acknowledgement recorded'));

@@ -9,6 +9,7 @@ import * as fees from '../services/finance-fees.service.js';
 import * as ops from '../services/finance-ops.service.js';
 import * as V from '../validators/finance.validators.js';
 import { assertDecider } from '../services/approvals-guard.js';
+import { upload } from '../services/documents.service.js';
 
 /**
  * Finance domain routes. Mounted at /api behind authentication.
@@ -192,8 +193,18 @@ r.get('/finance/reimbursements', READ, validate(V.reimbursementListQuery, 'query
   return paged(res, rows, total, f.page, f.pageSize, 'Reimbursements retrieved');
 });
 
-r.post('/finance/reimbursements', MANAGE, validate(V.reimbursementCreate), async (req: Request, res: Response) =>
-  created(res, await ops.createReimbursement(req, v(req)), 'Claim recorded'));
+// Multipart: the claim fields plus its receipt in "file" (required).
+r.post('/finance/reimbursements', MANAGE, upload.single('file'), validate(V.reimbursementCreate), async (req: Request, res: Response) =>
+  created(res, await ops.createReimbursement(req, v(req), req.file), 'Claim recorded'));
+
+r.get('/finance/reimbursements/:id/receipt', READ, idP, async (req: Request, res: Response) => {
+  const f = await ops.openReimbursementReceipt(req, v(req, 'params').id);
+  res.setHeader('Content-Type', f.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  f.stream.on('error', (err) => { req.log?.error({ err }, 'receipt download failed'); res.destroy(err); });
+  f.stream.pipe(res);
+});
 r.post('/finance/reimbursements/:id/review', MANAGE, idP, async (req: Request, res: Response) =>
   ok(res, await ops.transitionReimbursement(req, v(req, 'params').id, 'review'), 'Claim moved to review'));
 r.post('/finance/reimbursements/:id/approve', APPROVE, idP, async (req: Request, res: Response) =>

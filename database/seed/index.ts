@@ -21,6 +21,7 @@ import * as planning from './planning.js';
 import * as jobCards from './jobcards.js';
 import * as parentLog from './parent-log.js';
 import * as syllabus from './syllabus.js';
+import { attachStudentDocumentFiles } from './sample-files.js';
 
 const DOMAINS: [string, { seed: (db: pg.PoolClient, ctx: SeedContext) => Promise<void> }][] = [
   ['academics', academics],
@@ -83,6 +84,7 @@ export async function seedAll(client: pg.PoolClient, demoPassword: string, log =
     for (const [name, mod] of DOMAINS) await step(name, () => mod.seed(client, ctx));
     // Admissions enrols students after the Student 360 seed; give everyone a full profile.
     await step('Student 360 profiles for every student', async () => { await fillStudentProfiles(client, ctx); });
+    await step('sample files for student documents', async () => { await attachStudentDocumentFiles(client); });
     await step('notifications and tasks', () => seedInbox(client, ctx));
     await client.query(
       `INSERT INTO audit_logs (user_id, user_name, role_key, action, module, description, device, metadata, created_at)

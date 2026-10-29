@@ -20,11 +20,11 @@ const HS: any = { fmt };
     var step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10;
     return step * pow;
   }
-  function svgOpen(w, h, label, fixed) {
+  function svgOpen(w, h, label, fixed, x0) {
     var style = fixed
       ? 'width:100%;max-width:' + w + 'px;height:auto;display:block;margin:0 auto'
       : 'width:100%;height:auto;display:block';
-    return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="' + style + '" ' +
+    return '<svg viewBox="' + (x0 || 0) + ' 0 ' + w + ' ' + h + '" style="' + style + '" ' +
       'role="img" aria-label="' + esc(label || 'chart') + '" font-family="Inter, system-ui, sans-serif">';
   }
   function path(pts, close, baseY) {
@@ -191,7 +191,9 @@ const HS: any = { fmt };
     var s = pt(0), e = pt(100), c = pt(pct);
     var out = svgOpen(W, H, o.label || 'Gauge', true);
     out += '<path d="M' + s[0] + ' ' + s[1] + ' A' + r + ' ' + r + ' 0 0 1 ' + e[0] + ' ' + e[1] + '" fill="none" stroke="var(--bg-sunken)" stroke-width="' + thick + '" stroke-linecap="round"/>';
-    out += '<path d="M' + s[0] + ' ' + s[1] + ' A' + r + ' ' + r + ' 0 ' + (pct > 50 ? 1 : 0) + ' 1 ' + c[0].toFixed(2) + ' ' + c[1].toFixed(2) +
+    // The value arc never exceeds the half circle, so it is always the small arc (large-arc flag 0);
+    // flag 1 above 50% sent it the long way round, below the gauge.
+    if (pct > 0) out += '<path d="M' + s[0] + ' ' + s[1] + ' A' + r + ' ' + r + ' 0 0 1 ' + c[0].toFixed(2) + ' ' + c[1].toFixed(2) +
       '" fill="none" stroke="' + (o.color || 'var(--teal)') + '" stroke-width="' + thick + '" stroke-linecap="round"/>';
     out += '<text x="' + cx + '" y="' + (cy - 12) + '" text-anchor="middle" font-size="26" font-weight="600" fill="var(--text-strong)">' + esc(o.value || pct + '%') + '</text>';
     if (o.sub) out += '<text x="' + cx + '" y="' + (cy + 8) + '" text-anchor="middle" font-size="10" fill="' + MUTED + '">' + esc(o.sub) + '</text>';
@@ -232,7 +234,10 @@ const HS: any = { fmt };
   /* ---- Radar (skills) ---------------------------------------------------- */
   HS.charts.radar = function (o) {
     var size = o.size || 240, c = size / 2, r = c - 34, n = o.axes.length;
-    var out = svgOpen(size, size, o.label || 'Radar chart', true);
+    var out = '';
+    // Side labels are anchored away from the web, and the view widens to fit the longest
+    // one (about 5.8px per character at 10px), so names like "Critical Thinking" are not cut off.
+    var minX = 0, maxX = size;
     function pt(i, v) {
       var a = -Math.PI / 2 + (i / n) * Math.PI * 2;
       return [c + r * (v / 100) * Math.cos(a), c + r * (v / 100) * Math.sin(a)];
@@ -244,8 +249,12 @@ const HS: any = { fmt };
     o.axes.forEach(function (ax, i) {
       var e = pt(i, 100);
       out += '<line x1="' + c + '" y1="' + c + '" x2="' + e[0].toFixed(1) + '" y2="' + e[1].toFixed(1) + '" stroke="' + GRID + '"/>';
-      var l = pt(i, 122);
-      out += '<text x="' + l[0].toFixed(1) + '" y="' + l[1].toFixed(1) + '" text-anchor="middle" dy="3" font-size="10" fill="' + MUTED + '">' + esc(ax) + '</text>';
+      var l = pt(i, 116), dx = l[0] - c, w = String(ax).length * 5.8;
+      var anchor = dx > 4 ? 'start' : dx < -4 ? 'end' : 'middle';
+      var left = anchor === 'start' ? l[0] : anchor === 'end' ? l[0] - w : l[0] - w / 2;
+      minX = Math.min(minX, left - 4);
+      maxX = Math.max(maxX, left + w + 4);
+      out += '<text x="' + l[0].toFixed(1) + '" y="' + l[1].toFixed(1) + '" text-anchor="' + anchor + '" dy="3" font-size="10" fill="' + MUTED + '">' + esc(ax) + '</text>';
     });
     (o.series || []).forEach(function (s, si) {
       var col = s.color || SERIES[si % SERIES.length];
@@ -256,7 +265,7 @@ const HS: any = { fmt };
         out += '<circle cx="' + q[0].toFixed(1) + '" cy="' + q[1].toFixed(1) + '" r="2.8" fill="' + col + '"><title>' + esc(o.axes[i] + ': ' + s.values[i]) + '</title></circle>';
       });
     });
-    return out + '</svg>';
+    return svgOpen(Math.round(maxX - minX), size, o.label || 'Radar chart', true, Math.floor(minX)) + out + '</svg>';
   };
 
   /* ---- Legend helper ----------------------------------------------------- */

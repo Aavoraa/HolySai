@@ -54,7 +54,7 @@ export async function addBehaviour(req: Request, res: Response) {
 
 export async function addAchievement(req: Request, res: Response) {
   const id = await authorizeStudent(req, v(req, 'params').id);
-  return created(res, await svc.addAchievement(req, id, v(req)), 'Achievement recorded');
+  return created(res, await svc.addAchievement(req, id, v(req), req.file), 'Achievement recorded');
 }
 
 export async function addObservation(req: Request, res: Response) {

@@ -2,7 +2,7 @@
  * Primitive components. Each mirrors a builder from the wireframe's HS.ui and
  * renders the same markup + CSS classes, so screens look exactly as approved.
  */
-import { forwardRef, useEffect, useId, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
+import { forwardRef, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useI18n } from '@/i18n/I18nProvider';
 import { routeMeta } from '@/layouts/routeMeta';
@@ -437,8 +437,41 @@ export function StatStrip({ items }: { items: { label: string; value: ReactNode 
 export interface Opt<T extends string = string> { id: T; label: ReactNode; count?: number; tone?: string }
 
 export function Tabs<T extends string>({ items, active, onChange, pills }: { items: Opt<T>[]; active: T; onChange: (id: T) => void; pills?: boolean }) {
+  // A strip wider than its box scrolls sideways (scrollbar hidden): keep the selected tab
+  // fully in view, and fade whichever edge has more tabs behind it.
+  const ref = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+
+  const reveal = (behavior: ScrollBehavior) => {
+    const el = ref.current;
+    const tab = el?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!el || !tab) return;
+    const pad = 44; // clear of the 40px edge fade
+    if (tab.offsetLeft - pad < el.scrollLeft) el.scrollTo({ left: tab.offsetLeft - pad, behavior });
+    else if (tab.offsetLeft + tab.offsetWidth + pad > el.scrollLeft + el.clientWidth) el.scrollTo({ left: tab.offsetLeft + tab.offsetWidth + pad - el.clientWidth, behavior });
+  };
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setMore({ left: el.scrollLeft > 1, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 1 });
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    // Also fires once the strip is first laid out, so a tab opened from the URL starts in view.
+    const ro = new ResizeObserver(() => { reveal('auto'); update(); });
+    ro.observe(el);
+    return () => { el.removeEventListener('scroll', update); ro.disconnect(); };
+  }, [items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Jump on first render (e.g. a tab opened from the URL); glide when the user switches tabs.
+  const shown = useRef(false);
+  useEffect(() => {
+    reveal(shown.current ? 'smooth' : 'auto');
+    shown.current = true;
+  }, [active, items.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
-    <div className={cx('tabs', pills && 'tabs--pills')} role="tablist">
+    <div ref={ref} className={cx('tabs', pills && 'tabs--pills', more.left && 'tabs--more-left', more.right && 'tabs--more-right')} role="tablist">
       {items.map((t) => (
         <button key={t.id} type="button" className="tabs__item" role="tab" aria-selected={t.id === active} onClick={() => onChange(t.id)}>
           {t.label}

@@ -339,6 +339,11 @@ input[type="radio"], input[type="checkbox"] { accent-color: var(--brand); }
 /* ---- Tabs -------------------------------------------------------------- */
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
+/* More tabs off-screen: fade that edge so the strip reads as scrollable */
+.tabs { position: relative; }
+.tabs--more-right { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+.tabs--more-left { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+.tabs--more-left.tabs--more-right { -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
 .tabs__item {
   padding: 12px 14px; font-size: var(--fs-sm); font-weight: 500; color: var(--text-muted);
   border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
@@ -720,3 +725,27 @@ a.ov-tile:hover { border-color: var(--brand-line); box-shadow: var(--sh-2); }
 }
 .tabsbar .tabs { border-bottom: 0; }
 .tabsbar + .mt-4 { margin-top: var(--s-4); }
+
+/* Compact attachment field (one row: icon or preview, name, Browse / Change / Remove) */
+.attachfield {
+  display: flex; align-items: center; gap: var(--s-3); padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface-alt);
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.attachfield:hover, .attachfield[data-over] { border-color: var(--brand); }
+.attachfield[data-over] { background: var(--brand-tint); }
+.attachfield[data-filled] { background: var(--surface); }
+.attachfield[data-error] { border-color: var(--critical); }
+.attachfield__ico {
+  width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center;
+  background: var(--brand-tint); color: var(--brand);
+}
+.attachfield__thumb { width: 40px; height: 40px; flex: none; border-radius: 10px; object-fit: cover; border: 1px solid var(--border); }
+
+/* HR letters (appointment, relieving, experience): letter body under the campus letterhead */
+.hrletter { max-width: 720px; font-size: 14.5px; line-height: 1.7; color: var(--text); }
+.hrletter p { margin: 0 0 14px; }
+.hrletter__subject { margin-top: 6px; }
+.hrletter__sign { margin-top: 36px; }
+.hrletter__signline { width: 220px; height: 44px; border-bottom: 1px solid var(--border-strong); margin-bottom: 8px; }
+.hrletter__accept { margin-top: 36px; padding-top: 16px; border-top: 1px dashed var(--border-strong); }

@@ -92,8 +92,8 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
       if (!v.guardianName.trim()) e.guardianName = 'Guardian name is required';
       if (!PHONE.test(v.guardianPhone)) e.guardianPhone = 'Enter a valid phone number';
       if (v.guardianEmail && !EMAIL.test(v.guardianEmail)) e.guardianEmail = 'Enter a valid email';
-      if (v.routeId && !v.stopId) e.stopId = 'Select the pickup stop';
     }
+    if (v.routeId && !v.stopId) e.stopId = 'Select the pickup stop';
     setErrors(e);
     return !Object.keys(e).length;
   };
@@ -113,6 +113,9 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
       body.guardians = [{ fullName: v.guardianName.trim(), phone: v.guardianPhone.trim(), email: opt(v.guardianEmail), relationship: v.guardianRelationship, isPrimary: true }];
       if (v.routeId) body.transport = { routeId: v.routeId, stopId: v.stopId };
       body.enableTracking = v.enableTracking;
+    } else {
+      // null switches the student to own transport
+      body.transport = v.routeId ? { routeId: v.routeId, stopId: v.stopId } : null;
     }
     save.mutate(body, {
       onError: (err) => {
@@ -189,21 +192,23 @@ export function StudentFormModal({ studentId, initial, onClose, onSaved }: {
           </div>
         </div>
 
-        {!editing && (
-          <div className="formsection">
-            <div className="formsection__title">Transport &amp; tracking</div>
-            <div className="form-grid">
-              <SelectField label="Bus route" value={v.routeId} placeholder="Own transport" onChange={(x) => setV((s) => ({ ...s, routeId: x, stopId: '' }))}
-                options={routes.map((r) => ({ value: r.id, label: `${r.name} · ${r.area}` }))} />
-              <SelectField label="Pickup stop" value={v.stopId} error={errors.stopId} placeholder="Select…" disabled={!v.routeId} required={!!v.routeId}
-                onChange={(x) => set('stopId', x)} options={stops.map((st) => ({ value: st.id, label: st.name }))} />
+        <div className="formsection">
+          <div className="formsection__title">{editing ? 'Transport' : 'Transport & tracking'}</div>
+          <div className="form-grid">
+            <SelectField label="Bus route" value={v.routeId} placeholder="Own transport" onChange={(x) => setV((s) => ({ ...s, routeId: x, stopId: '' }))}
+              options={routes.map((r) => ({ value: r.id, label: `${r.name} · ${r.area}` }))}
+              hint={editing ? 'Choose “Own transport” if the student no longer uses a school bus.' : undefined} />
+            <SelectField label="Pickup stop" value={v.stopId} error={errors.stopId} placeholder="Select…" disabled={!v.routeId} required={!!v.routeId}
+              onChange={(x) => set('stopId', x)} options={stops.map((st) => ({ value: st.id, label: st.name }))} />
+            {/* GPS tracking is switched on at admission; later it is managed from Student Tracking. */}
+            {!editing && (
               <div className="span-2">
                 <Checkbox checked={v.enableTracking} onChange={(x) => set('enableTracking', x)}
                   label="Enable GPS tracking (requires the guardian's consent, recorded when the tag is issued)" />
               </div>
-            </div>
+            )}
           </div>
-        )}
+        </div>
 
         <div className="formsection">
           <div className="formsection__title">Health</div>

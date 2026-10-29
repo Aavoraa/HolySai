@@ -55,6 +55,8 @@ export const studentUpdateSchema = studentCreateSchema
     status: z.enum(['active', 'alumni', 'transferred', 'withdrawn']).optional(),
     riskLevel: z.enum(['On Track', 'Watch', 'Developing Risk', 'At Risk']).optional(),
     counsellorId: uuid.nullable().optional(),
+    // Bus route and pickup stop, or null to switch to own transport.
+    transport: z.object({ routeId: uuid, stopId: uuid.optional() }).nullable().optional(),
   })
   .refine((o) => Object.keys(o).length > 0, { message: 'Nothing to update' });
 

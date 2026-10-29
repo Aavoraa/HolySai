@@ -5,6 +5,11 @@
  *   Earnings   = basic + approved allowances + approved overtime (hours × rate)
  *                + approved reimbursements
  *   Deductions = PF 12% of basic + professional tax ₹200 + TDS (slab-lite) + loan (0)
+ *                + loss of pay: (basic + allowances) ÷ working days × unpaid days
+ *
+ * Unpaid days come from staff attendance: Absent = 1, Half Day = ½. Present, Late and
+ * On Leave (approved, paid leave) cost nothing; days not marked are not deducted.
+ * Working days are the month's days excluding Sundays.
  *
  * TDS slab-lite (annualised on regular pay, i.e. basic + allowances):
  *   taxable = 12 × regular gross − 12 × PF − ₹50,000 standard deduction
@@ -23,6 +28,9 @@ export interface PayInputs {
   overtimeAmount: number;
   reimbursements: number;
   loan?: number;
+  /** Absent days (half days count ½) not covered by paid leave, and the month's working days. */
+  unpaidDays?: number;
+  workingDays?: number;
 }
 
 export interface Payslip {
@@ -72,9 +80,29 @@ export function calculatePayslip(i: PayInputs): Payslip {
     { label: 'Income tax (TDS)', amount: tds },
     { label: 'Loan recovery', amount: r2(i.loan ?? 0) },
   ];
+  const lop = lossOfPay(i.basic + allowancesTotal, i.unpaidDays ?? 0, i.workingDays ?? 0);
+  if (lop > 0) {
+    const days = Number((i.unpaidDays ?? 0).toFixed(1));
+    deductions.push({ label: `Loss of pay (${days} day${days === 1 ? '' : 's'})`, amount: lop });
+  }
   const gross = r2(earnings.reduce((a, x) => a + x.amount, 0));
   const totalDeductions = r2(deductions.reduce((a, x) => a + x.amount, 0));
   return { earnings, deductions, gross, totalDeductions, net: r2(gross - totalDeductions), allowancesTotal, overtimeTotal };
+}
+
+/** Pay withheld for unpaid days: regular monthly pay ÷ working days × unpaid days (never more than the month's pay). */
+export function lossOfPay(regularMonthly: number, unpaidDays: number, workingDays: number) {
+  if (!(unpaidDays > 0) || !(workingDays > 0)) return 0;
+  return Math.min(r2(regularMonthly), Math.round((regularMonthly / workingDays) * Math.min(unpaidDays, workingDays)));
+}
+
+/** Working days in the month starting `monthStart` (YYYY-MM-01): every day except Sundays. */
+export function workingDaysInMonth(monthStart: string) {
+  const [y, m] = monthStart.slice(0, 7).split('-').map(Number);
+  const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  let n = 0;
+  for (let d = 1; d <= last; d++) if (new Date(Date.UTC(y, m - 1, d)).getUTCDay() !== 0) n++;
+  return n;
 }
 
 /** Default overtime rate: twice the hourly basic (basic ÷ 208 h), rounded to ₹10, minimum ₹300. */

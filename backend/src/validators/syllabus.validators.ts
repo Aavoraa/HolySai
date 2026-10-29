@@ -38,6 +38,11 @@ export const syllabusesQuery = z.object({
   active: z.enum(['true', 'false', 'all']).default('true'),
 });
 
+/** Grades that take a syllabus: usually 9 and 10; some schools start IGCSE in Grade 8. */
+const gradeLevels = z.array(z.number().int().min(8).max(10)).min(1, 'Choose at least one grade').max(3)
+  .refine((g) => new Set(g).size === g.length, 'Each grade once')
+  .transform((g) => [...g].sort((a, b) => a - b));
+
 const syllabusFields = {
   subjectId: uuid,
   stage: text(40).default('IGCSE'),
@@ -49,8 +54,19 @@ const syllabusFields = {
   grading: text(20).default('A*-G'),
   notes: optText(2000),
   isActive: z.boolean().default(true),
+  gradeLevels: gradeLevels.default([9, 10]),
 };
 export const syllabusCreate = z.object(syllabusFields);
+export const catalogueQuery = z.object({
+  q: z.string().trim().max(100).optional(),
+  grading: z.enum(['A*-G', '9-1']).optional(),
+});
+export const catalogueAdd = z.object({
+  code: z.string().trim().regex(/^[0-9]{4}$/, 'Use the 4-digit Cambridge code'),
+  subjectId: uuid,
+  gradeLevels,
+  tiered: z.boolean().default(false),
+});
 export const syllabusUpdate = z.object({
   subjectId: uuid.optional(),
   stage: text(40).optional(),
@@ -62,6 +78,7 @@ export const syllabusUpdate = z.object({
   grading: text(20).optional(),
   notes: optText(2000),
   isActive: z.boolean().optional(),
+  gradeLevels: gradeLevels.optional(),
 }).refine((o) => Object.values(o).some((x) => x !== undefined), 'Nothing to update');
 
 const componentFields = {

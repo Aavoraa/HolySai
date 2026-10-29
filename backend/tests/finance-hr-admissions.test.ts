@@ -2,7 +2,8 @@
  * Regression tests for finance, workforce and admissions rules (seeded test database).
  */
 import { afterAll, describe, expect, it } from 'vitest';
-import { as } from './helpers.js';
+import request from 'supertest';
+import { app, as, login } from './helpers.js';
 import { many, one, pool, query } from '../src/config/db.js';
 
 afterAll(() => pool.end());
@@ -86,9 +87,12 @@ describe('finance', () => {
   it('a finance approver cannot approve their own reimbursement', async () => {
     const fin = await as('finance');
     const me = await empOf('rajesh.iyer.demo@holysai.edu');
-    const c = await fin.post('/api/finance/reimbursements', {
-      employeeId: me, claimType: 'Travel', description: 'Own claim', amount: 1500, claimDate: new Date().toISOString().slice(0, 10),
-    });
+    // Claims are multipart: the fields plus the required receipt
+    const { token } = await login('finance');
+    const c = await request(app).post('/api/finance/reimbursements').set('Authorization', `Bearer ${token}`)
+      .field('employeeId', me).field('claimType', 'Travel').field('description', 'Own claim').field('amount', '1500')
+      .field('claimDate', new Date().toISOString().slice(0, 10))
+      .attach('file', Buffer.from('%PDF-1.4 receipt'), { filename: 'receipt.pdf', contentType: 'application/pdf' });
     expect(c.status).toBe(201);
     const r = await fin.post(`/api/finance/reimbursements/${c.body.data.id}/approve`);
     expect(r.status).toBe(403);
