@@ -91,6 +91,8 @@ export interface Application {
   createdAt: string;
   campusId: string;
   documents: AppDocument[];
+  /** Every status change, newest first (GET /applications/:id only). */
+  statusHistory?: { id: number; fromStatus: string | null; toStatus: string; note: string | null; changedAt: string; changedBy: string | null }[];
   formStatus: FormStatus;
   formSource: 'Manual' | 'Upload' | 'Online' | null;
   formReceivedOn: string | null;

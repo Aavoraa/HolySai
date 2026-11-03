@@ -25,6 +25,7 @@ export default function VisitorsPage() {
   const q = usePagedQuery<Visitor>('/visitors', { ...list.query, date, ...campusParam });
   const [adding, setAdding] = useState(false);
   const [badge, setBadge] = useState<Visitor | null>(null);
+  const [carding, setCarding] = useState<Visitor | null>(null);
   const act = useApiMutation<{ id: string; action: 'check-in' | 'check-out' | 'deny' }>('post', (v) => `/visitors/${v.id}/${v.action}`, {
     invalidate: ['/visitors', '/gate'], body: () => ({}),
   });
@@ -59,9 +60,11 @@ export default function VisitorsPage() {
         </Grid>
       )}
 
+      {manage && <RfidTapCard campusId={campusParam.campusId} />}
+
       <Card flush className="mt-4">
         <Toolbar>
-          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search visitor, badge or purpose" />
+          <SearchInput value={list.q} onSearch={list.setQ} placeholder="Search visitor, badge, card or purpose" />
           <input className="input st-date" type="date" aria-label="Date" value={date}
             onChange={(e) => list.setFilter('date', e.target.value === todayIso() ? '' : e.target.value)} />
           <FilterSelect label="Status" value={list.filters.status} onChange={(v) => list.setFilter('status', v)} options={['Inside', 'Completed', 'Expected', 'Denied']} />
@@ -76,7 +79,7 @@ export default function VisitorsPage() {
             onSort={list.setSort}
             emptyText="No visitors for this day."
             columns={[
-              { key: 'badge', label: 'Badge', render: (r) => <span className="t-num t-bold">{r.badgeNo}</span> },
+              { key: 'badge', label: 'Badge', render: (r) => <><span className="t-num t-bold">{r.badgeNo}</span>{r.rfidTag && <div className="t-micro t-muted" title="RFID card">Card {r.rfidTag}</div>}</> },
               { key: 'name', label: 'Visitor', render: (r) => <Person name={r.fullName} meta={r.purpose} /> },
               { key: 'host', label: 'Host', render: (r) => r.hostName ?? '—' },
               { key: 'in', label: 'In', render: (r) => r.status === 'Expected' ? <span className="t-muted">Expected {fmt.dateTime(r.checkedInAt)}</span> : r.status === 'Denied' ? <span className="t-faint">—</span> : <span className="t-num">{fmt.time(r.checkedInAt)}</span> },
@@ -87,6 +90,7 @@ export default function VisitorsPage() {
                 render: (r) => (
                   <span className="row g-1 end">
                     {r.status !== 'Denied' && <Button size="sm" variant="quiet" icon="printer" onClick={() => setBadge(r)} aria-label={`Badge ${r.badgeNo}`} />}
+                    {manage && ['Inside', 'Expected'].includes(r.status) && !r.rfidTag && <Button size="sm" variant="quiet" icon="idCard" onClick={() => setCarding(r)}>Give card</Button>}
                     {manage && r.status === 'Inside' && <Button size="sm" onClick={() => run(r, 'check-out')} loading={act.isPending && act.variables?.id === r.id}>Check out</Button>}
                     {manage && r.status === 'Expected' && (
                       <>
@@ -105,7 +109,59 @@ export default function VisitorsPage() {
 
       {adding && <CheckInModal onClose={() => setAdding(false)} onDone={(v) => { setAdding(false); if (v.status === 'Inside') setBadge(v); }} />}
       {badge && <BadgeModal visitor={badge} onClose={() => setBadge(null)} />}
+      {carding && <GiveCardModal visitor={carding} onClose={() => setCarding(null)} />}
     </Page>
+  );
+}
+
+/**
+ * Desk/gate card reader. USB RFID readers type the card number and press Enter,
+ * so the field stays focused: each tap checks a pre-approved visitor in or a visitor out.
+ */
+function RfidTapCard({ campusId }: { campusId?: string }) {
+  const [tag, setTag] = useState('');
+  const [last, setLast] = useState<{ ok: boolean; text: string } | null>(null);
+  const tap = useApiMutation<{ tag: string; campusId?: string }, { action: 'in' | 'out'; visitor: Visitor }>('post', '/visitors/rfid-tap', {
+    invalidate: ['/visitors', '/gate'], success: false, error: false,
+    onSuccess: (r) => setLast({ ok: true, text: r.message }),
+  });
+  return (
+    <Card icon="idCard" title="RFID visitor cards" sub="Tap a card on the desk reader to check the visitor in or out" className="mt-4" tight>
+      <form className="row g-2 wrap" style={{ alignItems: 'center' }} onSubmit={(e) => {
+        e.preventDefault();
+        const t = tag.trim();
+        if (t.length < 4) { setLast({ ok: false, text: 'Tap the card on the reader' }); return; }
+        setTag('');
+        tap.mutate({ tag: t, ...(campusId ? { campusId } : {}) }, { onError: (e) => setLast({ ok: false, text: (e as Error).message }) });
+      }}>
+        <input className="input" style={{ maxWidth: 260 }} autoComplete="off" aria-label="Card number" placeholder="Tap card… (or type the card number)"
+          value={tag} onChange={(e) => setTag(e.target.value)} />
+        <Button type="submit" icon="scan" loading={tap.isPending}>Check in / out</Button>
+        {last && <Badge tone={last.ok ? 'success' : 'critical'} icon={last.ok ? 'check' : 'alert'}>{last.text}</Badge>}
+      </form>
+    </Card>
+  );
+}
+
+function GiveCardModal({ visitor, onClose }: { visitor: Visitor; onClose: () => void }) {
+  const [tag, setTag] = useState('');
+  const [err, setErr] = useState('');
+  const give = useApiMutation<{ tag: string }>('post', `/visitors/${visitor.id}/rfid`, {
+    invalidate: ['/visitors'], success: `Card given to ${visitor.fullName}`, onSuccess: onClose, error: false,
+  });
+  const submit = () => {
+    if (tag.trim().length < 4) { setErr('Tap the card on the reader'); return; }
+    give.mutate({ tag: tag.trim() }, { onError: (e) => setErr((e as Error).message) });
+  };
+  return (
+    <Modal open onClose={onClose} busy={give.isPending} title={`Give an RFID card to ${visitor.fullName}`} sub={`${visitor.badgeNo} · ${visitor.purpose}`}
+      foot={<><Button onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={give.isPending} onClick={submit}>Give card</Button></>}>
+      <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <TextField label="Card number" required value={tag} onChange={(v) => { setTag(v); setErr(''); }} error={err} maxLength={40} autoFocus
+          placeholder="Tap the card on the reader" hint="Collect the card when the visitor leaves; tapping it again checks them out." />
+      </form>
+    </Modal>
   );
 }
 
@@ -113,7 +169,7 @@ function CheckInModal({ onClose, onDone }: { onClose: () => void; onDone: (v: Vi
   const { lookups } = useLookups();
   const { campusParam } = useSchool();
   const [mode, setMode] = useState<'now' | 'later'>('now');
-  const [f, setF] = useState({ fullName: '', phone: '', purpose: VISIT_PURPOSES[0], detail: '', hostEmployeeId: '', expectedAt: localInputIn(60) });
+  const [f, setF] = useState({ fullName: '', phone: '', purpose: VISIT_PURPOSES[0], detail: '', hostEmployeeId: '', expectedAt: localInputIn(60), rfidTag: '' });
   const fe = useFieldErrors();
   const set = (k: keyof typeof f) => (v: string) => { setF((x) => ({ ...x, [k]: v })); fe.clear(k); };
   const save = useApiMutation<Record<string, string>, Visitor>('post', '/visitors', { invalidate: [...SAFETY_KEYS], onSuccess: (r) => onDone(r.data) });
@@ -132,6 +188,7 @@ function CheckInModal({ onClose, onDone }: { onClose: () => void; onDone: (v: Vi
       ...(f.phone.trim() ? { phone: f.phone.trim() } : {}),
       ...(campusParam.campusId ? { campusId: campusParam.campusId } : {}),
       ...(mode === 'later' ? { expectedAt: localToIso(f.expectedAt) } : {}),
+      ...(f.rfidTag.trim() ? { rfidTag: f.rfidTag.trim() } : {}),
     }, { onError: fe.fromServer });
   };
   return (
@@ -158,6 +215,8 @@ function CheckInModal({ onClose, onDone }: { onClose: () => void; onDone: (v: Vi
         {mode === 'later' && (
           <TextField label="Expected at" type="datetime-local" required value={f.expectedAt} onChange={set('expectedAt')} error={fe.errors.expectedAt} />
         )}
+        <TextField label="RFID card (optional)" value={f.rfidTag} onChange={set('rfidTag')} maxLength={40} error={fe.errors.rfidTag}
+          placeholder="Tap the visitor card on the reader" hint="Tapping the same card later checks the visitor out." />
       </div>
       </div>
       <div className="mt-4 st-note">

@@ -60,6 +60,8 @@ export interface EmployeeProfile {
   allowances: { id: string; type: string; amount: number; frequency: string; effectiveMonth: string; status: string }[];
   cpd: { id: string; programme: string; provider: string | null; hours: number; completedOn: string | null; status: string }[];
   documents: { id: string; name: string; category: string; status: string; verifiedAt: string | null; requestedOn: string | null; hasFile: boolean }[];
+  /** Teaching staff: sections and subjects this year. */
+  teaching?: { section: string; subject: string; periods: number; classTeacher: boolean }[];
   roster: { id: string; date: string; post: string; status: string; shift: string; coveredBy: string | null }[];
   payslips: { id: string; payMonth: string; gross: number; net: number; status: string; runStatus: string }[];
 }

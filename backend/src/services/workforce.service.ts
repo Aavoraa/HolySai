@@ -5,6 +5,7 @@ import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagina
 import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { nextCode } from '../utils/codes.js';
 import { audit } from './audit.service.js';
+import { openStoredFile, safeFilename, verifyUploadedFile } from './documents.service.js';
 
 /** "Today" in the school timezone, for SQL. A trusted constant, never user input. */
 export const TODAY = `(now() AT TIME ZONE 'Asia/Kolkata')::date`;
@@ -223,7 +224,60 @@ export async function getEmployeeProfile(id: string, opts: { payroll: boolean })
     { label: 'Payroll', meta: latestSlip ? `${latestSlip.runStatus} run` : opts.payroll ? 'No run yet' : 'Restricted', state: latestSlip && ['Released', 'Paid'].includes(latestSlip.runStatus) ? 'done' : undefined },
     { label: 'Payslip', meta: latestSlip ? (latestSlip.status === 'Released' ? 'Released' : 'Not released') : '—', state: latestSlip?.status === 'Released' ? 'done' : undefined },
   ];
-  return { employee: base, journey, attendance, recentAttendance, leaveBalances, leaveRequests, overtime, allowances, cpd, documents, roster, payslips };
+  // What a teacher teaches this year (teacher profile).
+  const teaching = base.employeeType === 'teaching'
+    ? await many(
+      `SELECT c.name || sec.name AS section, sub.name AS subject, ta.periods_per_week AS periods, (sec.class_teacher_id = ta.employee_id) AS "classTeacher"
+         FROM teacher_assignments ta JOIN sections sec ON sec.id = ta.section_id JOIN classes c ON c.id = sec.class_id
+         JOIN subjects sub ON sub.id = ta.subject_id JOIN academic_years ay ON ay.id = ta.academic_year_id AND ay.is_current
+        WHERE ta.employee_id = $1 ORDER BY c.grade_level, sec.name, sub.name`, [id])
+    : [];
+  return { employee: base, journey, attendance, recentAttendance, leaveBalances, leaveRequests, overtime, allowances, cpd, documents, roster, payslips, teaching };
+}
+
+// ---------------------------------------------------------------------------
+// Employee documents (qualification certificates, ID, contract …) — HR uploads
+// a scan, either for a requested item on the checklist or as a new document.
+// ---------------------------------------------------------------------------
+export async function uploadEmployeeDocument(req: Request, employeeId: string, file: Express.Multer.File | undefined,
+  b: { name?: string; category?: string; documentId?: string }) {
+  if (!file) throw badRequest('Attach a file in the "file" field', 'FILE_REQUIRED', [{ field: 'file', message: 'Choose a file' }]);
+  const emp = await one<{ full_name: string }>('SELECT full_name FROM employees WHERE id = $1 AND deleted_at IS NULL', [employeeId]);
+  if (!emp) throw notFound('Employee not found', 'EMPLOYEE_NOT_FOUND');
+  const stored = await verifyUploadedFile(file);
+  const u = req.user!;
+  let id: string;
+  if (b.documentId) {
+    const row = await one<{ id: string; name: string }>(
+      `UPDATE documents SET storage_key = $3, original_name = $4, mime_type = $5, size_bytes = $6, checksum_sha256 = $7,
+              status = 'Verified', verified_by = $8, verified_at = now(), uploaded_by = $8
+        WHERE id = $1 AND employee_id = $2 AND deleted_at IS NULL RETURNING id, name`,
+      [b.documentId, employeeId, stored.storageKey, safeFilename(file.originalname), file.mimetype, stored.size, stored.checksum, u.id]);
+    if (!row) throw notFound('Document not found on this employee', 'DOCUMENT_NOT_FOUND');
+    id = row.id;
+    b.name = row.name;
+  } else {
+    if (!b.name || b.name.trim().length < 2) throw badRequest('Name the document', 'VALIDATION_ERROR', [{ field: 'name', message: 'Name the document' }]);
+    const row = await one<{ id: string }>(
+      `INSERT INTO documents (owner_type, owner_id, employee_id, name, category, status, storage_key, original_name, mime_type, size_bytes,
+                              checksum_sha256, uploaded_by, verified_by, verified_at)
+       VALUES ('employee', $1, $1, $2, $3, 'Verified', $4, $5, $6, $7, $8, $9, $9, now()) RETURNING id`,
+      [employeeId, b.name.trim(), b.category || 'Qualification certificate', stored.storageKey, safeFilename(file.originalname), file.mimetype,
+        stored.size, stored.checksum, u.id]);
+    id = row!.id;
+  }
+  await audit(req, { action: 'create', module: 'workforce', description: `Uploaded "${b.name}" for ${emp.full_name}`, entityType: 'document', entityId: id, metadata: { employeeId } });
+  return { id };
+}
+
+export async function openEmployeeDocument(req: Request, employeeId: string, documentId: string) {
+  const d = await one<{ id: string; storage_key: string | null; original_name: string | null; mime_type: string | null; name: string }>(
+    'SELECT id, storage_key, original_name, mime_type, name FROM documents WHERE id = $1 AND employee_id = $2 AND deleted_at IS NULL', [documentId, employeeId]);
+  if (!d || !d.storage_key) throw notFound('Document not found');
+  const stream = await openStoredFile(d.storage_key);
+  if (!stream) throw notFound('File is no longer available');
+  await audit(req, { action: 'view', module: 'workforce', description: `Downloaded "${d.name}"`, entityType: 'document', entityId: d.id, metadata: { employeeId } });
+  return { stream, name: safeFilename(d.original_name ?? d.name), mimeType: d.mime_type ?? 'application/octet-stream' };
 }
 
 export async function leaveBalancesFor(employeeId: string, db?: any) {

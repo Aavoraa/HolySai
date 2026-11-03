@@ -12,6 +12,7 @@ import { cx, fmt, todayKey } from '@/lib/format';
 import { gradeMeterTone } from '@/lib/grades';
 import type { Profile } from '../students/Student360Page';
 import { AttachmentList } from '../parents-experience/CircularAttachments';
+import { FeeBillModal } from '../finance/shared';
 import type { CircularAttachment } from '../parents-experience/types';
 
 type ChildRow = StudentRow & { relationship: string; isPrimary: boolean; canViewTracking: boolean; locationStatus: string | null; locationRecordedAt: string | null };
@@ -620,6 +621,7 @@ function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [receipt, setReceipt] = useState<{ receiptNo: string; amount: number; method: string; paidAt: string; gatewayRef?: string } | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [bill, setBill] = useState(false);
   const pay = useApiMutation<{ amount: number; method: string; feeIds: string[] }, { receiptNo: string; amount: number; method: string; paidAt: string; gatewayRef?: string }>(
     'post', `/family/children/${child.id}/fees/pay`, {
       invalidate: [`/family/children/${child.id}`, '/parents', '/notifications'],
@@ -651,6 +653,7 @@ function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: 
             <div className="t-xs t-muted mt-1">{d.summary.nextDue ? `Next instalment due ${fmt.date(d.summary.nextDue.date)}` : 'All dues cleared'}</div>
             <div className="t-xs t-muted mt-1">Billed {fmt.money(d.summary.billed)} · paid {fmt.money(d.summary.paid)}</div>
             {d.summary.outstanding > 0 && <div className="mt-4"><Button variant="teal" block icon="creditCard" onClick={() => setPaying(true)}>{t('Pay Now')}</Button></div>}
+            {d.summary.outstanding > 0 && <div className="mt-2"><Button block icon="fileText" onClick={() => setBill(true)}>View fee bill · bank & UPI details</Button></div>}
           </Card>
           <Card icon="wallet" title="Receipts">
             {d.payments.length ? (
@@ -724,6 +727,7 @@ function FeesTab({ child, autoPay, onAutoPayDone }: { child: ChildRow; autoPay: 
       </Modal>
 
       {viewing && <ReceiptModal paymentId={viewing} onClose={() => setViewing(null)} />}
+      <FeeBillModal endpoint={bill ? `/family/children/${child.id}/bill` : null} onClose={() => setBill(false)} />
     </>
   );
 }

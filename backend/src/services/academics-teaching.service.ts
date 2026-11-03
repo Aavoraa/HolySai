@@ -1,10 +1,11 @@
 import type { Request } from 'express';
 import { many, one, query, tx, type Queryable } from '../config/db.js';
-import { badRequest, notFound } from '../utils/errors.js';
+import { badRequest, forbidden, notFound } from '../utils/errors.js';
+import { readCsvRecords, type ImportRowResult } from '../utils/csv.js';
 import { audit } from './audit.service.js';
 import { notifyUsers } from './notification.service.js';
 import {
-  authorizeSection, isRestricted, isoDow, requireSchoolScope, schoolMinutesNow, schoolToday,
+  authorizeSection, isRestricted, isoDow, schoolMinutesNow, schoolToday,
 } from './academics.service.js';
 import { DAY_NAMES } from './academics-shared.js';
 import type { AuthUser } from '../types.js';
@@ -221,6 +222,7 @@ export async function getTimetable(user: AuthUser, f: { sectionId?: string; empl
   return {
     title,
     campusId,
+    canEdit: f.sectionId ? await canEditTimetable(user, f.sectionId) : false,
     days: DAY_NAMES.slice(0, maxDay),
     periods,
     entries,
@@ -386,10 +388,28 @@ export async function clearSubstitute(req: Request, entryId: string) {
   });
 }
 
+/**
+ * Who may change a section's timetable: school-level academic staff for any section
+ * in scope, and a teacher for the section they are class teacher of.
+ */
+export async function authorizeTimetableEdit(user: AuthUser, sectionId: string, db?: Queryable) {
+  const sec = await authorizeSection(user, sectionId, db);
+  if ((isRestricted(user) || user.scope === 'class') && (!user.employeeId || sec.classTeacherId !== user.employeeId)) {
+    throw forbidden(`Only the class teacher of ${sec.label} or the school office can change its timetable`);
+  }
+  return sec;
+}
+
+/** True when the user may edit this section's timetable (for the UI). */
+export async function canEditTimetable(user: AuthUser, sectionId: string) {
+  if (!user.permissions.has('academics.manage')) return false;
+  try { await authorizeTimetableEdit(user, sectionId); return true; } catch { return false; }
+}
+
 export async function updateEntry(req: Request, entryId: string, input: { subjectId?: string | null; activity?: string | null; employeeId?: string | null; room?: string | null; needsSubstitute?: boolean }) {
-  requireSchoolScope(req.user!, 'Editing the timetable');
   return tx(async (db) => {
     const e = await loadEntry(entryId, db);
+    await authorizeTimetableEdit(req.user!, e.section_id, db);
     const subjectId = input.subjectId !== undefined ? input.subjectId : e.subject_id;
     const activity = input.activity !== undefined ? input.activity : e.activity;
     if (!subjectId && !activity) throw badRequest('Choose a subject or enter an activity', 'VALIDATION_ERROR', [{ field: 'subjectId', message: 'Choose a subject or enter an activity' }]);
@@ -416,9 +436,8 @@ export async function updateEntry(req: Request, entryId: string, input: { subjec
 }
 
 export async function publishTimetable(req: Request, sectionId: string, note?: string | null) {
-  requireSchoolScope(req.user!, 'Publishing timetable changes');
   return tx(async (db) => {
-    const sec = await authorizeSection(req.user!, sectionId, db);
+    const sec = await authorizeTimetableEdit(req.user!, sectionId, db);
     const users = await many<{ user_id: string }>(
       `SELECT DISTINCT e.user_id FROM timetable_entries te JOIN employees e ON e.id IN (te.employee_id, te.substitute_id)
         WHERE te.section_id = $1 AND e.user_id IS NOT NULL`,
@@ -432,4 +451,188 @@ export async function publishTimetable(req: Request, sectionId: string, note?: s
     await audit(req, { action: 'publish', module: 'academics', description: `Published timetable changes for ${sec.label}`, entityType: 'section', entityId: sectionId, metadata: { note, notified: users.length } }, db);
     return { notified: users.length };
   });
+}
+
+// ---- Adding, clearing and importing periods ------------------------------------------
+export interface SlotInput {
+  sectionId: string; day: number; periodId: string;
+  subjectId?: string | null; activity?: string | null; employeeId?: string | null; room?: string | null;
+}
+
+/** Creates or replaces one period of a section's week. The caller has authorised the section. */
+async function writeSlot(db: Queryable, campusId: string, s: SlotInput) {
+  if (!s.subjectId && !s.activity) throw badRequest('Choose a subject or enter an activity', 'VALIDATION_ERROR', [{ field: 'subjectId', message: 'Choose a subject or enter an activity' }]);
+  const period = await one<{ period_no: number }>('SELECT period_no FROM periods WHERE id = $1 AND campus_id = $2', [s.periodId, campusId], db);
+  if (!period) throw badRequest('That period is not part of this campus day', 'INVALID_PERIOD', [{ field: 'periodId', message: 'Choose a period' }]);
+  if (s.employeeId) {
+    const t = await one('SELECT 1 FROM employees WHERE id = $1 AND campus_id = $2 AND deleted_at IS NULL', [s.employeeId, campusId], db);
+    if (!t) throw badRequest('Choose a teacher from this campus', 'INVALID_TEACHER', [{ field: 'employeeId', message: 'Choose a teacher from this campus' }]);
+    const clash = await one<{ label: string }>(
+      `SELECT c.name || sec.name AS label FROM timetable_entries x JOIN periods px ON px.id = x.period_id
+         JOIN sections sec ON sec.id = x.section_id JOIN classes c ON c.id = sec.class_id
+        WHERE x.section_id <> $1 AND x.day_of_week = $2 AND px.period_no = $3 AND (x.employee_id = $4 OR x.substitute_id = $4) LIMIT 1`,
+      [s.sectionId, s.day, period.period_no, s.employeeId], db,
+    );
+    if (clash) throw badRequest(`That teacher already has ${clash.label} in this period`, 'TEACHER_BUSY', [{ field: 'employeeId', message: `Already teaching ${clash.label}` }]);
+  }
+  const row = await one<{ id: string; inserted: boolean }>(
+    `INSERT INTO timetable_entries (section_id, day_of_week, period_id, subject_id, activity, employee_id, room)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (section_id, day_of_week, period_id) DO UPDATE
+       SET subject_id = EXCLUDED.subject_id, activity = EXCLUDED.activity, room = EXCLUDED.room,
+           substitute_id = CASE WHEN timetable_entries.employee_id IS DISTINCT FROM EXCLUDED.employee_id THEN NULL ELSE timetable_entries.substitute_id END,
+           needs_substitute = CASE WHEN timetable_entries.employee_id IS DISTINCT FROM EXCLUDED.employee_id THEN false ELSE timetable_entries.needs_substitute END,
+           employee_id = EXCLUDED.employee_id
+     RETURNING id, (xmax = 0) AS inserted`,
+    [s.sectionId, s.day, s.periodId, s.subjectId ?? null, s.activity ?? null, s.employeeId ?? null, s.room ?? null], db,
+  );
+  return { id: row!.id, inserted: row!.inserted, periodNo: period.period_no };
+}
+
+export async function saveSlot(req: Request, s: SlotInput) {
+  return tx(async (db) => {
+    const sec = await authorizeTimetableEdit(req.user!, s.sectionId, db);
+    const out = await writeSlot(db, sec.campusId, s);
+    await audit(req, {
+      action: out.inserted ? 'create' : 'update', module: 'academics',
+      description: `${out.inserted ? 'Added' : 'Edited'} timetable ${sec.label}, ${DAY_NAMES[s.day - 1]} P${out.periodNo}`,
+      entityType: 'timetable_entry', entityId: out.id, metadata: { ...s },
+    }, db);
+    return { id: out.id, created: out.inserted };
+  });
+}
+
+export async function deleteEntry(req: Request, entryId: string) {
+  return tx(async (db) => {
+    const e = await loadEntry(entryId, db);
+    await authorizeTimetableEdit(req.user!, e.section_id, db);
+    await query('DELETE FROM timetable_entries WHERE id = $1', [entryId], db);
+    await audit(req, { action: 'delete', module: 'academics', description: `Cleared timetable ${e.section_label}, ${DAY_NAMES[e.day_of_week - 1]} P${e.period_no}`, entityType: 'timetable_entry', entityId: entryId }, db);
+    return { id: entryId };
+  });
+}
+
+export const TIMETABLE_COLUMNS = ['class', 'section', 'day', 'period', 'subject', 'activity', 'teacher', 'room'] as const;
+export const TIMETABLE_EXAMPLE = [
+  { class: 'Grade 6', section: 'A', day: 'Monday', period: '1', subject: 'MAT', teacher: 'EMP-1001', room: 'R-12' },
+  { class: 'Grade 6', section: 'A', day: 'Monday', period: '2', subject: 'English', teacher: 'Priya Raghavan', room: 'R-12' },
+  { class: 'Grade 6', section: 'A', day: 'Monday', period: '3', activity: 'Library', room: 'Library' },
+];
+const MAX_TIMETABLE_ROWS = 600;
+
+const dayNumber = (s: string) => {
+  if (/^[1-6]$/.test(s)) return Number(s);
+  const i = DAY_NAMES.findIndex((d) => d.toLowerCase().startsWith(s.toLowerCase().slice(0, 3)) && s.length >= 3);
+  return i >= 0 ? i + 1 : null;
+};
+
+/**
+ * Imports a timetable CSV (one row per period) for one campus. Each row creates or
+ * replaces that period; a row with neither subject nor activity clears the period.
+ * Every row is checked first; nothing is written unless all rows are valid.
+ */
+export async function importTimetable(req: Request, file: Express.Multer.File | undefined, opts: { campusId: string; dryRun: boolean }) {
+  const user = req.user!;
+  const records = readCsvRecords(file, { columns: TIMETABLE_COLUMNS, required: ['class', 'section', 'day', 'period'], maxRows: MAX_TIMETABLE_ROWS, what: 'period' });
+  const [sections, periods, subjects, teachers] = await Promise.all([
+    many<{ id: string; cls: string; grade: number; sec: string; label: string }>(
+      `SELECT sec.id, lower(c.name) AS cls, c.grade_level AS grade, lower(sec.name) AS sec, c.name || sec.name AS label
+         FROM sections sec JOIN classes c ON c.id = sec.class_id JOIN academic_years ay ON ay.id = sec.academic_year_id AND ay.is_current
+        WHERE c.campus_id = $1`, [opts.campusId]),
+    many<{ id: string; no: number }>('SELECT id, period_no AS no FROM periods WHERE campus_id = $1', [opts.campusId]),
+    many<{ id: string; code: string; name: string }>('SELECT id, lower(code) AS code, lower(name) AS name FROM subjects'),
+    many<{ id: string; code: string; name: string }>(
+      `SELECT id, lower(employee_code) AS code, lower(full_name) AS name FROM employees WHERE campus_id = $1 AND deleted_at IS NULL AND employment_status = 'active'`, [opts.campusId]),
+  ]);
+  if (!periods.length) throw badRequest('This campus has no periods set up yet', 'NO_PERIODS');
+
+  const allowed = new Map<string, boolean>();
+  const results: ImportRowResult[] = [];
+  const plan: { row: number; sectionId: string; label: string; slot: SlotInput | null; day: number; periodId: string }[] = [];
+  const seen = new Set<string>();
+  for (const { row, rec } of records) {
+    const errors: { field: string; message: string }[] = [];
+    const clsKey = rec.class?.toLowerCase() ?? '';
+    const gradeNo = Number(clsKey.replace(/\D/g, '')) || null;
+    const sec = sections.find((s) => (s.cls === clsKey || (gradeNo !== null && s.grade === gradeNo)) && s.sec === (rec.section ?? '').toLowerCase());
+    const label = sec?.label ?? `${rec.class ?? ''} ${rec.section ?? ''}`.trim();
+    if (!sec) errors.push({ field: 'section', message: `No section "${label}" on this campus this year` });
+    else {
+      if (!allowed.has(sec.id)) allowed.set(sec.id, await authorizeTimetableEdit(user, sec.id).then(() => true, () => false));
+      if (!allowed.get(sec.id)) errors.push({ field: 'section', message: `You cannot change the timetable of ${sec.label}` });
+    }
+    const day = dayNumber(rec.day ?? '');
+    if (!day) errors.push({ field: 'day', message: 'Use Monday–Saturday or 1–6' });
+    const period = periods.find((p) => String(p.no) === (rec.period ?? '').replace(/^p/i, ''));
+    if (!period) errors.push({ field: 'period', message: `No period ${rec.period || '(blank)'} — this campus has ${periods.length}` });
+    const subjKey = (rec.subject ?? '').toLowerCase();
+    const subject = subjKey ? subjects.find((s) => s.code === subjKey || s.name === subjKey) : null;
+    if (subjKey && !subject) errors.push({ field: 'subject', message: `Unknown subject "${rec.subject}"` });
+    const teachKey = (rec.teacher ?? '').toLowerCase();
+    const teacher = teachKey ? teachers.find((t) => t.code === teachKey || t.name === teachKey) : null;
+    if (teachKey && !teacher) errors.push({ field: 'teacher', message: `No active staff member "${rec.teacher}" on this campus` });
+    if ((rec.activity ?? '').length > 40) errors.push({ field: 'activity', message: 'Keep the activity under 40 characters' });
+    if ((rec.room ?? '').length > 40) errors.push({ field: 'room', message: 'Keep the room under 40 characters' });
+    if (sec && day && period) {
+      const key = `${sec.id}:${day}:${period.id}`;
+      if (seen.has(key)) errors.push({ field: 'period', message: `${sec.label} ${DAY_NAMES[day - 1]} P${period.no} appears twice in the file` });
+      seen.add(key);
+    }
+    if (errors.length) { results.push({ row, label, ok: false, errors }); continue; }
+    const empty = !subject && !rec.activity;
+    plan.push({
+      row, sectionId: sec!.id, label: sec!.label, day: day!, periodId: period!.id,
+      slot: empty ? null : { sectionId: sec!.id, day: day!, periodId: period!.id, subjectId: subject?.id ?? null, activity: rec.activity || null, employeeId: teacher?.id ?? null, room: rec.room || null },
+    });
+    results.push({ row, label, ok: true });
+  }
+
+  const failed = results.filter((r) => !r.ok).length;
+  if (opts.dryRun || failed) {
+    return { dryRun: opts.dryRun, rows: records.length, valid: records.length - failed, failed, imported: 0, cleared: 0, results };
+  }
+  // All rows valid: write them together so a teacher clash between rows rolls the whole file back.
+  try {
+    const counts = await tx(async (db) => {
+      let written = 0;
+      let cleared = 0;
+      // Clear first, so a teacher moved within the file does not clash with their old slot.
+      for (const p of plan) {
+        const del = await query('DELETE FROM timetable_entries WHERE section_id = $1 AND day_of_week = $2 AND period_id = $3', [p.sectionId, p.day, p.periodId], db);
+        if (!p.slot) cleared += del.rowCount ?? 0;
+      }
+      const campus = opts.campusId;
+      for (const p of plan) {
+        if (!p.slot) continue;
+        try { await writeSlot(db, campus, p.slot); written++; } catch (e: any) {
+          throw Object.assign(new Error(e?.message ?? 'Could not save this period'), { row: p.row, label: p.label, field: e?.details?.[0]?.field ?? 'teacher' });
+        }
+      }
+      const sectionsTouched = new Set(plan.map((p) => p.label));
+      await audit(req, {
+        action: 'create', module: 'academics',
+        description: `Imported timetable for ${[...sectionsTouched].join(', ')} from ${file!.originalname.replace(/[^\w.\- ]/g, '')}`,
+        metadata: { rows: records.length, written, cleared },
+      }, db);
+      return { written, cleared };
+    });
+    return { dryRun: false, rows: records.length, valid: records.length, failed: 0, imported: counts.written, cleared: counts.cleared, results };
+  } catch (e: any) {
+    if (!e?.row) throw e;
+    const out = results.map((r) => (r.row === e.row ? { ...r, ok: false, errors: [{ field: e.field, message: e.message }] } : r));
+    return { dryRun: false, rows: records.length, valid: records.length - 1, failed: 1, imported: 0, cleared: 0, results: out };
+  }
+}
+
+/** Which sections of a campus the user may edit (the class teacher sees only theirs). */
+export async function editableSections(user: AuthUser, campusId?: string) {
+  if (!user.permissions.has('academics.manage')) return [];
+  const schoolLevel = !isRestricted(user) && user.scope !== 'class';
+  return many<{ id: string; label: string }>(
+    `SELECT sec.id, c.name || sec.name AS label FROM sections sec JOIN classes c ON c.id = sec.class_id
+       JOIN academic_years ay ON ay.id = sec.academic_year_id AND ay.is_current
+      WHERE ($1::uuid IS NULL OR c.campus_id = $1) AND ($2 OR sec.class_teacher_id = $3)
+      ORDER BY c.grade_level, sec.name`,
+    [campusId ?? null, schoolLevel, user.employeeId ?? null],
+  );
 }

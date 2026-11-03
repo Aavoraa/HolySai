@@ -4,7 +4,7 @@ import { useApiMutation } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useAuth } from '@/auth/AuthContext';
 import {
-  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, Icon, SelectField, Status, TextArea, TextField, errorMessage, useConfirm, useToast,
+  Badge, Button, Card, Checkbox, DataTable, Dl, Empty, Flow, Icon, SelectField, Status, TextArea, TextField, Timeline, errorMessage, useConfirm, useToast,
 } from '@/components/ui';
 import { NewApplicationModal, useFileUpload, viewFile } from './AdmissionForm';
 import { fmt, todayKey } from '@/lib/format';
@@ -108,6 +108,18 @@ export function ApplicationCard({ lead }: { lead: LeadProfile }) {
       {app.studentId && (
         <div className="mt-4">
           <Button icon="user" onClick={() => navigate(`/student-360/${app.studentId}`)}>Open Student 360 · {app.admissionNo}</Button>
+        </div>
+      )}
+      {(app.statusHistory ?? []).length > 0 && (
+        <div className="mt-4">
+          <div className="eyebrow mb-2">Status history</div>
+          <Timeline items={app.statusHistory!.map((h) => ({
+            time: fmt.dateTime(h.changedAt),
+            title: h.fromStatus ? `${h.fromStatus} → ${h.toStatus}` : h.toStatus,
+            body: [h.note, h.changedBy ? `by ${h.changedBy}` : null].filter(Boolean).join(' · ') || undefined,
+            tone: ['Rejected', 'Withdrawn'].includes(h.toStatus) ? 'critical' : h.toStatus === 'Enrolled' ? 'teal' : 'neutral',
+          }))} />
+          <p className="t-micro t-muted mt-2">Families can follow progress at <b>/track-application</b> with {app.applicationNo} and their phone number.</p>
         </div>
       )}
       {target && <StatusModal app={app} target={target} onClose={() => setTarget(null)} />}

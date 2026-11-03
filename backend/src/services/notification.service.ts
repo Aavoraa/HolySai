@@ -1,6 +1,7 @@
 import { many, query, type Queryable } from '../config/db.js';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
+import { sendWhatsApp, whatsappNumber } from './whatsapp.provider.js';
 
 export type Category = 'Critical' | 'Attention' | 'Information' | 'Completed';
 export type Tone = 'critical' | 'warning' | 'caution' | 'info' | 'success' | 'neutral';
@@ -89,29 +90,65 @@ const PROVIDER_CONFIGURED: Record<Channel, () => boolean> = {
   push: () => !!env.PUSH_FCM_SERVER_KEY,
 };
 
+/** Adapters that actually send. Channels without one stay queued until an adapter is added. */
+const ADAPTERS: Partial<Record<Channel, (d: OutboxRow) => Promise<string | null>>> = {
+  whatsapp: (d) => sendWhatsApp({ to: d.destination, title: d.title, body: d.body, reference: d.id }),
+};
+
+interface OutboxRow { id: string; channel: Channel; attempts: number; destination: string; title: string; body: string | null }
+
+const MAX_ATTEMPTS = 5;
+
 /**
  * Outbox dispatcher. No external service is called unless its credentials are
- * configured; otherwise pending rows stay queued so nothing is lost when a
- * provider is added later. Provider adapters plug in at `send`.
+ * configured and an adapter exists; otherwise pending rows stay queued so nothing
+ * is lost when a provider is added later. Failures retry with backoff, then fail.
  */
 export async function dispatchPending(limit = 50) {
-  const rows = await many<{ id: string; channel: Channel }>(
-    `SELECT id, channel FROM notification_deliveries
-      WHERE status = 'pending' AND next_attempt_at <= now()
-      ORDER BY next_attempt_at LIMIT $1`,
-    [limit],
+  const ready = (Object.keys(ADAPTERS) as Channel[]).filter((c) => PROVIDER_CONFIGURED[c]());
+  if (!ready.length) return 0;
+  // Alerts are time-sensitive: anything queued over a day ago (e.g. the backlog from before a
+  // provider was connected) is expired rather than sent late.
+  await query(
+    `UPDATE notification_deliveries SET status = 'skipped', last_error = 'Expired: queued more than 24 hours ago', updated_at = now()
+      WHERE status = 'pending' AND channel = ANY($1) AND created_at < now() - interval '24 hours'`,
+    [ready],
+  );
+  // The recipient's own number: a parent's or staff member's record first, then the login.
+  const rows = await many<OutboxRow & { phone: string | null }>(
+    `SELECT d.id, d.channel, d.attempts, n.title, n.body,
+            COALESCE(NULLIF(d.destination, ''), p.phone, e.phone, u.phone) AS phone
+       FROM notification_deliveries d
+       JOIN notifications n ON n.id = d.notification_id
+       JOIN users u ON u.id = n.user_id
+       LEFT JOIN parents p ON p.user_id = u.id AND p.deleted_at IS NULL
+       LEFT JOIN employees e ON e.user_id = u.id AND e.deleted_at IS NULL
+      WHERE d.status = 'pending' AND d.next_attempt_at <= now() AND d.channel = ANY($2)
+      ORDER BY d.next_attempt_at LIMIT $1`,
+    [limit, ready],
   );
   for (const row of rows) {
-    if (!PROVIDER_CONFIGURED[row.channel]()) continue;
+    const to = row.channel === 'whatsapp' ? whatsappNumber(row.phone) : row.phone;
+    if (!to) {
+      await query(`UPDATE notification_deliveries SET status = 'skipped', last_error = 'No usable phone number for this user', updated_at = now() WHERE id = $1`, [row.id]);
+      continue;
+    }
     try {
-      // Provider adapter goes here (WhatsApp Business API, SMS gateway, SMTP, FCM).
-      logger.info({ delivery: row.id, channel: row.channel }, 'delivery adapter not implemented; leaving queued');
-    } catch (err) {
+      const ref = await ADAPTERS[row.channel]!({ ...row, destination: to });
       await query(
-        `UPDATE notification_deliveries SET attempts = attempts + 1, last_error = $2,
-                next_attempt_at = now() + (interval '1 minute' * power(2, attempts)) WHERE id = $1`,
-        [row.id, (err as Error).message],
+        `UPDATE notification_deliveries SET status = 'sent', destination = $2, provider = $3, provider_ref = $4,
+                attempts = attempts + 1, last_error = NULL, updated_at = now() WHERE id = $1`,
+        [row.id, to, row.channel === 'whatsapp' ? `whatsapp:${env.WHATSAPP_PROVIDER}` : row.channel, ref],
       );
+    } catch (err) {
+      const failed = row.attempts + 1 >= MAX_ATTEMPTS;
+      await query(
+        `UPDATE notification_deliveries SET attempts = attempts + 1, last_error = $2, destination = $3, updated_at = now(),
+                status = CASE WHEN $4 THEN 'failed' ELSE status END,
+                next_attempt_at = now() + (interval '1 minute' * power(2, attempts)) WHERE id = $1`,
+        [row.id, (err as Error).message.slice(0, 500), to, failed],
+      );
+      logger.warn({ delivery: row.id, channel: row.channel, attempt: row.attempts + 1, err: (err as Error).message }, 'delivery failed');
     }
   }
   return rows.length;

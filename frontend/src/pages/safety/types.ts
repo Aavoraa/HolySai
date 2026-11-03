@@ -109,6 +109,8 @@ export interface PickupSummary {
 export interface Visitor {
   id: string;
   badgeNo: string;
+  /** RFID visitor card currently (or last) held. */
+  rfidTag: string | null;
   fullName: string;
   phone: string | null;
   purpose: string;

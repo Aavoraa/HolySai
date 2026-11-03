@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { requireAny, requirePermission } from '../middleware/auth.js';
 import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
+import { csvDocument, csvUpload, sendCsv } from '../utils/csv.js';
 import * as V from '../validators/academics.validators.js';
 import * as core from '../services/academics.service.js';
 import * as att from '../services/academics-attendance.service.js';
@@ -112,6 +113,31 @@ r.get('/academics/timetable', READ, validate(V.timetableQuery, 'query'),
 
 r.get('/academics/timetable/insights', READ, validate(V.campusQuery, 'query'),
   async (req: Request, res: Response) => ok(res, await teach.timetableInsights(req.user!, v(req, 'query').campusId), 'Timetable insights'));
+
+r.get('/academics/timetable/editable-sections', MANAGE, validate(V.campusQuery, 'query'),
+  async (req: Request, res: Response) => ok(res, await teach.editableSections(req.user!, v(req, 'query').campusId), 'Sections you can edit'));
+
+// Timetable CSV import (registered before /entries/:id). Class teachers may import their own section.
+r.get('/academics/timetable/import/template', MANAGE,
+  (_req: Request, res: Response) => sendCsv(res, 'timetable-template.csv', csvDocument(teach.TIMETABLE_COLUMNS, teach.TIMETABLE_EXAMPLE)));
+
+r.post('/academics/timetable/import', MANAGE, csvUpload('timetable').single('file'), validate(V.timetableImport),
+  async (req: Request, res: Response) => {
+    const out = await teach.importTimetable(req, req.file, v(req));
+    const msg = out.dryRun || out.failed
+      ? `${out.valid} of ${out.rows} row${out.rows === 1 ? '' : 's'} ready${out.failed ? ` · ${out.failed} need attention` : ''}`
+      : `${out.imported} period${out.imported === 1 ? '' : 's'} saved${out.cleared ? ` · ${out.cleared} cleared` : ''}`;
+    return ok(res, out, msg);
+  });
+
+r.put('/academics/timetable/slots', MANAGE, validate(V.timetableSlot),
+  async (req: Request, res: Response) => {
+    const out = await teach.saveSlot(req, v(req));
+    return out.created ? created(res, out, 'Period added') : ok(res, out, 'Timetable updated');
+  });
+
+r.delete('/academics/timetable/entries/:id', MANAGE, id,
+  async (req: Request, res: Response) => ok(res, await teach.deleteEntry(req, pid(req)), 'Period cleared'));
 
 r.put('/academics/timetable/entries/:id', MANAGE, id, validate(V.timetableEntryUpdate),
   async (req: Request, res: Response) => ok(res, await teach.updateEntry(req, pid(req), v(req)), 'Timetable updated'));

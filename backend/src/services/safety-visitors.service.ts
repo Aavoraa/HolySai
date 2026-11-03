@@ -9,7 +9,7 @@ import { notifyUsers } from './notification.service.js';
 import { employeeUserId, hhmm, localDate, TODAY } from './safety-common.service.js';
 
 const SELECT = `
-  SELECT v.id, v.badge_no AS "badgeNo", v.full_name AS "fullName", v.phone, v.purpose, v.status,
+  SELECT v.id, v.badge_no AS "badgeNo", v.rfid_tag AS "rfidTag", v.full_name AS "fullName", v.phone, v.purpose, v.status,
          v.checked_in_at AS "checkedInAt", v.checked_out_at AS "checkedOutAt",
          v.host_employee_id AS "hostId", e.full_name AS "hostName", e.designation AS "hostDesignation",
          v.campus_id AS "campusId", cp.short_name AS "campusName", u.full_name AS "createdByName", v.created_at AS "createdAt"
@@ -36,7 +36,7 @@ export async function listVisitors(f: VisitorFilters) {
           OR (v.status = 'Inside' AND COALESCE(${day}::date, ${TODAY}) = ${TODAY}))`);
   w.addIf(f.campusId, 'v.campus_id = ?');
   w.addIf(f.status, 'v.status = ?');
-  if (f.q) w.add('(v.full_name ILIKE ? OR v.badge_no ILIKE ? OR v.purpose ILIKE ?)', likeTerm(f.q), likeTerm(f.q), likeTerm(f.q));
+  if (f.q) w.add('(v.full_name ILIKE ? OR v.badge_no ILIKE ? OR v.purpose ILIKE ? OR v.rfid_tag ILIKE ?)', likeTerm(f.q), likeTerm(f.q), likeTerm(f.q), likeTerm(f.q));
   const { limit, offset } = limitOffset(f);
   const rows = await many(
     `SELECT x.*, count(*) OVER() AS total FROM (${SELECT} ${w.sql}) x
@@ -76,6 +76,20 @@ export interface VisitorInput {
   hostEmployeeId: string;
   campusId?: string;
   expectedAt?: string;
+  rfidTag?: string;
+}
+
+/** Reader output → stored tag: card UIDs are hex or decimal; readers add spaces, colons or dashes. */
+export function normaliseTag(raw: string) {
+  const t = raw.replace(/[\s:-]/g, '').toUpperCase();
+  if (!/^[0-9A-F]{4,32}$/.test(t)) throw badRequest('That does not look like a card number — tap the card again', 'INVALID_RFID_TAG', [{ field: 'rfidTag', message: 'Tap the card on the reader' }]);
+  return t;
+}
+
+async function assertTagFree(tag: string, exceptId: string | null, db?: Parameters<typeof one>[2]) {
+  const holder = await one<{ full_name: string; badge_no: string }>(
+    `SELECT full_name, badge_no FROM visitors WHERE rfid_tag = $1 AND status IN ('Expected', 'Inside') AND id IS DISTINCT FROM $2`, [tag, exceptId], db);
+  if (holder) throw conflict(`Card ${tag} is still with ${holder.full_name} (${holder.badge_no}). Check them out first.`, 'RFID_TAG_IN_USE');
 }
 
 export async function createVisitor(req: Request, input: VisitorInput) {
@@ -93,14 +107,17 @@ export async function createVisitor(req: Request, input: VisitorInput) {
     throw badRequest('A pre-approved visit must be in the future', 'VISIT_IN_PAST', [{ field: 'expectedAt', message: 'Choose a future time' }]);
   }
 
+  const tag = input.rfidTag ? normaliseTag(input.rfidTag) : null;
+  if (tag) await assertTagFree(tag, null);
+
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const id = await tx(async (db) => {
         const badge = await nextCode('visitors', 'badge_no', 'V-', db);
         const row = await one<{ id: string; checked_in_at: Date }>(
-          `INSERT INTO visitors (campus_id, badge_no, full_name, phone, purpose, host_employee_id, checked_in_at, status, created_by)
-           VALUES ($1,$2,$3,$4,$5,$6, COALESCE($7::timestamptz, now()), $8, $9) RETURNING id, checked_in_at`,
-          [campusId, badge, input.fullName, input.phone ?? null, input.purpose, host.id, expected, expected ? 'Expected' : 'Inside', req.user!.id],
+          `INSERT INTO visitors (campus_id, badge_no, full_name, phone, purpose, host_employee_id, checked_in_at, status, created_by, rfid_tag)
+           VALUES ($1,$2,$3,$4,$5,$6, COALESCE($7::timestamptz, now()), $8, $9, $10) RETURNING id, checked_in_at`,
+          [campusId, badge, input.fullName, input.phone ?? null, input.purpose, host.id, expected, expected ? 'Expected' : 'Inside', req.user!.id, tag],
           db,
         );
         if (host.user_id) {
@@ -123,6 +140,7 @@ export async function createVisitor(req: Request, input: VisitorInput) {
       return getVisitor(id);
     } catch (err) {
       // Two check-ins at the same moment can race for a badge number; retry.
+      if ((err as { constraint?: string }).constraint === 'visitors_active_rfid_tag_key') throw conflict(`Card ${tag} was just given to another visitor`, 'RFID_TAG_IN_USE');
       if ((err as { code?: string }).code === '23505' && attempt < 2) continue;
       throw err;
     }
@@ -160,3 +178,33 @@ async function transition(req: Request, id: string, from: string[], to: 'Inside'
 export const checkIn = (req: Request, id: string) => transition(req, id, ['Expected'], 'Inside', 'checked_in_at = now()', 'checked in');
 export const checkOut = (req: Request, id: string) => transition(req, id, ['Inside'], 'Completed', 'checked_out_at = now()', 'checked out');
 export const deny = (req: Request, id: string) => transition(req, id, ['Expected'], 'Denied', 'checked_out_at = NULL', 'denied entry');
+
+/** Hands a card to a visitor who is expected or already inside. */
+export async function assignCard(req: Request, id: string, rawTag: string) {
+  const tag = normaliseTag(rawTag);
+  const v = await one<{ status: string; full_name: string; badge_no: string }>('SELECT status, full_name, badge_no FROM visitors WHERE id = $1', [id]);
+  if (!v) throw notFound('Visitor not found', 'VISITOR_NOT_FOUND');
+  if (!['Expected', 'Inside'].includes(v.status)) throw conflict(`${v.full_name} is ${v.status.toLowerCase()}; cards go only to current visitors`, 'VISITOR_STATE');
+  await assertTagFree(tag, id);
+  await tx(async (db) => {
+    await query('UPDATE visitors SET rfid_tag = $2 WHERE id = $1', [id, tag], db);
+    await audit(req, { action: 'update', module: 'safety', description: `Gave RFID card ${tag} to visitor ${v.full_name} (${v.badge_no})`, entityType: 'visitor', entityId: id }, db);
+  });
+  return getVisitor(id);
+}
+
+/**
+ * A card tapped on the desk or gate reader: checks a pre-approved visitor in, or a
+ * visitor inside out. USB readers type the card number like a keyboard, so the
+ * Visitors page posts each tap here.
+ */
+export async function tapCard(req: Request, rawTag: string, campusId?: string) {
+  const tag = normaliseTag(rawTag);
+  const v = await one<{ id: string; status: string }>(
+    `SELECT id, status FROM visitors WHERE rfid_tag = $1 AND status IN ('Expected', 'Inside') AND ($2::uuid IS NULL OR campus_id = $2)`,
+    [tag, campusId ?? null]);
+  if (!v) throw notFound(`Card ${tag} is not with any visitor. Give it to the visitor at the desk first.`, 'RFID_TAG_UNKNOWN');
+  const action = v.status === 'Expected' ? 'in' : 'out';
+  const visitor = action === 'in' ? await checkIn(req, v.id) : await checkOut(req, v.id);
+  return { action, visitor };
+}

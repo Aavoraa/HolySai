@@ -8,6 +8,7 @@ import { useListParams } from '@/hooks/useListParams';
 import { useSchool } from '@/layouts/SchoolContext';
 import { useAuth } from '@/auth/AuthContext';
 import { cx, fmt, todayKey } from '@/lib/format';
+import { CsvImportModal } from '@/components/CsvImportModal';
 import { AudiencePicker, fieldErrorsOf } from './shared';
 import type { Audience, EventSummary, EventType, SchoolEvent } from './types';
 
@@ -30,6 +31,7 @@ export default function EventsPage() {
   const period = list.filters.when || 'upcoming';
   const view = list.filters.view || 'list';
   const [detail, setDetail] = useState<SchoolEvent | null>(null);
+  const [importing, setImporting] = useState(false);
   const [form, setForm] = useState<{ open: boolean; event?: SchoolEvent | null; date?: string }>({ open: false });
   const today = todayKey();
   const [month, setMonth] = useState(() => ({ y: Number(today.slice(0, 4)), m: Number(today.slice(5, 7)) - 1 }));
@@ -49,7 +51,10 @@ export default function EventsPage() {
   return (
     <Page>
       <PageHead title="Events" sub="The school calendar as parents see it."
-        actions={canSend && <Button variant="primary" icon="plus" onClick={() => setForm({ open: true, event: null })}>Add event</Button>} />
+        actions={canSend && <>
+          <Button icon="upload" onClick={() => setImporting(true)}>Upload calendar</Button>
+          <Button variant="primary" icon="plus" onClick={() => setForm({ open: true, event: null })}>Add event</Button>
+        </>} />
       {s && (
         <Grid cols="g-4col" className="mb-4">
           <Kpi icon="calendar" label="Upcoming" value={fmt.n(s.upcoming)} foot="On the school calendar" />
@@ -102,6 +107,14 @@ export default function EventsPage() {
 
       <EventDetail event={detail} onClose={() => setDetail(null)} onEdit={(e) => { setDetail(null); setForm({ open: true, event: e }); }} onChanged={setDetail} />
       <EventForm open={form.open} event={form.event ?? null} date={form.date} onClose={() => setForm({ open: false })} />
+      {importing && (
+        <CsvImportModal title="Upload academic calendar" sub="Term dates, holidays, exams and events in one file."
+          endpoint="/events/import" template="/events/import/template" templateName="academic-calendar-template.csv"
+          fields={{ campusId: campusParam.campusId }} labelHeading="Entry" invalidate={['/events', '/family/events']}
+          help={<>One row per entry: title, type (School, Academic, Sports, Cultural, PTM or Holiday), startDate and optional endDate (2026-11-16 or 16/11/2026), startTime (08:30), venue and description.
+            Entries are published to everyone{campusParam.campusId ? ' on the selected campus' : ''} unless status says Draft. Entries already on the calendar are flagged, not duplicated.</>}
+          onClose={() => setImporting(false)} />
+      )}
     </Page>
   );
 }

@@ -75,6 +75,13 @@ r.get('/finance/accounts', READ, validate(V.accountListQuery, 'query'), async (r
   return paged(res, rows, total, f.page, f.pageSize, 'Student accounts retrieved');
 });
 
+r.get('/finance/accounts/:studentId/bill', READ, validate(V.studentParam, 'params'), async (req: Request, res: Response) => {
+  const id = await authorizeStudent(req, v(req, 'params').studentId);
+  const bill = await fees.feeBill(id);
+  await audit(req, { action: 'view', module: 'finance', entityType: 'student', entityId: id, description: `Generated fee bill ${bill.billNo} for ${bill.student.fullName}` });
+  return ok(res, bill, 'Fee bill');
+});
+
 r.get('/finance/accounts/:studentId', READ, validate(V.studentParam, 'params'), async (req: Request, res: Response) => {
   const id = await authorizeStudent(req, v(req, 'params').studentId);
   const data = await fees.getAccount(id);
@@ -285,6 +292,11 @@ async function ownChild(req: Request) {
 r.get('/family/children/:studentId/fees', PAY_OWN, validate(V.studentParam, 'params'), async (req: Request, res: Response) => {
   const id = await ownChild(req);
   return ok(res, await fees.familyFees(id), 'Fees');
+});
+
+r.get('/family/children/:studentId/bill', PAY_OWN, validate(V.studentParam, 'params'), async (req: Request, res: Response) => {
+  const id = await ownChild(req);
+  return ok(res, await fees.feeBill(id), 'Fee bill');
 });
 
 r.post('/family/children/:studentId/fees/pay', PAY_OWN, validate(V.studentParam, 'params'), validate(V.familyPayment),

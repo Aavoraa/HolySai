@@ -83,7 +83,10 @@ export const visitorCreateSchema = z.object({
   campusId: uuid.optional(),
   /** When set, the visit is pre-approved for this time instead of checked in now. */
   expectedAt: z.iso.datetime({ offset: true }).optional(),
+  /** RFID visitor card handed over at the desk (card number as the reader types it). */
+  rfidTag: z.string().trim().max(40).optional().or(z.literal('').transform(() => undefined)),
 });
+export const rfidTagSchema = z.object({ tag: z.string().trim().min(4).max(40), campusId: uuid.optional() });
 
 export const visitorListQuery = paginationSchema.extend({
   campusId: uuid.optional(),

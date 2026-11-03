@@ -9,6 +9,7 @@ import {
   Segment, SelectField, Skeleton, Switch, TextField, useConfirm,
 } from '@/components/ui';
 import { fmt } from '@/lib/format';
+import { CsvImportModal } from '@/components/CsvImportModal';
 import { plural, schoolClock, useSections } from './shared';
 
 interface Entry {
@@ -17,7 +18,7 @@ interface Entry {
   substituteId: string | null; substitute: string | null; room: string | null; needsSubstitute: boolean;
 }
 interface Timetable {
-  title: string; campusId: string; days: string[];
+  title: string; campusId: string; canEdit: boolean; days: string[];
   periods: { id: string; periodNo: number; startsAt: string; endsAt: string }[];
   entries: Entry[];
   conflicts: (Entry & { teacherStatus: string | null; date: string })[];
@@ -52,7 +53,8 @@ export default function TimetablePage() {
   const tt = useApiQuery<Timetable>(mode === 'mine' ? '/academics/timetable' : sectionId ? '/academics/timetable' : null, mode === 'mine' ? {} : { sectionId });
   const insights = useApiQuery<Insights>('/academics/timetable/insights', campusParam);
   const [subFor, setSubFor] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Entry | null>(null);
+  const [editing, setEditing] = useState<{ entry: Entry | null; day: number; period: Timetable['periods'][number] } | null>(null);
+  const [importing, setImporting] = useState(false);
   const publish = useApiMutation<{ sectionId: string }, { notified: number }>('post', '/academics/timetable/publish', {
     success: (r) => `Timetable changes published — ${r.data.notified} teacher${r.data.notified === 1 ? '' : 's'} notified`,
   });
@@ -75,6 +77,8 @@ export default function TimetablePage() {
     ? d.periods.find((p) => p.startsAt.slice(0, 5) <= clock && clock < p.endsAt.slice(0, 5))?.periodNo
     : undefined;
   const canManage = can('academics.manage');
+  // School office edits any class; a class teacher edits their own class (decided by the API).
+  const canEdit = mode === 'class' && !!d?.canEdit;
 
   const doPublish = async () => {
     if (!sectionId || !d) return;
@@ -99,7 +103,8 @@ export default function TimetablePage() {
               {list.map((s) => <option key={s.id} value={s.id}>{s.label}{schoolLevel && !campusParam.campusId ? ` · ${s.campusName}` : ''}</option>)}
             </select>
           )}
-          {schoolLevel && canManage && mode === 'class' && sectionId && (
+          {canEdit && <Button icon="upload" onClick={() => setImporting(true)}>Upload timetable</Button>}
+          {canEdit && sectionId && (
             <Button variant="primary" icon="check" onClick={doPublish} loading={publish.isPending}>Publish changes</Button>
           )}
         </>}
@@ -162,7 +167,7 @@ export default function TimetablePage() {
                                 const conflictCell = !!e && e.needsSubstitute && !e.substituteId;
                                 const label = e ? e.subject ?? e.activity ?? '—' : 'Free';
                                 const teacher = e ? (e.substituteId ? shortName(e.substitute) : shortName(e.teacher) || 'Various') : '';
-                                const clickable = !!e && canManage && (conflictCell || !!e.substituteId || schoolLevel);
+                                const clickable = e ? canManage && (conflictCell || !!e.substituteId || canEdit) : canEdit;
                                 const cls = [
                                   'tt-cell',
                                   !e && 'tt-cell--free',
@@ -176,7 +181,7 @@ export default function TimetablePage() {
                                   <td key={day} className={isToday ? 'tt__slot tt__slot--today' : 'tt__slot'}>
                                     <button type="button" className={cls} disabled={!clickable}
                                       aria-label={`${day} period ${p.periodNo}, ${p.startsAt} to ${p.endsAt}: ${label}${meta ? `, ${meta}` : ''}`}
-                                      onClick={() => { if (!e) return; if (conflictCell || e.substituteId) setSubFor(e.id); else setEditing(e); }}>
+                                      onClick={() => { if (e && (conflictCell || e.substituteId)) setSubFor(e.id); else setEditing({ entry: e ?? null, day: di + 1, period: p }); }}>
                                       <span className="tt-cell__subject">{label}</span>
                                       {e && mode === 'mine' && <span className="tt-cell__line"><Icon name="users" size={11} /><span>{e.sectionLabel}</span></span>}
                                       {e && (conflictCell
@@ -202,7 +207,7 @@ export default function TimetablePage() {
                     <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--conflict" />Needs a substitute</span>
                     <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--cover" />Cover arranged</span>
                     <span className="tt-legend__item"><span className="tt-legend__sw tt-legend__sw--free" />Free period</span>
-                    {canManage && schoolLevel && <span className="tt-legend__item t-faint">Select a period to edit it or arrange cover.</span>}
+                    {canEdit && <span className="tt-legend__item t-faint">Select a period to edit it, a free period to add a lesson, or a flagged period to arrange cover.</span>}
                   </div>
                 </>
               )}
@@ -246,7 +251,18 @@ export default function TimetablePage() {
       </div>
 
       {subFor && d && <SubstituteModal entry={d.entries.find((e) => e.id === subFor)!} dayName={d.days[(d.entries.find((e) => e.id === subFor)?.day ?? 1) - 1]} onClose={() => setSubFor(null)} />}
-      {editing && <EditEntryModal entry={editing} dayName={d?.days[editing.day - 1] ?? ''} onClose={() => setEditing(null)} />}
+      {editing && sectionId && d && (
+        <EditEntryModal entry={editing.entry} sectionId={sectionId} sectionLabel={d.title} day={editing.day} period={editing.period}
+          dayName={d.days[editing.day - 1] ?? DAY_NAMES[editing.day - 1]} onClose={() => setEditing(null)} />
+      )}
+      {importing && d && (
+        <CsvImportModal title="Upload timetable" sub={schoolLevel ? 'For any class on this campus.' : `For your class, ${d.title}.`}
+          endpoint="/academics/timetable/import" template="/academics/timetable/import/template" templateName="timetable-template.csv"
+          fields={{ campusId: d.campusId }} labelHeading="Class" invalidate={['/academics/timetable', '/academics/teacher-dashboard']}
+          help={<>One row per period: class (e.g. “Grade 6”), section (A), day (Monday–Saturday), period number, subject (code or name) or an activity, teacher (staff code or full name) and room.
+            Each row replaces that period; a row with no subject and no activity clears it. Nothing is saved unless every row is valid.</>}
+          onClose={() => setImporting(false)} />
+      )}
     </Page>
   );
 }
@@ -356,22 +372,43 @@ function SubstituteModal({ entry, dayName, onClose }: { entry: Entry; dayName: s
   );
 }
 
-function EditEntryModal({ entry, dayName, onClose }: { entry: Entry; dayName: string; onClose: () => void }) {
+const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const TT_INVALIDATE = ['/academics/timetable', '/academics/teacher-dashboard'];
+
+/** Edits an existing period, or adds a lesson to a free one (entry = null). */
+function EditEntryModal({ entry, sectionId, sectionLabel, day, period, dayName, onClose }: {
+  entry: Entry | null; sectionId: string; sectionLabel: string; day: number; period: Timetable['periods'][number]; dayName: string; onClose: () => void;
+}) {
   const { lookups } = useLookups();
-  const [f, setF] = useState({ subjectId: entry.subjectId ?? '', activity: entry.activity ?? '', employeeId: entry.employeeId ?? '', room: entry.room ?? '', needsSubstitute: entry.needsSubstitute });
+  const confirm = useConfirm();
+  const [f, setF] = useState({ subjectId: entry?.subjectId ?? '', activity: entry?.activity ?? '', employeeId: entry?.employeeId ?? '', room: entry?.room ?? '', needsSubstitute: entry?.needsSubstitute ?? false });
   const [error, setError] = useState('');
   const [activityError, setActivityError] = useState('');
-  const save = useApiMutation<Record<string, unknown>>('put', `/academics/timetable/entries/${entry.id}`, {
-    invalidate: ['/academics/timetable', '/academics/teacher-dashboard'], success: 'Timetable updated', onSuccess: onClose, error: false,
+  const save = useApiMutation<Record<string, unknown>>('put', entry ? `/academics/timetable/entries/${entry.id}` : '/academics/timetable/slots', {
+    invalidate: TT_INVALIDATE, success: entry ? 'Timetable updated' : 'Period added', onSuccess: onClose, error: false,
   });
-  useEffect(() => { if (save.error) setError((save.error as Error).message); }, [save.error]);
+  const clear = useApiMutation<void>('delete', `/academics/timetable/entries/${entry?.id}`, {
+    invalidate: TT_INVALIDATE, success: 'Period cleared', onSuccess: onClose, error: false,
+  });
+  useEffect(() => { const e = save.error ?? clear.error; if (e) setError((e as Error).message); }, [save.error, clear.error]);
   const submit = () => {
     if (!f.subjectId && !f.activity.trim()) { setActivityError('Choose a subject or enter an activity'); return; }
-    save.mutate({ subjectId: f.subjectId || null, activity: f.subjectId ? null : f.activity.trim(), employeeId: f.employeeId || null, room: f.room.trim() || null, needsSubstitute: f.needsSubstitute });
+    const lesson = { subjectId: f.subjectId || null, activity: f.subjectId ? null : f.activity.trim(), employeeId: f.employeeId || null, room: f.room.trim() || null };
+    save.mutate(entry ? { ...lesson, needsSubstitute: f.needsSubstitute } : { ...lesson, sectionId, day, periodId: period.id });
   };
+  const busy = save.isPending || clear.isPending;
   return (
-    <Modal open onClose={onClose} busy={save.isPending} title={`Edit ${dayName} Period ${entry.periodNo}`} sub={entry.sectionLabel}
-      foot={<><Button onClick={onClose} disabled={save.isPending}>Cancel</Button><Button variant="primary" onClick={submit} loading={save.isPending}>Save</Button></>}>
+    <Modal open onClose={onClose} busy={busy} title={`${entry ? 'Edit' : 'Add a lesson to'} ${dayName} Period ${period.periodNo}`} sub={`${sectionLabel} · ${period.startsAt}–${period.endsAt}`}
+      foot={<>
+        {entry && (
+          <Button variant="danger" icon="trash" disabled={busy} loading={clear.isPending} onClick={async () => {
+            const ok = await confirm({ title: `Clear ${dayName} Period ${period.periodNo}?`, body: `${sectionLabel} will have a free period here.`, confirmLabel: 'Clear period', danger: true });
+            if (ok) clear.mutate();
+          }}>Clear period</Button>
+        )}
+        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button variant="primary" onClick={submit} loading={save.isPending} disabled={busy}>{entry ? 'Save' : 'Add lesson'}</Button>
+      </>}>
       {error && <div className="mb-3"><Banner tone="critical" icon="alert">{error}</Banner></div>}
       <div className="formsection">
       <div className="formsection__title">Lesson</div>
@@ -385,10 +422,12 @@ function EditEntryModal({ entry, dayName, onClose }: { entry: Entry; dayName: st
         <TextField label="Room" value={f.room} onChange={(v) => setF((x) => ({ ...x, room: v }))} maxLength={40} />
       </div>
       </div>
-      <div className="formsection">
-        <div className="formsection__title">Cover</div>
-        <Switch checked={f.needsSubstitute} onChange={(v) => setF((x) => ({ ...x, needsSubstitute: v }))} label="This period needs a substitute" />
-      </div>
+      {entry && (
+        <div className="formsection">
+          <div className="formsection__title">Cover</div>
+          <Switch checked={f.needsSubstitute} onChange={(v) => setF((x) => ({ ...x, needsSubstitute: v }))} label="This period needs a substitute" />
+        </div>
+      )}
     </Modal>
   );
 }

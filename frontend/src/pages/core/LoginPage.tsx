@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api, ApiError } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
@@ -214,6 +214,7 @@ export default function LoginPage() {
             </div>
 
             <p className="t-micro t-muted t-center mt-4">Your role is recognised from your sign-in; you go straight to your own workspace.</p>
+            <p className="t-sm t-center mt-2"><Link to="/track-application" style={{ color: 'var(--magenta)' }}>Applied for admission? Track your application</Link></p>
           </form>
 
           <div className="aicard">

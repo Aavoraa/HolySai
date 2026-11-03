@@ -11,7 +11,7 @@ import {
   SelectField, Status, StudentLink, TextField, Toolbar,
 } from '@/components/ui';
 import type { Account, AccountRow } from './types';
-import { fieldErrors, isMoney, ListCount, Money, PaymentModal, ReceiptModal, StudentPicker, TotalsBar, todayIso, useFinanceLookups } from './shared';
+import { FeeBillModal, fieldErrors, isMoney, ListCount, Money, PaymentModal, ReceiptModal, StudentPicker, TotalsBar, todayIso, useFinanceLookups } from './shared';
 
 export default function StudentAccountsPage() {
   const [sp, setSp] = useSearchParams();
@@ -74,6 +74,7 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
   const [paying, setPaying] = useState(false);
   const [charging, setCharging] = useState(false);
   const [receipt, setReceipt] = useState<string | null>(null);
+  const [bill, setBill] = useState(false);
 
   if (q.isLoading) return <PageSkeleton kpis={0} />;
   if (q.error || !q.data) return <><Button icon="arrowLeft" onClick={onBack}>All accounts</Button><div className="mt-4"><ErrorState error={q.error} onRetry={() => q.refetch()} /></div></>;
@@ -109,6 +110,7 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
           </div>
           <div className="profilehead__actions">
             <Button size="sm" icon="user" onClick={() => navigate(`/student-360/${s.id}`)}>Student 360</Button>
+            <Button size="sm" icon="fileText" onClick={() => setBill(true)}>Fee bill</Button>
             {can('finance.manage') && <Button size="sm" icon="plus" onClick={() => setCharging(true)}>Raise charge</Button>}
             {can('finance.manage') && (
               <Button size="sm" variant="primary" icon="creditCard" disabled={!a.summary.outstanding} onClick={() => setPaying(true)}>Take payment</Button>
@@ -167,6 +169,7 @@ function Ledger({ studentId, onBack, onSwitch }: { studentId: string; onBack: ()
       <PaymentModal account={a} open={paying} onClose={() => setPaying(false)} onPaid={(id) => { setPaying(false); setReceipt(id); }} />
       <ChargeModal studentId={s.id} name={s.fullName} open={charging} onClose={() => setCharging(false)} />
       <ReceiptModal paymentId={receipt} onClose={() => setReceipt(null)} />
+      <FeeBillModal endpoint={bill ? `/finance/accounts/${s.id}/bill` : null} onClose={() => setBill(false)} />
     </>
   );
 }

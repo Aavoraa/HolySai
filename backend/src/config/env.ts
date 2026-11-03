@@ -62,8 +62,19 @@ const schema = z.object({
   MAP_API_KEY: z.string().optional(),
   MAP_TILE_URL: z.string().default('https://tile.openstreetmap.org/{z}/{x}/{y}.png'),
   SEED_DEMO_PASSWORD: z.string().optional(),
+  /**
+   * WhatsApp sending (services/whatsapp.provider.ts). 'gateway' posts {to, message, …} JSON with a
+   * Bearer token to WHATSAPP_API_URL — the shape most Indian WhatsApp gateways (e.g. NeverSkip) accept;
+   * 'meta' is the WhatsApp Cloud API (URL = https://graph.facebook.com/v21.0/<phone-number-id>/messages).
+   */
+  WHATSAPP_PROVIDER: z.enum(['gateway', 'meta']).default('gateway'),
   WHATSAPP_API_URL: z.string().optional(),
   WHATSAPP_API_TOKEN: z.string().optional(),
+  /** Meta: approved template (two body parameters: title, details). Unset = plain text (only inside a 24-hour chat window). */
+  WHATSAPP_TEMPLATE_NAME: z.string().optional(),
+  WHATSAPP_TEMPLATE_LANG: z.string().default('en'),
+  /** Added to 10-digit local numbers. */
+  WHATSAPP_DEFAULT_COUNTRY_CODE: z.string().regex(/^\d{1,3}$/).default('91'),
   SMS_API_URL: z.string().optional(),
   SMS_API_KEY: z.string().optional(),
   SMTP_URL: z.string().optional(),

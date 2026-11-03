@@ -1,7 +1,12 @@
 import { Router, type Request, type Response } from 'express';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
 import { many, one } from '../config/db.js';
 import { env } from '../config/env.js';
+import { validate, v } from '../middleware/validate.js';
 import { ok } from '../utils/response.js';
+import { publicApplicationStatus } from '../services/admissions-applications.service.js';
+import { publicVerifyCertificate } from '../services/operations-records.service.js';
 
 /**
  * Unauthenticated configuration for the sign-in screen and mobile app bootstrap.
@@ -37,5 +42,27 @@ r.get('/config', async (_req: Request, res: Response) => {
   }
   return ok(res, data, 'Public configuration');
 });
+
+// Families check an admission application with its number and the phone on the form.
+// Strictly rate limited per IP so application numbers cannot be guessed at speed.
+const statusLimiter = rateLimit({
+  windowMs: 15 * 60_000,
+  limit: 20,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ success: false, message: 'Too many attempts. Please try again in 15 minutes.', error: 'RATE_LIMITED' }),
+  skip: () => env.isTest,
+});
+
+r.get('/application-status', statusLimiter,
+  validate(z.object({ applicationNo: z.string().trim().min(4).max(30), phone: z.string().trim().min(10).max(20) }), 'query'),
+  async (req: Request, res: Response) => {
+    const q = v<{ applicationNo: string; phone: string }>(req, 'query');
+    return ok(res, await publicApplicationStatus(q.applicationNo, q.phone), 'Application status');
+  });
+
+// Anyone holding a printed certificate can confirm it from its QR code.
+r.get('/certificates/:code', statusLimiter, validate(z.object({ code: z.string().trim().regex(/^[A-Za-z]{2}-\d{4}-\d{3,6}$/, 'Not a certificate code') }), 'params'),
+  async (req: Request, res: Response) => ok(res, await publicVerifyCertificate(v<{ code: string }>(req, 'params').code), 'Certificate verified'));
 
 export default r;
