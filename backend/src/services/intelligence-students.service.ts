@@ -300,8 +300,10 @@ export async function portfolioStudent(req: Request, idOrCode: string) {
            LEFT JOIN sections sec ON sec.id = s.section_id LEFT JOIN classes c ON c.id = sec.class_id
            ${EVIDENCE_SQL}
           WHERE s.id = $1`, [id]),
-    many(`SELECT id, title, achievement_type AS type, level, achieved_on AS date, is_verified AS verified
-            FROM achievements WHERE student_id = $1 ORDER BY achieved_on DESC`, [id]),
+    many(`SELECT a.id, a.title, a.achievement_type AS type, a.level, a.achieved_on AS date, a.is_verified AS verified,
+                 d.id AS "documentId", (d.storage_key IS NOT NULL) AS "hasCertificate"
+            FROM achievements a LEFT JOIN documents d ON d.id = a.document_id AND d.deleted_at IS NULL
+           WHERE a.student_id = $1 ORDER BY a.achieved_on DESC`, [id]),
     many(`SELECT act.name, act.category, sa.role, sa.since, sa.hours, sa.status
             FROM student_activities sa JOIN activities act ON act.id = sa.activity_id WHERE sa.student_id = $1 ORDER BY sa.since DESC`, [id]),
     many(`SELECT p.id, p.code, p.title, p.status, p.started_on AS date, m.full_name AS mentor, 'Innovation Lab' AS source

@@ -9,6 +9,9 @@ import LoginPage from '@/pages/core/LoginPage';
 import NotFoundPage from '@/pages/core/NotFoundPage';
 
 const UiLab = import.meta.env.DEV ? lazy(() => import('@/dev/UiLab')) : null;
+// Public pages (no sign-in).
+const TrackApplicationPage = lazy(() => import('@/pages/core/TrackApplicationPage'));
+const VerifyCertificatePage = lazy(() => import('@/pages/core/VerifyCertificatePage'));
 
 function Splash() {
   return (
@@ -40,6 +43,8 @@ export default function App() {
     <Routes>
       {UiLab && <Route path="/__ui" element={<Suspense fallback={<Splash />}><UiLab /></Suspense>} />}
       <Route path="/login" element={status === 'loading' ? <Splash /> : status === 'authenticated' ? <HomeRedirect /> : <LoginPage />} />
+      <Route path="/track-application" element={<Suspense fallback={<Splash />}><TrackApplicationPage /></Suspense>} />
+      <Route path="/verify/:code" element={<Suspense fallback={<Splash />}><VerifyCertificatePage /></Suspense>} />
       <Route
         element={
           <RequireAuth>

@@ -301,6 +301,58 @@ export async function getAccount(studentId: string) {
   return { student, summary, lines, payments, concessions };
 }
 
+// ---------------------------------------------------------------------------
+// Fee bill (demand note): what is still owed, with the school's bank and UPI
+// details so families can pay by transfer. Printed by staff or the parent.
+// ---------------------------------------------------------------------------
+export const BANK_SETTING_KEYS = {
+  accountName: 'finance.bank_account_name', bankName: 'finance.bank_name', accountNo: 'finance.bank_account_no',
+  ifsc: 'finance.bank_ifsc', branch: 'finance.bank_branch', upiId: 'finance.upi_id',
+} as const;
+
+export async function feeBill(studentId: string) {
+  const [student, lines, settings] = await Promise.all([
+    one(`SELECT s.id, s.admission_no AS "admissionNo", s.full_name AS "fullName", c.name AS grade, sec.name AS section,
+                cp.name AS campus, g.full_name AS "parentName", g.phone AS "parentPhone"
+           FROM students s JOIN campuses cp ON cp.id = s.campus_id
+           LEFT JOIN sections sec ON sec.id = s.section_id LEFT JOIN classes c ON c.id = sec.class_id
+           LEFT JOIN LATERAL (SELECT p.full_name, p.phone FROM student_guardians sg JOIN parents p ON p.id = sg.parent_id
+                               WHERE sg.student_id = s.id ORDER BY sg.is_primary DESC LIMIT 1) g ON true
+          WHERE s.id = $1`, [studentId]),
+    many<{ id: string; description: string; head: string; dueDate: string; amountDue: number; concession: number; amountPaid: number; balance: number }>(
+      `SELECT f.id, f.description, fh.name AS head, f.due_date AS "dueDate", f.amount_due::float AS "amountDue",
+              f.concession_amount::float AS concession, f.amount_paid::float AS "amountPaid",
+              (f.amount_due - f.concession_amount - f.amount_paid)::float AS balance
+         FROM student_fees f JOIN fee_heads fh ON fh.id = f.fee_head_id
+        WHERE f.student_id = $1 AND f.status <> 'Waived' AND f.amount_due - f.concession_amount - f.amount_paid > 0
+        ORDER BY f.due_date, fh.name`, [studentId]),
+    many<{ key: string; value: unknown }>(`SELECT key, value FROM system_settings WHERE key = ANY($1)`,
+      [['school.name', 'finance.late_fee_per_day', ...Object.values(BANK_SETTING_KEYS)]]),
+  ]);
+  if (!student) throw notFound('Student not found', 'STUDENT_NOT_FOUND');
+  const s = new Map(settings.map((x) => [x.key, x.value]));
+  const str = (k: string) => (typeof s.get(k) === 'string' ? (s.get(k) as string).trim() : '');
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const total = lines.reduce((t, l) => t + l.balance, 0);
+  const overdue = lines.filter((l) => String(l.dueDate).slice(0, 10) < today).reduce((t, l) => t + l.balance, 0);
+  const bank = {
+    accountName: str(BANK_SETTING_KEYS.accountName), bankName: str(BANK_SETTING_KEYS.bankName), accountNo: str(BANK_SETTING_KEYS.accountNo),
+    ifsc: str(BANK_SETTING_KEYS.ifsc), branch: str(BANK_SETTING_KEYS.branch), upiId: str(BANK_SETTING_KEYS.upiId),
+  };
+  return {
+    billNo: `BILL-${student.admissionNo}-${today.slice(0, 7).replace('-', '')}`,
+    billDate: today,
+    school: str('school.name') || 'Holy Sai International School',
+    student,
+    lines,
+    total: Math.round(total * 100) / 100,
+    overdue: Math.round(overdue * 100) / 100,
+    payBy: lines[0]?.dueDate ?? null,
+    lateFeePerDay: typeof s.get('finance.late_fee_per_day') === 'number' ? s.get('finance.late_fee_per_day') : null,
+    bank: { ...bank, configured: !!(bank.accountNo && bank.ifsc) || !!bank.upiId },
+  };
+}
+
 export async function raiseCharge(req: Request, studentId: string, input: any) {
   return tx(async (db) => {
     const year = await currentYear(db);

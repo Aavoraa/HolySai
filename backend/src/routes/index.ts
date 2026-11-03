@@ -11,7 +11,7 @@ import dashboardRoutes from './dashboard.routes.js';
 import academicsRoutes from './academics.routes.js';
 import admissionsRoutes from './admissions.routes.js';
 import financeRoutes from './finance.routes.js';
-import workforceRoutes from './workforce.routes.js';
+import workforceRoutes, { biometricIngestRoutes } from './workforce.routes.js';
 import safetyRoutes from './safety.routes.js';
 import parentsExperienceRoutes from './parents_experience.routes.js';
 import operationsRoutes from './operations.routes.js';
@@ -29,8 +29,9 @@ export const api = Router();
 // ---- Public -------------------------------------------------------------
 api.use('/auth', authRoutes);
 api.use('/public', publicRoutes);
-// GPS devices authenticate with their own device token, not a user session.
+// GPS devices and biometric machines authenticate with their own device token, not a user session.
 api.use('/v1', deviceIngestRoutes);
+api.use('/v1', biometricIngestRoutes);
 
 // ---- Authenticated ------------------------------------------------------
 // Everything below requires a valid access token; each route additionally

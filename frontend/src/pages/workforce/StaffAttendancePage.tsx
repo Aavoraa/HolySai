@@ -9,7 +9,9 @@ import {
   Pagination, SearchInput, SelectField, Skeleton, TextField, Toolbar, useConfirm, useToast,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
+import { CsvImportModal } from '@/components/CsvImportModal';
 import { EmpLink, ListCount, TodayBadge, fieldErrors, useEmployeeModal } from './shared';
+import { BiometricDevicesModal } from './BiometricDevices';
 import type { AttendanceRow, AttendanceSummary } from './types';
 
 const STATUSES = ['Present', 'Late', 'Half Day', 'Absent', 'On Leave'];
@@ -27,6 +29,8 @@ export default function StaffAttendancePage() {
   const [openEmployee, employeeModal] = useEmployeeModal();
   const [marking, setMarking] = useState<AttendanceRow | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [machines, setMachines] = useState(false);
+  const [importing, setImporting] = useState(false);
   const flag = useApiMutation<string>('post', (id) => `/workforce/roster/${id}/flag-cover`, {
     invalidate: ['/workforce'], body: () => ({ reason: 'Absent today' }), success: 'Cover request raised — see Shifts & Rosters',
   });
@@ -62,7 +66,11 @@ export default function StaffAttendancePage() {
   return (
     <Page>
       <PageHead title="Staff Attendance" sub="Biometric and app-based, by shift. Feeds payroll directly."
-        actions={<Button icon="download" loading={exporting} onClick={exportCsv}>Export</Button>} />
+        actions={<>
+          <Button icon="scan" onClick={() => setMachines(true)}>Biometric machines</Button>
+          {can('hr.manage') && <Button icon="upload" onClick={() => setImporting(true)}>Import biometric log</Button>}
+          <Button icon="download" loading={exporting} onClick={exportCsv}>Export</Button>
+        </>} />
       <div className="filterbar">
         <span className="t-sm t-muted">Date</span>
         <input className="input fw-date" type="date" aria-label="Attendance date" value={date} max={todayKey()}
@@ -135,7 +143,7 @@ export default function StaffAttendancePage() {
               { key: 'shift', label: 'Shift', render: (r) => <span className="t-xs">{r.shift ?? '—'}{r.post && <div className="t-micro t-muted">{r.post}</div>}</span> },
               { key: 'checkIn', label: 'Clock in', render: (r) => (r.checkIn ? <span className="t-num">{r.checkIn}</span> : <span className="t-faint">—</span>) },
               { key: 'out', label: 'Clock out', sortable: false, render: (r) => (r.checkOut ? <span className="t-num">{r.checkOut}</span> : <span className="t-faint">—</span>) },
-              { key: 'status', label: 'Status', render: (r) => <><TodayBadge status={r.status} />{r.source === 'manual' && <span className="t-micro t-muted"> · manual</span>}</> },
+              { key: 'status', label: 'Status', render: (r) => <><TodayBadge status={r.status} />{r.source && r.source !== 'Not marked' && r.status !== 'Not marked' && <span className="t-micro t-muted"> · {r.source === 'biometric' ? 'biometric' : r.source === 'mobile' ? 'app' : r.source}</span>}</> },
               { key: 'a', label: '', sortable: false, className: 'num', render: (r) => (
                 <div className="row g-2 end wrap">
                   {r.rosterStatus === 'Cover needed' && <Badge tone="warning">Cover needed</Badge>}
@@ -153,6 +161,15 @@ export default function StaffAttendancePage() {
         <Pagination meta={q.data?.meta} onPage={list.setPage} onPageSize={list.setPageSize} />
       </Card>
       {marking && <MarkModal row={marking} date={date} onClose={() => setMarking(null)} />}
+      {machines && <BiometricDevicesModal onClose={() => setMachines(false)} />}
+      {importing && (
+        <CsvImportModal title="Import biometric attendance log" sub="Export the punch log from the biometric software and save it as CSV."
+          endpoint="/workforce/attendance/punches/import" template="/workforce/attendance/punches/template" templateName="biometric-punches-template.csv"
+          labelHeading="Punch" invalidate={['/workforce/attendance', '/workforce/summary']}
+          help={<>One row per punch: employeeCode (as on the staff record), date (2026-11-03 or 03/11/2026), time (08:05) and optional direction (in/out).
+            Punches already recorded are skipped. Each staff-day's first punch becomes check-in and the last becomes check-out; days on approved leave are not changed.</>}
+          onClose={() => setImporting(false)} />
+      )}
       {employeeModal}
     </Page>
   );

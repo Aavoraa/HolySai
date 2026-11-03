@@ -4,6 +4,7 @@ import { requireAny, requirePermission } from '../middleware/auth.js';
 import { validate, v } from '../middleware/validate.js';
 import { paginationSchema } from '../utils/pagination.js';
 import { created, ok, paged } from '../utils/response.js';
+import { csvDocument, csvUpload, sendCsv } from '../utils/csv.js';
 import * as val from '../validators/parents-experience.validators.js';
 import * as comms from '../services/parents-experience-comms.service.js';
 import * as circ from '../services/parents-experience-circulars.service.js';
@@ -207,6 +208,20 @@ r.get('/events/summary', READ, validate(campusQuery, 'query'), async (req: Reque
 
 r.post('/events', SEND, validate(val.eventBody), async (req: Request, res: Response) =>
   created(res, await circ.createEvent(req, v(req)), 'Event created'));
+
+// Academic calendar import (registered before /events/:id)
+r.get('/events/import/template', SEND, (_req: Request, res: Response) =>
+  sendCsv(res, 'academic-calendar-template.csv', csvDocument(circ.CALENDAR_COLUMNS, circ.CALENDAR_EXAMPLE)));
+
+r.post('/events/import', SEND, csvUpload('calendar').single('file'),
+  validate(z.object({ campusId: z.uuid().optional().or(z.literal('').transform(() => undefined)), dryRun: z.stringbool().default(false) })),
+  async (req: Request, res: Response) => {
+    const out = await circ.importCalendar(req, req.file, v(req));
+    const msg = out.dryRun || out.failed
+      ? `${out.valid} of ${out.rows} row${out.rows === 1 ? '' : 's'} ready${out.failed ? ` · ${out.failed} need attention` : ''}`
+      : `${out.imported} calendar entr${out.imported === 1 ? 'y' : 'ies'} added`;
+    return ok(res, out, msg);
+  });
 
 r.get('/events/:id', READ, validate(val.idParam, 'params'), async (req: Request, res: Response) =>
   ok(res, await circ.getEvent(v(req, 'params').id), 'Event retrieved'));

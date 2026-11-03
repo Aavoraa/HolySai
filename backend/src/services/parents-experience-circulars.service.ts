@@ -10,6 +10,7 @@ import { Where } from '../utils/sql.js';
 import { likeTerm, limitOffset, orderBy, type Pagination } from '../utils/pagination.js';
 import { badRequest, conflict, notFound } from '../utils/errors.js';
 import { audit } from './audit.service.js';
+import { readCsvRecords, type ImportRowResult } from '../utils/csv.js';
 import { openStoredFile, safeFilename, verifyUploadedFile } from './documents.service.js';
 import { schoolToday } from './academics.service.js';
 import { notifyRoles, notifyUsers } from './notification.service.js';
@@ -493,4 +494,78 @@ export async function familyEvents(user: AuthUser) {
       ORDER BY e.starts_on, e.starts_at NULLS FIRST
       LIMIT 50`,
     [parentId]);
+}
+
+// ---- Academic calendar import (CSV) -------------------------------------------------
+export const CALENDAR_COLUMNS = ['title', 'type', 'startDate', 'endDate', 'startTime', 'venue', 'description', 'status'] as const;
+export const CALENDAR_EXAMPLE = [
+  { title: 'Term 2 begins', type: 'Academic', startDate: '2026-11-16', venue: 'All campuses' },
+  { title: 'Deepavali holidays', type: 'Holiday', startDate: '2026-11-07', endDate: '2026-11-09' },
+  { title: 'Annual Sports Day', type: 'Sports', startDate: '2026-12-12', startTime: '08:30', venue: 'Main ground', description: 'Parents are welcome' },
+];
+const EVENT_TYPE_LIST = ['School', 'Sports', 'Academic', 'PTM', 'Cultural', 'Holiday'];
+
+/** YYYY-MM-DD, or DD-MM-YYYY / DD/MM/YYYY as spreadsheets in India write it. */
+function calendarDate(s: string): string | null {
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  let y: number, mo: number, d: number;
+  if (m) [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  else if ((m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/.exec(s))) [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  else return null;
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Imports calendar entries (term dates, holidays, events) as school events.
+ * Rows already on the calendar (same title and start date) are reported, not duplicated.
+ * All rows are checked first; nothing is written unless every row is valid.
+ */
+export async function importCalendar(req: Request, file: Express.Multer.File | undefined, opts: { campusId?: string; dryRun: boolean }) {
+  const records = readCsvRecords(file, { columns: CALENDAR_COLUMNS, required: ['title', 'startDate'], maxRows: 400, what: 'calendar entry' });
+  const results: ImportRowResult[] = [];
+  const rows: { title: string; type: string; startsOn: string; endsOn: string | null; startsAt: string | null; venue: string | null; description: string | null; status: string }[] = [];
+  const seen = new Set<string>();
+  for (const { row, rec } of records) {
+    const errors: { field: string; message: string }[] = [];
+    const title = rec.title ?? '';
+    if (title.length < 3 || title.length > 160) errors.push({ field: 'title', message: 'Give a title of 3–160 characters' });
+    const type = EVENT_TYPE_LIST.find((t) => t.toLowerCase() === (rec.type || 'School').toLowerCase());
+    if (!type) errors.push({ field: 'type', message: `Use one of ${EVENT_TYPE_LIST.join(', ')}` });
+    const startsOn = calendarDate(rec.startDate ?? '');
+    if (!startsOn) errors.push({ field: 'startDate', message: 'Use a date like 2026-11-16 or 16/11/2026' });
+    const endsOn = rec.endDate ? calendarDate(rec.endDate) : null;
+    if (rec.endDate && !endsOn) errors.push({ field: 'endDate', message: 'Use a date like 2026-11-16 or 16/11/2026' });
+    if (startsOn && endsOn && endsOn < startsOn) errors.push({ field: 'endDate', message: 'End date is before the start date' });
+    const startsAt = rec.startTime || null;
+    if (startsAt && !/^([01]\d|2[0-3]):[0-5]\d$/.test(startsAt)) errors.push({ field: 'startTime', message: 'Use 24-hour time like 08:30' });
+    if ((rec.venue ?? '').length > 120) errors.push({ field: 'venue', message: 'Keep the venue under 120 characters' });
+    if ((rec.description ?? '').length > 2000) errors.push({ field: 'description', message: 'Keep the description under 2000 characters' });
+    const status = rec.status ? ['Draft', 'Published'].find((s) => s.toLowerCase() === rec.status.toLowerCase()) : 'Published';
+    if (!status) errors.push({ field: 'status', message: 'Use Draft or Published' });
+    if (startsOn && title) {
+      const key = `${title.toLowerCase()}|${startsOn}`;
+      if (seen.has(key)) errors.push({ field: 'title', message: 'This entry appears twice in the file' });
+      seen.add(key);
+      const dup = await one('SELECT 1 FROM events WHERE lower(title) = lower($1) AND starts_on = $2 AND status <> $3', [title, startsOn, 'Cancelled']);
+      if (dup) errors.push({ field: 'title', message: 'Already on the calendar' });
+    }
+    if (errors.length) { results.push({ row, label: title, ok: false, errors }); continue; }
+    rows.push({ title, type: type!, startsOn: startsOn!, endsOn, startsAt, venue: rec.venue || null, description: rec.description || null, status: status! });
+    results.push({ row, label: title, ok: true });
+  }
+  const failed = results.filter((r) => !r.ok).length;
+  if (opts.dryRun || failed) return { dryRun: opts.dryRun, rows: records.length, valid: records.length - failed, failed, imported: 0, results };
+  const aud = normalizeAudience({ kind: 'all' } as Audience);
+  await tx(async (db) => {
+    for (const b of rows) {
+      await query(
+        `INSERT INTO events (campus_id, title, description, event_type, starts_on, ends_on, starts_at, venue, audience, audience_filter, status, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [opts.campusId ?? null, b.title, b.description, b.type, b.startsOn, b.endsOn, b.startsAt, b.venue, audienceLabel(aud), JSON.stringify(aud), b.status, req.user!.id], db);
+    }
+    await audit(req, { action: 'create', module: 'communication', description: `Imported ${rows.length} calendar entr${rows.length === 1 ? 'y' : 'ies'} from ${safeFilename(file!.originalname)}`, metadata: { rows: rows.length } }, db);
+  });
+  return { dryRun: false, rows: records.length, valid: rows.length, failed: 0, imported: rows.length, results };
 }

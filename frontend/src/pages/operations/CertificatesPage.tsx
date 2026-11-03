@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import qrcode from 'qrcode-generator';
 import {
   Badge, Banner, Button, Card, DataTable, Empty, ErrorState, FilterSelect, Flow, Icon, Modal, Page, PageHead, Pagination, SearchInput, SelectField,
   Status, StudentLink, TextArea, TextField, Toolbar, useConfirm, useToast,
@@ -26,19 +27,31 @@ function esc(s: string) {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
+/** Public page anyone can open from the printed QR code (no sign-in). */
+const verifyUrl = (code: string) => `${window.location.origin}/verify/${encodeURIComponent(code)}`;
+
+function qrSvg(text: string) {
+  const q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  return q.createSvgTag({ cellSize: 3, margin: 1, scalable: true });
+}
+
 function printCertificate(c: Cert) {
   const w = window.open('', '_blank', 'width=820,height=900');
   if (!w) return false;
+  const url = c.verificationCode ? verifyUrl(c.verificationCode) : '';
   const body = `<!doctype html><html><head><title>${esc(c.certificateType)} — ${esc(c.studentName)}</title>
 <style>body{font-family:Georgia,serif;margin:48px;color:#1b1b1b}h1{font-size:28px;letter-spacing:.04em;text-align:center;margin:0 0 4px}
 .sub{text-align:center;color:#666;margin-bottom:40px}.box{border:2px solid #990033;padding:40px;border-radius:8px}p{font-size:17px;line-height:1.7}
-.code{margin-top:40px;display:flex;justify-content:space-between;align-items:flex-end}.qr{border:1px dashed #999;padding:12px 16px;font-family:monospace;font-size:15px}
+.code{margin-top:40px;display:flex;justify-content:space-between;align-items:flex-end}.qr{display:flex;gap:14px;align-items:center;font-family:monospace;font-size:14px}
+.qr svg{width:110px;height:110px}
 .sign{text-align:right}</style></head><body><div class="box">
 <h1>HOLY SAI INTERNATIONAL SCHOOL</h1><div class="sub">${esc(c.campusName)} campus</div>
 <h1 style="font-size:22px">${esc(c.certificateType.toUpperCase())}</h1>
 <p>This is to certify that <strong>${esc(c.studentName)}</strong> (admission no. ${esc(c.admissionNo)}) ${c.grade ? `is a student of <strong>${esc(c.grade)}${esc(c.section ?? '')}</strong>` : 'is enrolled'} at Holy Sai International School.
 ${c.purpose ? `This certificate is issued for the purpose of: ${esc(c.purpose)}.` : ''}</p>
-<div class="code"><div class="qr">Verification code<br><strong>${esc(c.verificationCode ?? '')}</strong><br><small>Verify in Holy Sai Smart School 360 → Certificates</small></div>
+<div class="code"><div class="qr">${url ? qrSvg(url) : ''}<div>Verification code<br><strong>${esc(c.verificationCode ?? '')}</strong><br><small>Scan the code, or open<br>${esc(url)}</small></div></div>
 <div class="sign">Date: ${esc(fmt.date(c.issuedAt ?? new Date()))}<br><br><br>Principal</div></div></div>
 <script>window.onload=function(){window.print()}</script></body></html>`;
   w.document.write(body);

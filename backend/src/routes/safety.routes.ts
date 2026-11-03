@@ -119,6 +119,16 @@ r.post('/visitors', SAFETY_MANAGE, validate(val.visitorCreateSchema), async (req
   return created(res, out, out.status === 'Expected' ? `Visit pre-approved — badge ${out.badgeNo}` : `Checked in — badge ${out.badgeNo}, host notified`);
 });
 
+// RFID cards: a tap on the desk reader checks in (pre-approved) or out. Registered before /visitors/:id.
+r.post('/visitors/rfid-tap', SAFETY_MANAGE, validate(val.rfidTagSchema), async (req: Request, res: Response) => {
+  const b = v(req);
+  const out = await visitors.tapCard(req, b.tag, b.campusId);
+  return ok(res, out, `${out.visitor.fullName} checked ${out.action}${out.action === 'in' ? ' — host notified' : ' — card returned'}`);
+});
+
+r.post('/visitors/:id/rfid', SAFETY_MANAGE, validate(val.uuidParam, 'params'), validate(val.rfidTagSchema), async (req: Request, res: Response) =>
+  ok(res, await visitors.assignCard(req, v(req, 'params').id, v(req).tag), 'Card assigned'));
+
 r.post('/visitors/:id/check-in', SAFETY_MANAGE, validate(val.uuidParam, 'params'), async (req: Request, res: Response) =>
   ok(res, await visitors.checkIn(req, v(req, 'params').id), 'Visitor checked in — host notified'));
 

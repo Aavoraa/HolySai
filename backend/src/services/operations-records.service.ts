@@ -278,6 +278,21 @@ export async function verifyCertificate(req: Request, code: string) {
   return { valid, ...rest, reason: valid ? 'Issued by Holy Sai and unchanged.' : `Certificate is ${String(c.status).toLowerCase()}, not issued.` };
 }
 
+/**
+ * Public check behind the QR code printed on a certificate (no sign-in): the verifier already
+ * holds the certificate, so this confirms it and shows only what is printed on it.
+ */
+export async function publicVerifyCertificate(code: string) {
+  const c = await one<{ type: string; status: string; issued_at: string | null; student: string; admission_no: string }>(
+    `SELECT ct.certificate_type AS type, ct.status, ct.issued_at, s.full_name AS student, s.admission_no
+       FROM certificates ct JOIN students s ON s.id = ct.student_id WHERE ct.verification_code = $1`, [code.toUpperCase()]);
+  if (!c || !['Issued', 'Rejected'].includes(c.status)) throw notFound('No issued certificate carries this code. Check the code on the certificate.', 'CERTIFICATE_NOT_FOUND');
+  return {
+    valid: c.status === 'Issued', code: code.toUpperCase(), type: c.type.replace(/ certificate$/i, ''), status: c.status,
+    student: c.student, admissionNo: c.admission_no, issuedAt: c.issued_at,
+  };
+}
+
 // =============================================================================
 // Compliance calendar
 // =============================================================================

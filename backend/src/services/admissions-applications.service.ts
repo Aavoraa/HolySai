@@ -128,9 +128,74 @@ export async function getApplication(id: string) {
             (d.storage_key IS NOT NULL) AS "hasFile", d.original_name AS "fileName", d.mime_type AS "mimeType", d.size_bytes AS "sizeBytes"
        FROM documents d LEFT JOIN users u ON u.id = d.verified_by
       WHERE d.owner_type = 'admission' AND d.owner_id = $1 AND d.category <> 'Admission form' AND d.deleted_at IS NULL ORDER BY d.created_at, d.name`, [id]);
-  return { ...app, documents };
+  const history = await many(
+    `SELECT h.id, h.from_status AS "fromStatus", h.to_status AS "toStatus", h.note, h.changed_at AS "changedAt", u.full_name AS "changedBy"
+       FROM admission_status_history h LEFT JOIN users u ON u.id = h.changed_by
+      WHERE h.admission_id = $1 ORDER BY h.changed_at DESC, h.id DESC`, [id]);
+  return { ...app, documents, statusHistory: history };
+}
+
+// ---------------------------------------------------------------------------
+// Public status check for families: application number + the phone on the form.
+// Shows only progress (no names beyond the child's first name, no documents or notes).
+// ---------------------------------------------------------------------------
+const PUBLIC_STEPS = ['Submitted', 'Under Review', 'Assessment Scheduled', 'Offer Made', 'Accepted', 'Enrolled'] as const;
+const NEXT_STEP: Record<string, string> = {
+  Draft: 'The school is completing your application form.',
+  Submitted: 'The admissions office will review your application and documents.',
+  'Under Review': 'Your documents are being checked. The office may call you for anything missing.',
+  'Assessment Scheduled': 'Please bring your child for the entrance assessment at the time shown.',
+  'Offer Made': 'An offer has been made. Please confirm and pay the admission fee before the offer date.',
+  Accepted: 'Thank you for accepting. The office will complete enrolment and share the student ID.',
+  Enrolled: 'Welcome to the school! Parent app access details will follow.',
+  Rejected: 'Unfortunately the application was not successful this time. Please contact the office for details.',
+  Withdrawn: 'This application was withdrawn.',
+};
+
+export async function publicApplicationStatus(applicationNo: string, phone: string) {
+  const digits = phone.replace(/\D/g, '').slice(-10);
+  const a = digits.length === 10 ? await one<{
+    id: string; application_no: string; student_name: string; grade_applied: string; status: string; campus: string;
+    assessment_at: string | null; offer_expires_on: string | null; updated: string;
+  }>(
+    `SELECT a.id, a.application_no, a.student_name, a.grade_applied, a.status, cp.name AS campus, a.assessment_at, a.offer_expires_on,
+            COALESCE((SELECT max(changed_at) FROM admission_status_history h WHERE h.admission_id = a.id), a.created_at) AS updated
+       FROM admissions a JOIN campuses cp ON cp.id = a.campus_id
+       LEFT JOIN enquiries e ON e.id = a.enquiry_id
+      WHERE upper(a.application_no) = upper($1)
+        AND $2 IN (right(regexp_replace(COALESCE(a.guardian_phone, ''), '\\D', '', 'g'), 10),
+                   right(regexp_replace(COALESCE(e.phone, ''), '\\D', '', 'g'), 10))`,
+    [applicationNo.trim(), digits]) : null;
+  // Same answer for a wrong number and a wrong phone, so application numbers cannot be probed.
+  if (!a) throw notFound('No application matches that number and phone. Check both and try again.', 'APPLICATION_NOT_FOUND');
+  const history = await many<{ status: string; at: string }>(
+    `SELECT to_status AS status, changed_at AS at FROM admission_status_history WHERE admission_id = $1 ORDER BY changed_at, id`, [a.id]);
+  const reached = new Map(history.map((h) => [h.status, h.at]));
+  const currentIdx = PUBLIC_STEPS.indexOf(a.status as (typeof PUBLIC_STEPS)[number]);
+  return {
+    applicationNo: a.application_no,
+    student: a.student_name.split(' ')[0],
+    grade: a.grade_applied,
+    campus: a.campus,
+    status: a.status,
+    closed: ['Rejected', 'Withdrawn'].includes(a.status),
+    updatedAt: a.updated,
+    assessmentAt: a.status === 'Assessment Scheduled' ? a.assessment_at : null,
+    offerExpiresOn: a.status === 'Offer Made' ? a.offer_expires_on : null,
+    nextStep: NEXT_STEP[a.status] ?? '',
+    steps: PUBLIC_STEPS.map((s, i) => ({
+      status: s,
+      state: currentIdx < 0 ? (reached.has(s) ? 'done' : 'todo') : i < currentIdx ? 'done' : i === currentIdx ? 'current' : 'todo',
+      at: reached.get(s) ?? null,
+    })),
+  };
 }
 // Opening an application (existing lead or walk-in, with the admission form) lives in admissions-forms.service.ts.
+
+/** Who changed the status and why, for the status-history trigger (transaction-local). */
+export async function statusContext(db: Queryable, userId: string, note?: string | null) {
+  await query(`SELECT set_config('app.user_id', $1, true), set_config('app.status_note', $2, true)`, [userId, note ?? ''], db);
+}
 
 async function lockApp(id: string, db: Queryable) {
   const app = await one('SELECT * FROM admissions WHERE id = $1 FOR UPDATE', [id], db);
@@ -178,6 +243,7 @@ export async function setStatus(req: Request, id: string, input: { status: strin
       throw badRequest('The offer has expired — extend the offer date first', 'OFFER_EXPIRED');
     }
     const decided = ['Offer Made', 'Accepted', 'Rejected', 'Withdrawn'].includes(to);
+    await statusContext(db, req.user!.id, input.note);
     await query(
       `UPDATE admissions SET status = $2,
               assessment_at = COALESCE($3, assessment_at),
@@ -400,6 +466,7 @@ export async function enrol(req: Request, id: string, raw: EnrolInput) {
        VALUES ($1, COALESCE($2::date, current_date), 'Admitted', $3, 'admission', 'teal', $4)`,
       [studentId, input.admittedOn ?? null, `Enrolled from application ${app.application_no}${lead ? ` (lead ${lead.code})` : ''}`, user.id], db);
 
+    await statusContext(db, user.id, `Enrolled as ${input.firstName} ${input.lastName}`);
     await query(
       `UPDATE admissions SET status = 'Enrolled', student_id = $2, student_name = $3, date_of_birth = $4, gender = $5,
               decided_by = $6, decided_at = now() WHERE id = $1`,

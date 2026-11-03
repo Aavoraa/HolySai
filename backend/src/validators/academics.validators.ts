@@ -60,6 +60,16 @@ export const timetableEntryUpdate = z.object({
   needsSubstitute: z.boolean().optional(),
 });
 export const timetablePublish = z.object({ sectionId: uuid, note: optText(300) });
+export const timetableSlot = z.object({
+  sectionId: uuid,
+  day: z.coerce.number().int().min(1).max(6),
+  periodId: uuid,
+  subjectId: z.uuid().nullable().optional(),
+  activity: z.string().trim().max(40).nullable().optional(),
+  employeeId: z.uuid().nullable().optional(),
+  room: z.string().trim().max(40).nullable().optional(),
+});
+export const timetableImport = z.object({ campusId: uuid, dryRun: z.stringbool().default(false) });
 
 // ---- Assessments -------------------------------------------------------------------
 export const ASSESSMENT_TYPES = ['test', 'exam', 'mock', 'quiz', 'project', 'unit_test'] as const;

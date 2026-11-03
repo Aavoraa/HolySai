@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
+import { env } from '../config/env.js';
 import { requireAny, requirePermission } from '../middleware/auth.js';
 import { validate, v } from '../middleware/validate.js';
 import { created, ok, paged } from '../utils/response.js';
@@ -12,6 +14,9 @@ import * as letters from '../services/workforce-letters.service.js';
 import { schoolToday } from '../services/academics.service.js';
 import { attendanceFor, getSalary, previewPay, salaryDashboard, salaryEmployees, setSalary } from '../services/workforce-salary.service.js';
 import * as me from '../services/workforce-self.service.js';
+import * as bio from '../services/workforce-biometric.service.js';
+import { upload } from '../services/documents.service.js';
+import { csvDocument, csvUpload, sendCsv } from '../utils/csv.js';
 
 /**
  * Workforce & payroll. Mounted at /api behind authentication.
@@ -59,6 +64,21 @@ r.put('/workforce/employees/:id', MANAGE, idParam, validate(V.employeeUpdateSche
   return ok(res, null, 'Employee updated');
 });
 
+r.post('/workforce/employees/:id/documents', MANAGE, idParam, upload.single('file'),
+  validate(z.object({ name: z.string().trim().max(160).optional(), category: z.string().trim().max(60).optional(), documentId: z.uuid().optional() })),
+  async (req: Request, res: Response) => created(res, await wf.uploadEmployeeDocument(req, v<{ id: string }>(req, 'params').id, req.file, v(req)), 'Document uploaded'));
+
+r.get('/workforce/employees/:id/documents/:docId/download', READ, validate(z.object({ id: z.uuid(), docId: z.uuid() }), 'params'),
+  async (req: Request, res: Response) => {
+    const p = v<{ id: string; docId: string }>(req, 'params');
+    const f = await wf.openEmployeeDocument(req, p.id, p.docId);
+    res.setHeader('Content-Type', f.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${f.name}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    f.stream.on('error', (err) => { req.log?.error({ err }, 'document download failed'); res.destroy(err); });
+    f.stream.pipe(res);
+  });
+
 r.delete('/workforce/employees/:id', MANAGE, idParam, async (req: Request, res: Response) => {
   await wf.archiveEmployee(req, v(req, 'params').id);
   return ok(res, null, 'Employee archived');
@@ -77,6 +97,41 @@ r.get('/workforce/attendance/summary', READ, validate(V.attendanceSummaryQuery, 
   const f = v(req, 'query');
   return ok(res, await wf.attendanceSummary(f.date, f.campusId), 'Staff attendance summary');
 });
+
+// ---- Biometric attendance: machines, log import, raw punches -------------------------
+r.get('/workforce/biometric-devices', READ, validate(z.object({ campusId: z.uuid().optional() }), 'query'),
+  async (req: Request, res: Response) => ok(res, await bio.listDevices(v<{ campusId?: string }>(req, 'query').campusId), 'Biometric devices'));
+
+r.post('/workforce/biometric-devices', MANAGE,
+  validate(z.object({ name: z.string().trim().min(2).max(80), campusId: z.uuid().nullable().optional(), location: z.string().trim().max(120).nullable().optional() })),
+  async (req: Request, res: Response) => {
+    const out = await bio.registerDevice(req, v(req));
+    return created(res, out, `Device ${out.deviceCode} registered — copy its token now; it is not shown again`);
+  });
+
+r.post('/workforce/biometric-devices/:id/token', MANAGE, idParam,
+  async (req: Request, res: Response) => ok(res, await bio.regenerateDeviceToken(req, v<{ id: string }>(req, 'params').id), 'New token issued. The previous token no longer works.'));
+
+r.patch('/workforce/biometric-devices/:id', MANAGE, idParam, validate(z.object({ status: z.enum(['active', 'inactive']) })),
+  async (req: Request, res: Response) => ok(res, await bio.setDeviceStatus(req, v<{ id: string }>(req, 'params').id, v(req).status), 'Device updated'));
+
+r.get('/workforce/attendance/punches/template', MANAGE,
+  (_req: Request, res: Response) => sendCsv(res, 'biometric-punches-template.csv', csvDocument(bio.PUNCH_COLUMNS, bio.PUNCH_EXAMPLE)));
+
+r.post('/workforce/attendance/punches/import', MANAGE, csvUpload('attendance log').single('file'), validate(z.object({ dryRun: z.stringbool().default(false) })),
+  async (req: Request, res: Response) => {
+    const out = await bio.importPunches(req, req.file, v(req));
+    const msg = out.dryRun || out.failed
+      ? `${out.valid} of ${out.rows} punch${out.rows === 1 ? '' : 'es'} ready${out.failed ? ` · ${out.failed} need attention` : ''}`
+      : `${out.imported} punch${out.imported === 1 ? '' : 'es'} added across ${out.days} staff-day${out.days === 1 ? '' : 's'}${out.duplicates ? ` · ${out.duplicates} already recorded` : ''}`;
+    return ok(res, out, msg);
+  });
+
+r.get('/workforce/attendance/punches', READ, validate(z.object({ employeeId: z.uuid(), date: z.iso.date() }), 'query'),
+  async (req: Request, res: Response) => {
+    const q = v<{ employeeId: string; date: string }>(req, 'query');
+    return ok(res, await bio.dayPunches(q.employeeId, q.date), 'Punches');
+  });
 
 r.put('/workforce/attendance', MANAGE, validate(V.attendanceMarkSchema), async (req: Request, res: Response) =>
   ok(res, await wf.markAttendance(req, v(req)), 'Attendance saved'));
@@ -399,3 +454,32 @@ r.get('/me/requests', SELF, async (req: Request, res: Response) =>
   ok(res, await me.myRequests(me.selfId(req)), 'My requests'));
 
 export default r;
+
+// ---------------------------------------------------------------------------
+// POST /api/v1/attendance/punches — biometric machines (or their bridge software)
+// post punches with the device token. No user session.
+// ---------------------------------------------------------------------------
+const punchLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  keyGenerator: (req) => (typeof req.body?.device_id === 'string' ? `bio:${req.body.device_id.slice(0, 40).toUpperCase()}` : `ip:${ipKeyGenerator(req.ip ?? '')}`),
+  handler: (_req, res) => res.status(429).json({ success: false, message: 'Too many requests from this device. Slow down.', error: 'RATE_LIMITED' }),
+  skip: () => env.isTest,
+});
+
+export const biometricIngestRoutes = Router();
+biometricIngestRoutes.post('/attendance/punches', punchLimiter,
+  validate(z.object({
+    device_id: z.string().trim().min(3).max(40),
+    punches: z.array(z.object({
+      employee_code: z.string().trim().min(1).max(40),
+      punched_at: z.string().trim().min(8).max(40),
+      direction: z.enum(['in', 'out', 'auto']).optional(),
+    })).min(1).max(500),
+  })),
+  async (req: Request, res: Response) => {
+    const out = await bio.ingestPunches(req, v(req));
+    return ok(res, out, `${out.stored} punch${out.stored === 1 ? '' : 'es'} stored`);
+  });

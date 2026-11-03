@@ -1,10 +1,11 @@
 import { useSearchParams } from 'react-router-dom';
 import { useSchool } from '@/layouts/SchoolContext';
+import { api } from '@/api/client';
 import { useApiQuery } from '@/hooks/useApi';
 import { fmt } from '@/lib/format';
 import {
   Avatar, Badge, Button, Card, Chart, charts, DataTable, Empty, ErrorState, Grid, Icon, Meter, Page, PageHead, PageSkeleton,
-  Skeleton, Status, Timeline,
+  Skeleton, Status, Timeline, errorMessage, useToast,
 } from '@/components/ui';
 import { StudentPicker, useCsvDownload } from './shared';
 
@@ -16,7 +17,7 @@ interface Overview {
 interface Portfolio {
   student: { id: string; fullName: string; admissionNo: string; house: string | null; grade: string | null; section: string | null; campus: string };
   completeness: { key: string; label: string; done: boolean }[];
-  achievements: { id: string; title: string; type: string; level: string | null; date: string; verified: boolean }[];
+  achievements: { id: string; title: string; type: string; level: string | null; date: string; verified: boolean; documentId: string | null; hasCertificate: boolean }[];
   activities: { name: string; category: string; role: string; since: string; hours: number; status: string }[];
   projects: { id: string; code: string | null; title: string; status: string; date: string | null; mentor: string | null; source: string }[];
   documents: { id: string; name: string; category: string; status: string; verifiedAt: string | null; hasFile: boolean }[];
@@ -76,6 +77,7 @@ export default function PortfolioPage() {
 
 function StudentPortfolio({ id, onClose }: { id: string; onClose?: () => void }) {
   const q = useApiQuery<Portfolio>(`/portfolio/students/${encodeURIComponent(id)}`);
+  const toast = useToast();
   if (q.isLoading) return <PageSkeleton kpis={4} />;
   if (q.error || !q.data) return (
     <div className="col g-3">
@@ -123,6 +125,9 @@ function StudentPortfolio({ id, onClose }: { id: string; onClose?: () => void })
               { key: 'title', label: 'Achievement', render: (r) => <><div className="t-sm t-bold">{r.title}</div><div className="t-micro t-muted">{r.type}{r.level ? ` · ${r.level}` : ''}</div></> },
               { key: 'date', label: 'Date', render: (r) => fmt.date(r.date) },
               { key: 'verified', label: 'Status', render: (r) => <Status value={r.verified ? 'Verified' : 'Pending'} /> },
+              { key: 'cert', label: 'Certificate', sortable: false, render: (r) => (r.hasCertificate && r.documentId
+                ? <Button size="sm" variant="quiet" icon="download" onClick={() => api.download(`/documents/${r.documentId}/download`, `${p.student.fullName} - ${r.title}`).catch((e) => toast(errorMessage(e), 'critical'))}>View</Button>
+                : <span className="t-faint">—</span>) },
             ]} />
         </Card>
         <Card icon="grid" title="Activities" sub={`${p.activities.reduce((a, x) => a + x.hours, 0)} hours recorded`} flush>

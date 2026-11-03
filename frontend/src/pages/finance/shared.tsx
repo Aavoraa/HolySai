@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import qrcode from 'qrcode-generator';
 import { ApiError } from '@/api/client';
 import { useApiMutation, useApiQuery } from '@/hooks/useApi';
 import { useAuth } from '@/auth/AuthContext';
 import { fmt } from '@/lib/format';
 import {
   Badge, Banner, Button, Checkbox, Dl, Empty, ErrorState, Icon, InlineError, Modal, SearchInput, SelectField, Skeleton,
-  Status, TextArea, TextField,
+  Status, Svg, TextArea, TextField,
 } from '@/components/ui';
 import type { AccountRow, Account, FinanceLookups, Receipt } from './types';
 
@@ -141,6 +142,117 @@ export function ReceiptBody({ r }: { r: Receipt }) {
         <span className="t-bold t-num fin-receipt__total">{fmt.money(r.amount)}</span>
       </div>
       {r.gatewayRef?.startsWith('SIM-') && <p className="t-micro t-muted mt-2">Online payment processed through the simulated gateway (development).</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fee bill (demand note) with the school's bank details and a UPI pay QR
+// ---------------------------------------------------------------------------
+export interface FeeBill {
+  billNo: string; billDate: string; school: string; total: number; overdue: number; payBy: string | null; lateFeePerDay: number | null;
+  student: { admissionNo: string; fullName: string; grade: string | null; section: string | null; campus: string; parentName: string | null; parentPhone: string | null };
+  lines: { id: string; description: string; head: string; dueDate: string; amountDue: number; concession: number; amountPaid: number; balance: number }[];
+  bank: { accountName: string; bankName: string; accountNo: string; ifsc: string; branch: string; upiId: string; configured: boolean };
+}
+
+const BILL_PRINT_CSS = PRINT_CSS.replace(/fin-receipt/g, 'fin-bill');
+
+/** UPI deep link (NPCI format) that every UPI app opens with the amount filled in. */
+export const upiLink = (b: FeeBill) => `upi://pay?${new URLSearchParams({
+  pa: b.bank.upiId, pn: b.bank.accountName || b.school, am: b.total.toFixed(2), cu: 'INR', tn: `${b.billNo} ${b.student.admissionNo}`.slice(0, 50),
+}).toString()}`;
+
+function upiQr(text: string) {
+  const q = qrcode(0, 'M');
+  q.addData(text);
+  q.make();
+  return q.createSvgTag({ cellSize: 4, margin: 1, scalable: true });
+}
+
+/** `endpoint` is /finance/accounts/:id/bill (staff) or /family/children/:id/bill (parent). */
+export function FeeBillModal({ endpoint, onClose }: { endpoint: string | null; onClose: () => void }) {
+  const q = useApiQuery<FeeBill>(endpoint);
+  const b = q.data;
+  return (
+    <Modal open={!!endpoint} onClose={onClose} size="wide" title={b ? `Fee bill ${b.billNo}` : 'Fee bill'} sub="Outstanding fees with payment details"
+      foot={b && <Button variant="primary" icon="printer" onClick={() => window.print()}>Print bill</Button>}>
+      <style>{BILL_PRINT_CSS}</style>
+      {q.isLoading && <Skeleton height={360} />}
+      {q.error ? <ErrorState error={q.error} onRetry={() => q.refetch()} /> : null}
+      {b && <FeeBillBody b={b} />}
+    </Modal>
+  );
+}
+
+export function FeeBillBody({ b }: { b: FeeBill }) {
+  return (
+    <div className="card card--tint fin-bill">
+      <div className="row between">
+        <div>
+          <div className="serif fin-receipt__school">{b.school}</div>
+          <div className="t-micro t-muted">{b.student.campus} campus · Fee bill</div>
+        </div>
+        <Badge tone={b.total > 0 ? (b.overdue > 0 ? 'critical' : 'warning') : 'success'} lg>{b.total > 0 ? (b.overdue > 0 ? 'Overdue' : 'Due') : 'Nothing due'}</Badge>
+      </div>
+      <div className="divider" />
+      <Dl items={[
+        ['Bill number', b.billNo],
+        ['Bill date', fmt.date(b.billDate)],
+        ['Student', `${b.student.fullName} · ${b.student.admissionNo}`],
+        ['Grade', b.student.grade ? `${b.student.grade}${b.student.section ?? ''}` : '—'],
+        ['Parent', b.student.parentName ? `${b.student.parentName}${b.student.parentPhone ? ` · ${b.student.parentPhone}` : ''}` : '—'],
+      ]} />
+      <div className="divider" />
+      {b.lines.length ? (
+        <table className="table table--compact" style={{ width: '100%' }}>
+          <thead><tr><th>Fee</th><th>Due</th><th className="num">Amount</th><th className="num">Concession</th><th className="num">Paid</th><th className="num">Balance</th></tr></thead>
+          <tbody>
+            {b.lines.map((l) => (
+              <tr key={l.id}>
+                <td>{l.description}</td><td>{fmt.date(l.dueDate)}</td>
+                <td className="num"><Money v={l.amountDue} /></td><td className="num"><Money v={l.concession} /></td>
+                <td className="num"><Money v={l.amountPaid} /></td><td className="num"><Money v={l.balance} strong /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : <p className="t-sm t-muted">All fees are paid. Thank you.</p>}
+      <div className="divider" />
+      <div className="row between">
+        <span className="t-bold">Total payable{b.payBy ? ` (first due ${fmt.date(b.payBy)})` : ''}</span>
+        <span className="t-bold t-num fin-receipt__total">{fmt.money(b.total)}</span>
+      </div>
+      {b.overdue > 0 && <p className="t-xs t-critical mt-1">{fmt.money(b.overdue)} is past its due date{b.lateFeePerDay ? `; a late fee of ${fmt.money(b.lateFeePerDay)} per day may apply` : ''}.</p>}
+      {b.total > 0 && (
+        <>
+          <div className="divider" />
+          {b.bank.configured ? (
+            <div className="row g-4 wrap" style={{ alignItems: 'center' }}>
+              {b.bank.upiId && (
+                <div className="col g-1" style={{ alignItems: 'center' }}>
+                  <Svg html={upiQr(upiLink(b))} style={{ width: 132, height: 132 }} />
+                  <span className="t-micro t-muted">Scan with any UPI app</span>
+                </div>
+              )}
+              <div className="grow">
+                <div className="eyebrow mb-1">Pay by bank transfer or UPI</div>
+                <Dl items={[
+                  ...(b.bank.accountName ? [['Account name', b.bank.accountName] as [string, string]] : []),
+                  ...(b.bank.bankName ? [['Bank', `${b.bank.bankName}${b.bank.branch ? `, ${b.bank.branch}` : ''}`] as [string, string]] : []),
+                  ...(b.bank.accountNo ? [['Account number', b.bank.accountNo] as [string, string]] : []),
+                  ...(b.bank.ifsc ? [['IFSC', b.bank.ifsc] as [string, string]] : []),
+                  ...(b.bank.upiId ? [['UPI ID', b.bank.upiId] as [string, string]] : []),
+                  ['Reference', `${b.billNo} / ${b.student.admissionNo}`],
+                ]} />
+                <p className="t-micro t-muted mt-1">Quote the reference so the office can match your payment. A receipt is issued once it is received.</p>
+              </div>
+            </div>
+          ) : (
+            <p className="t-sm t-muted">Pay at the school fee counter or in the parent app. (The school's bank details are not set up yet.)</p>
+          )}
+        </>
+      )}
     </div>
   );
 }

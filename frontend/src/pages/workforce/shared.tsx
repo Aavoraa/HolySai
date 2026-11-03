@@ -2,16 +2,16 @@
  * Building blocks shared by the workforce screens: employee link + profile
  * modal (the full journey), employee form, leave application, payslip view.
  */
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ApiError } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import { useAuth } from '@/auth/AuthContext';
-import { useApiMutation, useApiQuery } from '@/hooks/useApi';
+import { useApiMutation, useApiQuery, useInvalidate } from '@/hooks/useApi';
 import { useLookups } from '@/hooks/useLookups';
 import { useSchool } from '@/layouts/SchoolContext';
 import {
   Avatar, Badge, Banner, Button, Card, Checkbox, DataTable, Dl, Empty, ErrorState, Flow, Grid, Icon, InlineError, Meter, Modal, Person,
-  SelectField, Skeleton, Status, Tabs, TextArea, TextField, useConfirm,
+  SelectField, Skeleton, Status, Tabs, TextArea, TextField, errorMessage, useConfirm, useToast,
 } from '@/components/ui';
 import { fmt, todayKey } from '@/lib/format';
 import type { EmployeeDetail, EmployeeProfile, LeaveBalance, LeaveType, Payslip, Shift } from './types';
@@ -53,6 +53,63 @@ export function useEmployeeModal(): [(id: string) => void, ReactNode] {
   const [id, setId] = useState<string | null>(null);
   const node = id ? <EmployeeProfileModal id={id} onClose={() => setId(null)} /> : null;
   return [setId, node];
+}
+
+/** Documents on a staff profile: HR uploads scans (qualification certificates, ID, contract) and anyone with HR access can open them. */
+function EmployeeDocumentsCard({ employeeId, employeeName, documents }: { employeeId: string; employeeName: string; documents: EmployeeProfile['documents'] }) {
+  const { can } = useAuth();
+  const toast = useToast();
+  const invalidate = useInvalidate();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [target, setTarget] = useState<{ documentId?: string; name: string } | null>(null);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const pick = (t: { documentId?: string; name: string }) => { setTarget(t); fileRef.current?.click(); };
+  const send = async (file: File) => {
+    if (!target) return;
+    if (file.size > 10 * 1024 * 1024) { toast('The file must be 10 MB or smaller', 'critical'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    if (target.documentId) fd.append('documentId', target.documentId);
+    else { fd.append('name', target.name); fd.append('category', 'Qualification certificate'); }
+    setBusy(true);
+    try {
+      const r = await api.upload<{ id: string }>(`/workforce/employees/${employeeId}/documents`, fd, 120_000);
+      toast(r.message, 'success');
+      await invalidate(`/workforce/employees/${employeeId}`);
+    } catch (err) {
+      toast(errorMessage(err), 'critical');
+    } finally { setBusy(false); setTarget(null); }
+  };
+
+  return (
+    <Card icon="folder" title="Documents" sub="Certificates and records on file" tight flush
+      actions={can('hr.manage') && <Button size="sm" icon="upload" loading={busy && !target?.documentId} onClick={() => { setName(''); setNaming(true); }}>Add</Button>}>
+      <DataTable compact stack={false} rows={documents} rowKey={(r) => r.id} emptyText="No documents on file."
+        columns={[
+          { key: 'name', label: 'Document' },
+          { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
+          { key: 'a', label: '', className: 'num', render: (r) => (
+            <div className="row g-1 end">
+              {r.hasFile && <Button size="sm" variant="quiet" icon="download" aria-label={`Download ${r.name}`}
+                onClick={() => api.download(`/workforce/employees/${employeeId}/documents/${r.id}/download`, `${employeeName} - ${r.name}`).catch((e) => toast(errorMessage(e), 'critical'))} />}
+              {!r.hasFile && can('hr.manage') && <Button size="sm" icon="upload" loading={busy && target?.documentId === r.id} onClick={() => pick({ documentId: r.id, name: r.name })}>Upload</Button>}
+            </div>
+          ) },
+        ]} />
+      <input ref={fileRef} type="file" hidden accept=".pdf,.jpg,.jpeg,.png" aria-label="Document file"
+        onChange={(ev) => { const f = ev.target.files?.[0]; ev.target.value = ''; if (f) void send(f); else setTarget(null); }} />
+      {naming && (
+        <Modal open onClose={() => setNaming(false)} title={`Add a document for ${employeeName}`} sub="PDF or image, up to 10 MB"
+          foot={<><Button onClick={() => setNaming(false)}>Cancel</Button>
+            <Button variant="primary" icon="folder" disabled={name.trim().length < 2} onClick={() => { setNaming(false); pick({ name: name.trim() }); }}>Choose file</Button></>}>
+          <TextField label="Document name" required value={name} onChange={setName} maxLength={160} placeholder="B.Ed. degree certificate" />
+        </Modal>
+      )}
+    </Card>
+  );
 }
 
 function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void }) {
@@ -157,14 +214,18 @@ function EmployeeProfileModal({ id, onClose }: { id: string; onClose: () => void
                 <Meter label="CPD hours" value={Math.min(100, (e.cpd / (e.employeeType === 'teaching' ? 24 : 12)) * 100)} right={`${e.cpd} hours`} tone="teal" />
               </div>
             </Card>
-            <Card icon="folder" title="Documents" tight flush>
-              <DataTable compact stack={false} rows={d.documents} rowKey={(r) => r.id} emptyText="No documents on file."
+            <EmployeeDocumentsCard employeeId={e.id} employeeName={e.fullName} documents={d.documents} />
+          </div>
+          {!!d.teaching?.length && (
+            <Card icon="book" title="Teaching this year" sub={`${d.teaching.reduce((t, x) => t + x.periods, 0)} periods a week · specialisation ${e.specialisation ?? '—'}`} tight flush className="mt-4">
+              <DataTable compact stack={false} rows={d.teaching} rowKey={(r) => `${r.section}-${r.subject}`}
                 columns={[
-                  { key: 'name', label: 'Document' },
-                  { key: 'status', label: 'Status', render: (r) => <Status value={r.status} /> },
+                  { key: 'section', label: 'Class', render: (r) => <>{r.section}{r.classTeacher && <>{' '}<Badge tone="info">Class teacher</Badge></>}</> },
+                  { key: 'subject', label: 'Subject' },
+                  { key: 'periods', label: 'Periods / week', className: 'num' },
                 ]} />
             </Card>
-          </div>
+          )}
           <div className="card mt-4">
             <div className="fw-tabs">
               <Tabs active={tab} onChange={setTab} items={[
