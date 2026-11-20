@@ -41,14 +41,17 @@ const schema = z.object({
    * suits development and any host with a persistent disk. 'supabase' stores
    * them in a private Supabase Storage bucket — required on hosts with an
    * ephemeral filesystem (Render, Fly, Heroku), where local files are lost on
-   * every deploy and restart.
+   * every deploy and restart. 'vercel-blob' stores them in a private Vercel Blob
+   * store (BLOB_READ_WRITE_TOKEN, which Vercel sets when the store is connected).
    */
-  STORAGE_DRIVER: z.enum(['local', 'supabase']).default('local'),
+  STORAGE_DRIVER: z.enum(['local', 'supabase', 'vercel-blob']).default('local'),
   UPLOAD_DIR: z.string().default('./uploads'),
   UPLOAD_MAX_MB: z.coerce.number().positive().default(10),
   SUPABASE_URL: z.string().optional(),
   /** Service role key — server-side only. Never expose this to the browser. */
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
+  /** Vercel Blob read-write token — server-side only. */
+  BLOB_READ_WRITE_TOKEN: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default('documents'),
   /** GPS devices: how often a device should send, and when it counts as online / stale / offline. */
   LOCATION_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
@@ -101,13 +104,21 @@ const schema = z.object({
     ctx.addIssue({ code: 'custom', path: ['EXAM_VISION_SECRET'], message: 'must be at least 32 characters when EXAM_VISION_URL is set' });
   }
   // Fail at boot rather than at the first upload attempt.
+  if (c.STORAGE_DRIVER === 'vercel-blob' && !c.BLOB_READ_WRITE_TOKEN) {
+    ctx.addIssue({ code: 'custom', path: ['BLOB_READ_WRITE_TOKEN'], message: 'BLOB_READ_WRITE_TOKEN is required when STORAGE_DRIVER=vercel-blob' });
+  }
   if (c.STORAGE_DRIVER !== 'supabase') return;
   for (const key of ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'] as const) {
     if (!c[key]) ctx.addIssue({ code: 'custom', path: [key], message: `${key} is required when STORAGE_DRIVER=supabase` });
   }
 });
 
-const parsed = schema.safeParse(process.env);
+// DOCUMENT_STORAGE_DRIVER wins over STORAGE_DRIVER: Vercel's container build
+// (buildah) reads STORAGE_DRIVER as its own setting and fails on 'vercel-blob'.
+const parsed = schema.safeParse({
+  ...process.env,
+  STORAGE_DRIVER: process.env.DOCUMENT_STORAGE_DRIVER || process.env.STORAGE_DRIVER,
+});
 if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
   // eslint-disable-next-line no-console
