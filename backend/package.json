@@ -19,6 +19,7 @@
     "docs:schema": "tsx --env-file-if-exists=../.env scripts/schema-doc.ts"
   },
   "dependencies": {
+    "@vercel/blob": "^2.9.0",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

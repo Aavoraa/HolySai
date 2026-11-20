@@ -10,6 +10,7 @@
  *               role key. Required on hosts with an ephemeral filesystem
  *               (Render, Fly, Heroku), where local files are lost on every
  *               deploy and restart.
+ *   vercel-blob — a *private* Vercel Blob store, for deployments on Vercel.
  *
  * Keys look like "2026-09/<uuid>.pdf" and are generated server-side — they
  * never contain user input. The guards here are defence in depth.
@@ -19,6 +20,7 @@ import { createReadStream, existsSync, mkdirSync } from 'node:fs';
 import { writeFile, unlink, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import * as blob from '@vercel/blob';
 import { env } from '../config/env.js';
 import { logger } from '../utils/logger.js';
 
@@ -103,8 +105,39 @@ const supabase = {
 };
 
 // ---------------------------------------------------------------------------
+// vercel-blob driver — a *private* Vercel Blob store. The SDK reads
+// BLOB_READ_WRITE_TOKEN from the environment; downloads stream through the API
+// after its permission checks, exactly like the supabase driver.
+// ---------------------------------------------------------------------------
 
-const driver = env.STORAGE_DRIVER === 'supabase' ? supabase : local;
+const vercelBlob = {
+  async put(key: string, body: Buffer, contentType: string) {
+    try {
+      await blob.put(key, body, { access: 'private', contentType, addRandomSuffix: false, allowOverwrite: true });
+    } catch (err) {
+      logger.error({ err: (err as Error).message }, 'Vercel Blob upload failed');
+      throw new Error('Storage upload failed');
+    }
+  },
+  async get(key: string): Promise<Readable | null> {
+    try {
+      const res = await blob.get(key, { access: 'private' });
+      if (!res || res.statusCode !== 200) return null;
+      return Readable.fromWeb(res.stream as Parameters<typeof Readable.fromWeb>[0]);
+    } catch (err) {
+      if (err instanceof blob.BlobNotFoundError) return null;
+      logger.error({ err: (err as Error).message }, 'Vercel Blob download failed');
+      return null;
+    }
+  },
+  async remove(key: string) {
+    await blob.del(key).catch((err: Error) => logger.warn({ err: err.message, key }, 'Vercel Blob delete failed'));
+  },
+};
+
+// ---------------------------------------------------------------------------
+
+const driver = env.STORAGE_DRIVER === 'supabase' ? supabase : env.STORAGE_DRIVER === 'vercel-blob' ? vercelBlob : local;
 
 export async function putObject(key: string, body: Buffer, contentType: string) {
   assertSafeKey(key);
