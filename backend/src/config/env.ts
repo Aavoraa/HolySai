@@ -86,6 +86,12 @@ const schema = z.object({
    */
   EXAM_VISION_URL: z.preprocess((v) => (v === '' ? undefined : v), z.url().optional()),
   EXAM_VISION_SECRET: z.string().optional(),
+  /**
+   * Ping the marking service every 10 minutes so free hosting does not put it to sleep.
+   * Unset = on only on Render (which sets RENDER=true); off elsewhere, because on hosts
+   * billed by CPU time (Vercel) the pings use up the plan around the clock.
+   */
+  EXAM_KEEP_AWAKE: z.preprocess((v) => (v === '' ? undefined : v), z.stringbool().optional()),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 }).superRefine((c, ctx) => {
   if (c.OFFLINE_THRESHOLD_SECONDS <= c.ONLINE_THRESHOLD_SECONDS) {
@@ -114,5 +120,6 @@ export const env = {
   corsOrigins: parsed.data.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean),
   isProd: parsed.data.NODE_ENV === 'production',
   isTest: parsed.data.NODE_ENV === 'test',
+  examKeepAwake: parsed.data.EXAM_KEEP_AWAKE ?? process.env.RENDER === 'true',
 };
 export type Env = typeof env;

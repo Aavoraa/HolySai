@@ -104,8 +104,13 @@ const MAX_ATTEMPTS = 5;
  * configured and an adapter exists; otherwise pending rows stay queued so nothing
  * is lost when a provider is added later. Failures retry with backoff, then fail.
  */
+/** Channels that can actually send: an adapter exists and its provider credentials are set. */
+export function readyChannels(): Channel[] {
+  return (Object.keys(ADAPTERS) as Channel[]).filter((c) => PROVIDER_CONFIGURED[c]());
+}
+
 export async function dispatchPending(limit = 50) {
-  const ready = (Object.keys(ADAPTERS) as Channel[]).filter((c) => PROVIDER_CONFIGURED[c]());
+  const ready = readyChannels();
   if (!ready.length) return 0;
   // Alerts are time-sensitive: anything queued over a day ago (e.g. the backlog from before a
   // provider was connected) is expired rather than sent late.
