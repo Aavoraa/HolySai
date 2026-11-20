@@ -113,7 +113,12 @@ const schema = z.object({
   }
 });
 
-const parsed = schema.safeParse(process.env);
+// DOCUMENT_STORAGE_DRIVER wins over STORAGE_DRIVER: Vercel's container build
+// (buildah) reads STORAGE_DRIVER as its own setting and fails on 'vercel-blob'.
+const parsed = schema.safeParse({
+  ...process.env,
+  STORAGE_DRIVER: process.env.DOCUMENT_STORAGE_DRIVER || process.env.STORAGE_DRIVER,
+});
 if (!parsed.success) {
   const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
   // eslint-disable-next-line no-console
